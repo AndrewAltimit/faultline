@@ -1,0 +1,42 @@
+[package]
+name = "faultline-backend-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Browser WASM frontend for Faultline conflict simulation"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lints]
+workspace = true
+
+[dependencies]
+faultline-types = { workspace = true }
+faultline-engine = { workspace = true }
+faultline-stats = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "Window",
+    "console",
+] }
+js-sys = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+serde-wasm-bindgen = "0.6"
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

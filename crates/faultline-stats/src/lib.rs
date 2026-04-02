@@ -1,0 +1,574 @@
+//! Monte Carlo runner and statistical output for Faultline simulation.
+//!
+//! Provides [`MonteCarloRunner`] which executes N simulation runs
+//! sequentially, collects [`RunResult`]s, and computes summary
+//! statistics including win probabilities, duration distributions,
+//! and metric distributions.
+
+use std::collections::BTreeMap;
+
+use thiserror::Error;
+use tracing::{debug, info};
+
+use faultline_engine::{Engine, EngineError};
+use faultline_types::ids::FactionId;
+use faultline_types::scenario::Scenario;
+use faultline_types::stats::{
+    DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult, MonteCarloSummary, RunResult,
+};
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/// Errors that can occur during Monte Carlo simulation.
+#[derive(Debug, Error)]
+pub enum StatsError {
+    #[error("engine error on run {run_index}: {source}")]
+    Engine { run_index: u32, source: EngineError },
+
+    #[error("no runs completed")]
+    NoRuns,
+
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
+}
+
+// ---------------------------------------------------------------------------
+// MonteCarloRunner
+// ---------------------------------------------------------------------------
+
+/// Executes multiple simulation runs and aggregates results.
+pub struct MonteCarloRunner;
+
+impl MonteCarloRunner {
+    /// Run N simulations sequentially, collecting results.
+    ///
+    /// Each run creates a new [`Engine`] with a deterministic seed
+    /// derived from `config.seed` (or a default) plus the run index.
+    pub fn run(
+        config: &MonteCarloConfig,
+        scenario: &Scenario,
+    ) -> Result<MonteCarloResult, StatsError> {
+        if config.num_runs == 0 {
+            return Err(StatsError::InvalidConfig(
+                "num_runs must be greater than zero".into(),
+            ));
+        }
+
+        let base_seed = config.seed.unwrap_or(0xDEAD_BEEF);
+        let mut runs = Vec::with_capacity(config.num_runs as usize);
+
+        info!(
+            num_runs = config.num_runs,
+            base_seed, "starting Monte Carlo batch"
+        );
+
+        for i in 0..config.num_runs {
+            let seed = base_seed.wrapping_add(u64::from(i));
+            debug!(run_index = i, seed, "starting run");
+
+            let mut engine =
+                Engine::with_seed(scenario.clone(), seed).map_err(|e| StatsError::Engine {
+                    run_index: i,
+                    source: e,
+                })?;
+
+            let mut result = engine.run().map_err(|e| StatsError::Engine {
+                run_index: i,
+                source: e,
+            })?;
+
+            result.run_index = i;
+            result.seed = seed;
+            runs.push(result);
+        }
+
+        let summary = compute_summary(&runs, scenario);
+
+        Ok(MonteCarloResult { runs, summary })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Summary computation
+// ---------------------------------------------------------------------------
+
+/// Compute aggregate statistics from a collection of run results.
+///
+/// Produces win probabilities per faction, average duration, and
+/// metric distributions (duration, final tension).
+pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSummary {
+    let total = runs.len() as f64;
+    if total == 0.0 {
+        return MonteCarloSummary {
+            total_runs: 0,
+            win_rates: BTreeMap::new(),
+            average_duration: 0.0,
+            metric_distributions: BTreeMap::new(),
+        };
+    }
+
+    // Win rates.
+    let mut win_counts: BTreeMap<FactionId, u32> = BTreeMap::new();
+    for run in runs {
+        if let Some(ref victor) = run.outcome.victor {
+            *win_counts.entry(victor.clone()).or_insert(0) += 1;
+        }
+    }
+    let win_rates: BTreeMap<FactionId, f64> = win_counts
+        .into_iter()
+        .map(|(fid, count)| (fid, f64::from(count) / total))
+        .collect();
+
+    // Duration distribution.
+    let durations: Vec<f64> = runs.iter().map(|r| f64::from(r.final_tick)).collect();
+    let average_duration = durations.iter().copied().sum::<f64>() / total;
+
+    // Final tension distribution.
+    let tensions: Vec<f64> = runs.iter().map(|r| r.outcome.final_tension).collect();
+
+    let mut metric_distributions = BTreeMap::new();
+    metric_distributions.insert(MetricType::Duration, compute_distribution(&durations));
+    metric_distributions.insert(MetricType::FinalTension, compute_distribution(&tensions));
+
+    MonteCarloSummary {
+        total_runs: runs.len() as u32,
+        win_rates,
+        average_duration,
+        metric_distributions,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Distribution helpers
+// ---------------------------------------------------------------------------
+
+/// Compute descriptive statistics for a slice of values.
+///
+/// Returns mean, median, standard deviation, min, max, and
+/// 5th/95th percentiles. Returns zeroed stats for empty input.
+fn compute_distribution(values: &[f64]) -> DistributionStats {
+    if values.is_empty() {
+        return DistributionStats {
+            mean: 0.0,
+            median: 0.0,
+            std_dev: 0.0,
+            min: 0.0,
+            max: 0.0,
+            percentile_5: 0.0,
+            percentile_95: 0.0,
+        };
+    }
+
+    let n = values.len() as f64;
+    let mean = values.iter().copied().sum::<f64>() / n;
+
+    let variance = if values.len() > 1 {
+        values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)
+    } else {
+        0.0
+    };
+    let std_dev = variance.sqrt();
+
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let min = sorted.first().copied().unwrap_or(0.0);
+    let max = sorted.last().copied().unwrap_or(0.0);
+    let median = percentile_of_sorted(&sorted, 50.0);
+    let percentile_5 = percentile_of_sorted(&sorted, 5.0);
+    let percentile_95 = percentile_of_sorted(&sorted, 95.0);
+
+    DistributionStats {
+        mean,
+        median,
+        std_dev,
+        min,
+        max,
+        percentile_5,
+        percentile_95,
+    }
+}
+
+/// Compute the p-th percentile from a pre-sorted slice using linear
+/// interpolation.
+fn percentile_of_sorted(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+
+    let rank = (p / 100.0) * (sorted.len() as f64 - 1.0);
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+    let frac = rank - rank.floor();
+
+    if lower == upper || upper >= sorted.len() {
+        sorted[lower.min(sorted.len() - 1)]
+    } else {
+        sorted[lower] * (1.0 - frac) + sorted[upper] * frac
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compute_distribution_empty() {
+        let stats = compute_distribution(&[]);
+        assert!((stats.mean - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn compute_distribution_single_value() {
+        let stats = compute_distribution(&[42.0]);
+        assert!((stats.mean - 42.0).abs() < f64::EPSILON);
+        assert!((stats.median - 42.0).abs() < f64::EPSILON);
+        assert!((stats.std_dev - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn compute_distribution_basic() {
+        let values: Vec<f64> = (1..=100).map(|i| i as f64).collect();
+        let stats = compute_distribution(&values);
+
+        assert!((stats.mean - 50.5).abs() < 0.01);
+        assert!((stats.median - 50.5).abs() < 0.01);
+        assert!((stats.min - 1.0).abs() < f64::EPSILON);
+        assert!((stats.max - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn percentile_of_sorted_interpolates() {
+        let sorted = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let p50 = percentile_of_sorted(&sorted, 50.0);
+        assert!((p50 - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn monte_carlo_runner_zero_runs_errors() {
+        let config = MonteCarloConfig {
+            num_runs: 0,
+            seed: Some(1),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        // Scenario doesn't matter — should fail before touching it.
+        let scenario = minimal_scenario();
+        let result = MonteCarloRunner::run(&config, &scenario);
+        assert!(result.is_err(), "zero runs should produce an error");
+        let err_msg = format!("{}", result.expect_err("just checked is_err"));
+        assert!(
+            err_msg.contains("num_runs"),
+            "error should mention num_runs, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn monte_carlo_runner_single_run() {
+        let config = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        let scenario = minimal_scenario();
+        let result = MonteCarloRunner::run(&config, &scenario).expect("single run should succeed");
+        assert_eq!(result.runs.len(), 1, "should have exactly 1 run");
+        assert_eq!(result.summary.total_runs, 1, "summary should report 1 run");
+        // The run should have a valid final tick > 0 or == max_ticks.
+        assert!(
+            result.runs[0].final_tick > 0,
+            "run should have progressed at least 1 tick"
+        );
+    }
+
+    #[test]
+    fn compute_summary_win_rates() {
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+        let runs = vec![
+            make_run(0, Some(f_gov.clone()), 10, 0.5),
+            make_run(1, Some(f_gov.clone()), 12, 0.6),
+            make_run(2, Some(f_rebel.clone()), 8, 0.4),
+            make_run(3, Some(f_gov.clone()), 15, 0.7),
+        ];
+        let scenario = minimal_scenario();
+        let summary = compute_summary(&runs, &scenario);
+
+        assert_eq!(summary.total_runs, 4);
+        let gov_rate = summary
+            .win_rates
+            .get(&f_gov)
+            .copied()
+            .expect("gov should have a win rate");
+        let rebel_rate = summary
+            .win_rates
+            .get(&f_rebel)
+            .copied()
+            .expect("rebel should have a win rate");
+        assert!(
+            (gov_rate - 0.75).abs() < f64::EPSILON,
+            "gov should win 75%, got {gov_rate}"
+        );
+        assert!(
+            (rebel_rate - 0.25).abs() < f64::EPSILON,
+            "rebel should win 25%, got {rebel_rate}"
+        );
+    }
+
+    #[test]
+    fn compute_summary_with_stalemates() {
+        let f_gov = FactionId::from("gov");
+        let runs = vec![
+            make_run(0, Some(f_gov.clone()), 10, 0.5),
+            make_run(1, None, 20, 0.8), // stalemate
+            make_run(2, None, 20, 0.9), // stalemate
+            make_run(3, Some(f_gov.clone()), 15, 0.6),
+        ];
+        let scenario = minimal_scenario();
+        let summary = compute_summary(&runs, &scenario);
+
+        assert_eq!(summary.total_runs, 4);
+        // Only gov wins — 2 out of 4.
+        let gov_rate = summary
+            .win_rates
+            .get(&f_gov)
+            .copied()
+            .expect("gov should have a win rate");
+        assert!(
+            (gov_rate - 0.5).abs() < f64::EPSILON,
+            "gov should win 50% with stalemates, got {gov_rate}"
+        );
+        // Stalemates have no victor, so no other faction in win_rates.
+        assert_eq!(
+            summary.win_rates.len(),
+            1,
+            "only one faction should appear in win_rates"
+        );
+    }
+
+    #[test]
+    fn percentile_edge_cases() {
+        let sorted = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let p0 = percentile_of_sorted(&sorted, 0.0);
+        let p100 = percentile_of_sorted(&sorted, 100.0);
+        assert!(
+            (p0 - 10.0).abs() < f64::EPSILON,
+            "0th percentile should be min, got {p0}"
+        );
+        assert!(
+            (p100 - 50.0).abs() < f64::EPSILON,
+            "100th percentile should be max, got {p100}"
+        );
+
+        // Single element.
+        let single = vec![7.0];
+        assert!(
+            (percentile_of_sorted(&single, 0.0) - 7.0).abs() < f64::EPSILON,
+            "0th percentile of single element"
+        );
+        assert!(
+            (percentile_of_sorted(&single, 100.0) - 7.0).abs() < f64::EPSILON,
+            "100th percentile of single element"
+        );
+
+        // Empty.
+        let empty: Vec<f64> = vec![];
+        assert!(
+            (percentile_of_sorted(&empty, 50.0) - 0.0).abs() < f64::EPSILON,
+            "percentile of empty should be 0.0"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test helpers
+    // -----------------------------------------------------------------------
+
+    use faultline_types::faction::{Faction, FactionType, ForceUnit, UnitType};
+    use faultline_types::ids::{ForceId, RegionId, VictoryId};
+    use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
+    use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+    use faultline_types::scenario::{Scenario, ScenarioMeta};
+    use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+    use faultline_types::victory::{VictoryCondition, VictoryType};
+
+    fn make_run(index: u32, victor: Option<FactionId>, ticks: u32, tension: f64) -> RunResult {
+        use faultline_types::stats::Outcome;
+        RunResult {
+            run_index: index,
+            seed: u64::from(index),
+            outcome: Outcome {
+                victor,
+                victory_condition: None,
+                final_tension: tension,
+            },
+            final_tick: ticks,
+            snapshots: vec![],
+        }
+    }
+
+    fn minimal_scenario() -> Scenario {
+        let r1 = RegionId::from("region-a");
+        let r2 = RegionId::from("region-b");
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            r1.clone(),
+            Region {
+                id: r1.clone(),
+                name: "Region A".into(),
+                population: 100_000,
+                urbanization: 0.5,
+                initial_control: Some(f_gov.clone()),
+                strategic_value: 5.0,
+                borders: vec![r2.clone()],
+                centroid: None,
+            },
+        );
+        regions.insert(
+            r2.clone(),
+            Region {
+                id: r2.clone(),
+                name: "Region B".into(),
+                population: 50_000,
+                urbanization: 0.3,
+                initial_control: Some(f_rebel.clone()),
+                strategic_value: 3.0,
+                borders: vec![r1.clone()],
+                centroid: None,
+            },
+        );
+
+        let mut factions = BTreeMap::new();
+        factions.insert(
+            f_gov.clone(),
+            make_faction(f_gov.clone(), "Government", r1.clone()),
+        );
+        factions.insert(
+            f_rebel.clone(),
+            make_faction(f_rebel.clone(), "Rebels", r2.clone()),
+        );
+
+        let mut victory_conditions = BTreeMap::new();
+        let vc_id = VictoryId::from("gov-win");
+        victory_conditions.insert(
+            vc_id.clone(),
+            VictoryCondition {
+                id: vc_id,
+                name: "Government Dominance".into(),
+                faction: f_gov,
+                condition: VictoryType::MilitaryDominance {
+                    enemy_strength_below: 0.01,
+                },
+            },
+        );
+
+        Scenario {
+            meta: ScenarioMeta {
+                name: "Test Scenario".into(),
+                description: "Minimal scenario for testing".into(),
+                author: "test".into(),
+                version: "0.1.0".into(),
+                tags: vec![],
+            },
+            map: MapConfig {
+                source: MapSource::Grid {
+                    width: 2,
+                    height: 1,
+                },
+                regions,
+                infrastructure: BTreeMap::new(),
+                terrain: vec![
+                    TerrainModifier {
+                        region: r1,
+                        terrain_type: TerrainType::Urban,
+                        movement_modifier: 1.0,
+                        defense_modifier: 1.0,
+                        visibility: 0.8,
+                    },
+                    TerrainModifier {
+                        region: r2,
+                        terrain_type: TerrainType::Rural,
+                        movement_modifier: 1.0,
+                        defense_modifier: 0.8,
+                        visibility: 0.9,
+                    },
+                ],
+            },
+            factions,
+            technology: BTreeMap::new(),
+            political_climate: PoliticalClimate {
+                tension: 0.5,
+                institutional_trust: 0.6,
+                media_landscape: MediaLandscape {
+                    fragmentation: 0.5,
+                    disinformation_susceptibility: 0.3,
+                    state_control: 0.4,
+                    social_media_penetration: 0.7,
+                    internet_availability: 0.8,
+                },
+                population_segments: vec![],
+                global_modifiers: vec![],
+            },
+            events: BTreeMap::new(),
+            simulation: SimulationConfig {
+                max_ticks: 10,
+                tick_duration: TickDuration::Days(1),
+                monte_carlo_runs: 1,
+                seed: Some(42),
+                fog_of_war: false,
+                attrition_model: AttritionModel::LanchesterLinear,
+                snapshot_interval: 0,
+            },
+            victory_conditions,
+        }
+    }
+
+    fn make_faction(id: FactionId, name: &str, region: RegionId) -> Faction {
+        let force_id = ForceId::from(format!("{}-inf", id));
+        let mut forces = BTreeMap::new();
+        forces.insert(
+            force_id.clone(),
+            ForceUnit {
+                id: force_id,
+                name: format!("{name} Infantry"),
+                unit_type: UnitType::Infantry,
+                region,
+                strength: 100.0,
+                mobility: 1.0,
+                force_projection: None,
+                upkeep: 1.0,
+                morale_modifier: 0.0,
+                capabilities: vec![],
+            },
+        );
+        Faction {
+            id,
+            name: name.into(),
+            faction_type: FactionType::Insurgent,
+            description: "Test faction".into(),
+            color: "#000000".into(),
+            forces,
+            tech_access: vec![],
+            initial_morale: 0.8,
+            logistics_capacity: 100.0,
+            initial_resources: 1000.0,
+            resource_rate: 10.0,
+            recruitment: None,
+            command_resilience: 0.5,
+            intelligence: 0.5,
+            diplomacy: vec![],
+        }
+    }
+}

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture — Faultline</title>
+  <meta name="description" content="Deep-dive into the Faultline simulation engine architecture: crate dependency graph, tick phases, combat model, faction AI, and technology cards.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>Faultline</span></a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="architecture.html" class="active">Architecture</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/AndrewAltimit/faultline" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs container">
+    <a href="index.html">Home</a> <span>/</span> Architecture
+  </div>
+
+  <!-- ── Page Header ─────────────────────────────────────────────── -->
+  <section class="page-header">
+    <div class="container">
+      <div class="section-label fade-in">Architecture</div>
+      <h1 class="fade-in">System Architecture</h1>
+      <p class="fade-in">A multi-crate Cargo workspace with strict dependency layering, a deterministic tick engine, and pluggable backends for CLI and WASM.</p>
+    </div>
+  </section>
+
+  <!-- ── Design Principles ──────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Design Principles</h2>
+      <div class="principle-grid">
+        <div class="principle-card fade-in">
+          <h3>Config-as-Input</h3>
+          <p>The scenario TOML is the product. Configs are human-readable, version-controllable, and designed to be shared and forked. The engine takes no position on what is likely — it enforces internal consistency and shows what the premises imply.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Deterministic Seeded RNG</h3>
+          <p>All stochastic choices use a ChaCha-based RNG seeded from the scenario config. Same seed + same config = identical output on native and WASM. Reproducibility is guaranteed so runs can be shared for inspection.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Monte Carlo First</h3>
+          <p>Single-run narrative replay is available for inspection, but the primary output is statistical. Thousands of runs produce probability distributions, time-to-outcome histograms, and sensitivity rankings.</p>
+        </div>
+        <div class="principle-card fade-in">
+          <h3>Dual Target: Native and WASM</h3>
+          <p>Pure simulation logic compiles to both <code>wasm32-unknown-unknown</code> (browser) and native targets (CLI). The CLI adds <code>rayon</code> for parallelism; WASM uses single-threaded async. Backends are isolated in their own crates.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Crate Dependency Graph ─────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Crate Dependency Graph</h2>
+      <p class="section-desc fade-in"><code>faultline-types</code> is the leaf crate with no internal deps. All domain crates depend only on types. The engine assembles all domain crates, and the two backends sit at the top.</p>
+      <div class="diagram-wrap fade-in">
+        <svg viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg" style="max-width: 820px;">
+          <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#7c5bf0"/>
+              <stop offset="100%" stop-color="#5b8cf0"/>
+            </linearGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="2" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#3f3f46"/>
+            </marker>
+          </defs>
+
+          <!-- faultline-types (leaf, bottom) -->
+          <rect x="310" y="360" width="200" height="48" rx="8" fill="none" stroke="url(#grad1)" stroke-width="2"/>
+          <text x="410" y="384" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="13" font-weight="600">faultline-types</text>
+          <text x="410" y="400" text-anchor="middle" fill="#71717a" font-family="JetBrains Mono, monospace" font-size="10">leaf crate · no internal deps</text>
+
+          <!-- Domain crates row -->
+          <rect x="30" y="240" width="160" height="44" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="110" y="260" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-geo</text>
+          <text x="110" y="276" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">geography · pathfinding</text>
+
+          <rect x="210" y="240" width="160" height="44" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="290" y="260" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-tech</text>
+          <text x="290" y="276" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">capability cards</text>
+
+          <rect x="390" y="240" width="160" height="44" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="470" y="260" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-politics</text>
+          <text x="470" y="276" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">loyalty · defection</text>
+
+          <rect x="570" y="240" width="160" height="44" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="650" y="260" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-events</text>
+          <text x="650" y="276" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">triggers · chains</text>
+
+          <!-- Arrows: domain crates -> types -->
+          <line x1="110" y1="284" x2="350" y2="358" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="290" y1="284" x2="380" y2="358" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="470" y1="284" x2="420" y2="358" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="650" y1="284" x2="460" y2="358" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <!-- faultline-engine (middle tier) -->
+          <rect x="270" y="140" width="200" height="48" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="370" y="162" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="13" font-weight="600">faultline-engine</text>
+          <text x="370" y="178" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">core tick loop · 9 phases</text>
+
+          <!-- Arrows: domain crates -> engine -->
+          <line x1="190" y1="240" x2="310" y2="188" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="290" y1="240" x2="340" y2="188" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="470" y1="240" x2="410" y2="188" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="630" y1="240" x2="430" y2="188" stroke="#3f3f46" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+          <!-- faultline-stats -->
+          <rect x="270" y="50" width="200" height="48" rx="8" fill="#16161a" stroke="#27272a" stroke-width="1.5"/>
+          <text x="370" y="70" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="13" font-weight="600">faultline-stats</text>
+          <text x="370" y="86" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">Monte Carlo runner · aggregation</text>
+
+          <!-- Arrow: engine -> stats -->
+          <line x1="370" y1="140" x2="370" y2="98" stroke="#5b8cf0" stroke-width="1.5" class="flow-line" filter="url(#glow)" marker-end="url(#arrow)"/>
+
+          <!-- Backend crates (top row) -->
+          <rect x="70" y="50" width="170" height="44" rx="8" fill="none" stroke="url(#grad1)" stroke-width="1.5"/>
+          <text x="155" y="70" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-backend-wasm</text>
+          <text x="155" y="86" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">browser UI · Canvas/WebGL</text>
+
+          <rect x="580" y="50" width="170" height="44" rx="8" fill="none" stroke="url(#grad1)" stroke-width="1.5"/>
+          <text x="665" y="70" text-anchor="middle" fill="#fff" font-family="Inter, sans-serif" font-size="12" font-weight="600">faultline-cli</text>
+          <text x="665" y="86" text-anchor="middle" fill="#a1a1aa" font-family="JetBrains Mono, monospace" font-size="10">headless batch runner</text>
+
+          <!-- Arrows: stats -> backends -->
+          <line x1="270" y1="74" x2="240" y2="74" stroke="#7c5bf0" stroke-width="1.2" marker-end="url(#arrow)"/>
+          <line x1="470" y1="74" x2="580" y2="74" stroke="#7c5bf0" stroke-width="1.2" marker-end="url(#arrow)"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Simulation Tick Loop ───────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Simulation Tick Loop</h2>
+      <p class="section-desc fade-in">Each simulated time step executes nine phases in order. All phases are deterministic given the same seeded RNG state.</p>
+      <div class="three-col fade-in" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 32px;">
+        <div class="card fade-in">
+          <div class="card-icon">1</div>
+          <h3>Event Phase</h3>
+          <p>Evaluate pending event triggers. Fire events whose conditions are satisfied. Apply immediate effects and enqueue chained events for future ticks.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">2</div>
+          <h3>Decision Phase</h3>
+          <p>Each faction AI runs a utility-based decision function. Evaluates strategic objectives, available orders, and current world state to select actions for this tick.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">3</div>
+          <h3>Movement Phase</h3>
+          <p>Execute ordered force movements. Pathfinding respects terrain movement modifiers, supply lines, and contested corridors. Forces may be intercepted before arriving.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">4</div>
+          <h3>Combat Phase</h3>
+          <p>Resolve engagements between opposing forces in the same region. Applies Lanchester attrition rates modified by terrain, tech cards, and force composition.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">5</div>
+          <h3>Attrition Phase</h3>
+          <p>Apply non-combat losses: supply shortfalls, morale decay, equipment degradation, and logistics strain. Forces out of supply degrade faster.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">6</div>
+          <h3>Political Phase</h3>
+          <p>Update political climate variables. Process loyalty shifts, defection probability rolls, and institutional support changes. Infrastructure state feeds into political stability.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">7</div>
+          <h3>Information Phase</h3>
+          <p>Update each faction's intelligence picture. Recon assets, signals intelligence, and cyber operations alter which forces and events are visible to each faction's decision model.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">8</div>
+          <h3>Victory Check</h3>
+          <p>Evaluate all victory conditions defined in the scenario config. A condition that is satisfied locks in the winning faction. The simulation halts when a terminal condition is met.</p>
+        </div>
+        <div class="card fade-in">
+          <div class="card-icon">9</div>
+          <h3>Snapshot</h3>
+          <p>Record the full world state for this tick. Snapshots are used to compute output statistics, generate narrative replays, and feed the WASM visualization layer.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Combat Model ───────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Combat Model</h2>
+      <p class="section-desc fade-in">Combat uses Lanchester's equations as the attrition substrate, with variant selection driven by scenario parameters.</p>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Lanchester Linear (Aimed Fire)</h3>
+          <p>For targeted engagements where each unit can select its own target — precision weapons, snipers, guided munitions. Loss rate is proportional to the product of force sizes.</p>
+          <pre><code>dA/dt = -β · B
+dB/dt = -α · A
+
+// A beats B when:
+α · A² &gt; β · B²</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>Lanchester Square (Area Fire)</h3>
+          <p>For mass attrition where firepower concentrates on an area — artillery, air strikes, suppression. Loss rate is proportional to opposing force size only.</p>
+          <pre><code>dA/dt = -β · B
+dB/dt = -α · A
+
+// A beats B when:
+α · A &gt; β · B</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>Modifiers Applied</h3>
+          <p>Raw Lanchester rates are multiplied by stacked modifiers drawn from the scenario config before each combat resolution. Modifiers are sampled from distributions, not point estimates.</p>
+          <div style="margin-top: 16px;">
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Terrain defense bonus</div>
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Urbanization penalty</div>
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Tech card effects</div>
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Morale multiplier</div>
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Supply status</div>
+            <div class="pill" style="margin: 4px 2px; display: inline-block;">Force quality rating</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Faction AI ─────────────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Faction AI &mdash; Utility-Based Decisions</h2>
+      <p class="section-desc fade-in">Each faction runs an independent utility-based decision model each tick. The AI scores all available actions and selects the highest-utility option with noise.</p>
+      <div class="three-col">
+        <div class="card fade-in">
+          <h3>Action Scoring</h3>
+          <p>Each possible action (advance, defend, hold, withdraw, request support) is evaluated against the faction's strategic objectives. Utility scores are weighted sums of expected regional control, supply security, and political costs.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Strategic Objectives</h3>
+          <p>Factions have objective hierarchies defined in the scenario config: primary objectives (must-hold regions), secondary objectives (desired control), and avoid conditions (collateral damage thresholds, political red lines).</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Information-Gated</h3>
+          <p>Faction AIs only see world state that their intelligence picture allows. Units in low-visibility terrain or covered by opposing EW/SIGINT cards may be unknown to the deciding faction, producing fog-of-war effects.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Technology Card System ─────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <h2 class="section-title fade-in">Technology Card System</h2>
+      <p class="section-desc fade-in">Technologies are named bundles of statistical modifiers. They capture capability without simulating hardware internals.</p>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>What a Card Contains</h3>
+          <p>Each <code>TechCard</code> specifies a named set of multiplier distributions applied to simulation parameters. A card for drone swarms might boost ISR visibility while increasing logistics cost; a C-UAS card counters airborne attack modifiers.</p>
+          <pre><code>// Simplified TechCard structure
+TechCard {
+  id: "drone_swarm_v2",
+  effects: [
+    { param: IsrVisibility, mult: Normal(1.4, 0.1) },
+    { param: AttackModifier, mult: Normal(1.2, 0.15) },
+    { param: LogisticsCost,  mult: Normal(1.1, 0.05) },
+  ]
+}</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>How Cards Apply</h3>
+          <p>Cards are assigned to factions in the scenario config. During simulation, the engine queries the tech system before each phase that uses a modifiable parameter. Each relevant card contributes a sampled multiplier that stacks multiplicatively.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Counter-Cards</h3>
+          <p>A card can specify <code>counters</code> fields that reference other card IDs. When an opposing faction holds a counter-card, the effect distributions are modified — reducing or negating the original card's advantages. This models technological competition without explicit hardware detail.</p>
+        </div>
+      </div>
+      <div class="table-wrap fade-in" style="margin-top: 40px;">
+        <table>
+          <thead>
+            <tr><th>Example Card</th><th>Affected Parameters</th><th>Typical Effect</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>drone_swarm</code></td><td>ISR visibility, air attack modifier</td><td>+20-40% recon coverage, +10-30% strike effectiveness</td></tr>
+            <tr><td><code>c_uas</code></td><td>Counters drone_swarm air attack</td><td>Reduces opposing drone attack modifier by 60-90%</td></tr>
+            <tr><td><code>ew_jamming</code></td><td>Communications, command latency</td><td>+1-3 tick decision delay for opponent factions</td></tr>
+            <tr><td><code>cyber_offense</code></td><td>Infrastructure operational status</td><td>Degrades target infra nodes by 10-40% per tick</td></tr>
+            <tr><td><code>sigint</code></td><td>Intelligence picture fidelity</td><td>Reveals low-visibility units to owning faction</td></tr>
+            <tr><td><code>precision_munitions</code></td><td>Combat variant selection</td><td>Shifts toward Linear (aimed fire) model</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Monte Carlo and Statistics ────────────────────────────── -->
+  <section>
+    <div class="container">
+      <h2 class="section-title fade-in">Monte Carlo and Statistical Output</h2>
+      <p class="section-desc fade-in">The <code>faultline-stats</code> crate wraps the engine and runs hundreds or thousands of independent simulations, then aggregates results into probability distributions.</p>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Outcome Probabilities</h3>
+          <p>For each defined victory condition, the runner reports the fraction of runs in which that condition was met. Provides direct probability estimates with confidence intervals across the run batch.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Time-to-Outcome</h3>
+          <p>For each terminal condition, the distribution of ticks elapsed before resolution. Reports median, mean, standard deviation, and percentile bands (10th, 25th, 75th, 90th).</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Sensitivity Analysis</h3>
+          <p>Pearson and Spearman correlations between input parameters and outcome measures. Identifies which scenario assumptions most strongly drive outcome variance — the key analytical output.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>Licensed under <strong>MIT OR Apache-2.0</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">github.com/AndrewAltimit/faultline</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>

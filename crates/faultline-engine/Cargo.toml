@@ -1,0 +1,29 @@
+[package]
+name = "faultline-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Core simulation engine for Faultline conflict simulation"
+
+[lints]
+workspace = true
+
+[dependencies]
+faultline-types = { workspace = true }
+faultline-geo = { workspace = true }
+faultline-tech = { workspace = true }
+faultline-politics = { workspace = true }
+faultline-events = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+rustc-hash = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+approx = { workspace = true }

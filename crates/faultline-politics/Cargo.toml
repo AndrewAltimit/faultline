@@ -1,0 +1,21 @@
+[package]
+name = "faultline-politics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Political climate, loyalty, and defection mechanics for Faultline simulation"
+
+[lints]
+workspace = true
+
+[dependencies]
+faultline-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

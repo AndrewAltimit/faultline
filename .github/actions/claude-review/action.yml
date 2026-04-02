@@ -1,0 +1,88 @@
+name: 'Claude Code AI Review'
+description: 'Run Claude Code AI code review on a pull request using a configurable review profile.'
+
+inputs:
+  pr_number:
+    description: 'PR number to review'
+    required: true
+  profile:
+    description: 'Review profile name (e.g., security, quality)'
+    required: true
+
+outputs:
+  review_status:
+    description: 'Status of the review'
+    value: ${{ steps.review.outputs.status }}
+  is_agent_commit:
+    description: 'Whether the last commit was by an agent'
+    value: ${{ steps.check-agent.outputs.is_agent_commit }}
+  review_artifact_name:
+    description: 'Name of the uploaded review artifact'
+    value: claude-${{ inputs.profile }}-review-${{ github.run_id }}-${{ github.run_attempt }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Log commit info
+      id: check-agent
+      shell: bash
+      run: |
+        LAST_COMMIT_AUTHOR=$(git log -1 --format='%an')
+        IS_AGENT_COMMIT="false"
+        if [[ "$LAST_COMMIT_AUTHOR" == "AI Review Agent" ]] || \
+           [[ "$LAST_COMMIT_AUTHOR" == "AI Pipeline Agent" ]] || \
+           [[ "$LAST_COMMIT_AUTHOR" == "AI Agent Bot" ]]; then
+          IS_AGENT_COMMIT="true"
+        fi
+        echo "is_agent_commit=$IS_AGENT_COMMIT" >> $GITHUB_OUTPUT
+
+    - name: Run Claude Code Review
+      id: review
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr_number }}
+        REVIEW_PROFILE: ${{ inputs.profile }}
+      run: |
+        if ! command -v github-agents &>/dev/null; then
+          echo "::warning::github-agents not found on PATH - skipping Claude review"
+          echo "status=skipped" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        ARGS=(pr-review "$PR_NUMBER" --profile "$REVIEW_PROFILE")
+        set +e
+        OUTPUT=$(github-agents "${ARGS[@]}" 2>&1)
+        EXIT_CODE=$?
+        set -e
+        echo "$OUTPUT"
+        echo "$OUTPUT" > claude-${REVIEW_PROFILE}-review.md
+        if [ $EXIT_CODE -ne 0 ]; then
+          if grep -qiE '429|rate.?limit|quota|resource.?exhausted|usage.?limit' <<< "$OUTPUT"; then
+            echo "::warning::Claude API rate limit hit - skipping"
+            echo "status=rate_limited" >> $GITHUB_OUTPUT
+            exit 0
+          elif grep -qiE '503|502|service.?unavailable|ECONNREFUSED|ETIMEDOUT' <<< "$OUTPUT"; then
+            echo "::warning::Claude API unavailable - skipping"
+            echo "status=unavailable" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            exit $EXIT_CODE
+          fi
+        fi
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload review artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: claude-${{ inputs.profile }}-review-${{ github.run_id }}-${{ github.run_attempt }}
+        path: claude-${{ inputs.profile }}-review.md
+        retention-days: 7
+        if-no-files-found: ignore
+
+    - name: Clean up
+      if: always()
+      shell: bash
+      run: |
+        git checkout -- . 2>/dev/null || true
+        git clean -fd 2>/dev/null || true

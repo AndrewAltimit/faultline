@@ -1,0 +1,155 @@
+---
+name: Main CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: main-ci-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # -- CI Stages (containerized) -------------------------------------------
+  ci:
+    name: Faultline CI
+    runs-on: self-hosted
+    timeout-minutes: 30
+    steps:
+      - name: Pre-checkout cleanup
+        run: |
+          docker run --rm -v "$(pwd):/workspace" busybox:1.36.1 sh -c \
+            "rm -rf /workspace/outputs /workspace/.git/index.lock" 2>/dev/null || \
+            sudo rm -rf outputs .git/index.lock 2>/dev/null || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+
+      - name: Set UID/GID
+        run: |
+          echo "USER_ID=$(id -u)" >> $GITHUB_ENV
+          echo "GROUP_ID=$(id -g)" >> $GITHUB_ENV
+
+      # -- Formatting -------------------------------------------------------
+      - name: Format check
+        run: docker compose --profile ci run --rm rust-ci cargo fmt --all -- --check
+
+      # -- Linting -----------------------------------------------------------
+      - name: Clippy
+        run: docker compose --profile ci run --rm rust-ci cargo clippy --all-targets -- -D warnings
+
+      # -- Tests -------------------------------------------------------------
+      - name: Test
+        run: docker compose --profile ci run --rm rust-ci cargo test -- --test-threads=4
+
+      # -- Build -------------------------------------------------------------
+      - name: Build
+        run: docker compose --profile ci run --rm rust-ci cargo build --release
+
+      # -- License / Advisory ------------------------------------------------
+      - name: cargo-deny
+        run: docker compose --profile ci run --rm rust-ci cargo deny check
+
+      - name: Fix Docker file ownership
+        if: always()
+        run: |
+          for dir in target outputs; do
+            if [ -d "$dir" ]; then
+              docker run --rm -v "$(pwd)/$dir:/workspace" busybox:1.36.1 \
+                chown -Rh "$(id -u):$(id -g)" /workspace 2>/dev/null || true
+            fi
+          done
+
+  # -- Deploy GitHub Pages --------------------------------------------------
+  deploy-pages:
+    name: Deploy GitHub Pages
+    needs: [ci]
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack &>/dev/null; then
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          fi
+
+      - name: Build WASM
+        run: |
+          wasm-pack build crates/faultline-backend-wasm \
+            --target web \
+            --out-dir ../../site/pkg \
+            --no-typescript
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # -- CI Summary ----------------------------------------------------------
+  notify:
+    name: CI Summary
+    needs: [ci, deploy-pages]
+    if: always()
+    runs-on: self-hosted
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Main CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ${{ needs.ci.result == 'success' && 'pass' || needs.ci.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Pages | ${{ needs.deploy-pages.result == 'success' && 'pass' || needs.deploy-pages.result == 'skipped' && 'skipped' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "CI failed - please review the logs" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Create issue on failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Main CI Failed: $(date +%Y-%m-%d)" \
+            --body "$(cat <<'ISSUE_EOF'
+          ## CI Failure Report
+
+          **Commit**: ${{ github.sha }}
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Please investigate and fix the issues.
+          ISSUE_EOF
+          )" \
+            --label "ci-failure,automated" || echo "::warning::Could not create failure issue"

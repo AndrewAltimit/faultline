@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faultline — A What-If Engine for Conflict Simulation</title>
+  <meta name="description" content="A what-if engine for conflict simulation. Supply TOML scenario configs and run deterministic Monte Carlo simulations producing probability distributions of outcomes.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>Faultline</span></a>
+      <div class="nav-links">
+        <a href="index.html" class="active">Home</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="docs.html">Docs</a>
+        <a href="https://github.com/AndrewAltimit/faultline" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Hero ────────────────────────────────────────────────────── -->
+  <section class="hero animated-gradient">
+    <div class="container hero-content">
+      <h1 class="fade-in"><span class="gradient">Faultline</span></h1>
+      <p class="hero-tagline fade-in">A what-if engine for conflict simulation.</p>
+      <div class="hero-ctas fade-in">
+        <a href="architecture.html" class="btn btn-primary">Explore Architecture</a>
+        <a href="https://github.com/AndrewAltimit/faultline" class="btn btn-secondary" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Stats Strip ─────────────────────────────────────────────── -->
+  <section class="stats-strip">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="stat-card fade-in">
+          <div class="stat-value">9</div>
+          <div class="stat-label">Workspace Crates</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">9</div>
+          <div class="stat-label">Simulation Tick Phases</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">TOML</div>
+          <div class="stat-label">Config Format</div>
+        </div>
+        <div class="stat-card fade-in">
+          <div class="stat-value">WASM</div>
+          <div class="stat-label">Browser Target</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Design Philosophy ───────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <div class="section-label fade-in">Philosophy</div>
+      <h2 class="section-title fade-in">What is Faultline?</h2>
+      <div class="section-desc fade-in">
+        <p>Supply scenario configurations &mdash; factions, force compositions, tech modifiers, political climates, geographic constraints &mdash; and the engine simulates the logical consequences of those premises across many runs, producing probability distributions of outcomes. Faultline is not a predictive model. It is a tool for exploring the consequence space of user-defined assumptions.</p>
+      </div>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Config-as-Input</h3>
+          <p>Scenarios are declarative TOML files: shareable, forkable, diffable. Post a <code>.toml</code> on GitHub, change one assumption and compare distributions, <code>git diff</code> two scenarios to see exactly which premises diverge.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Monte Carlo First</h3>
+          <p>A single run is a story. Thousands of runs with the same config produce a distribution. All outputs are statistical: outcome probabilities, time-to-outcome distributions, and sensitivity analysis showing which inputs drive the most variance.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Technology Cards</h3>
+          <p>Technologies (drone swarms, C-UAS, EW, cyber, SIGINT) are modeled as named bundles of statistical effects. This avoids simulating individual hardware protocols while preserving the ability to model how capabilities shift outcomes.</p>
+        </div>
+        <div class="card fade-in">
+          <h3>Deterministic</h3>
+          <p>Same config plus the same seed produces identical output on native and WASM targets. Reproducibility is guaranteed: share a seed alongside a scenario to share an exact run for inspection or debugging.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Crate Overview ──────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container">
+      <div class="section-label fade-in">Workspace</div>
+      <h2 class="section-title fade-in">Nine Crates, One Engine</h2>
+      <p class="section-desc fade-in">A multi-crate Cargo workspace with strict dependency layering. Leaf crates carry no internal deps; the engine assembles them all.</p>
+      <div class="table-wrap fade-in">
+        <table>
+          <thead>
+            <tr><th>Crate</th><th>Purpose</th><th>Key Dependencies</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>faultline-types</code></td>
+              <td>Shared data structures, zero logic &mdash; the lingua franca of the workspace</td>
+              <td>serde, toml (leaf crate)</td>
+            </tr>
+            <tr>
+              <td><code>faultline-geo</code></td>
+              <td>Geography, map loading, pathfinding, terrain modifiers</td>
+              <td>types, geo, geojson</td>
+            </tr>
+            <tr>
+              <td><code>faultline-tech</code></td>
+              <td>Technology capability card system; applies statistical modifiers to simulation parameters</td>
+              <td>types</td>
+            </tr>
+            <tr>
+              <td><code>faultline-politics</code></td>
+              <td>Political climate modeling, institutional loyalty, defection probability</td>
+              <td>types</td>
+            </tr>
+            <tr>
+              <td><code>faultline-events</code></td>
+              <td>Event system: triggers, effects, chains, and conditional branching</td>
+              <td>types</td>
+            </tr>
+            <tr>
+              <td><code>faultline-engine</code></td>
+              <td>Core simulation loop; assembles all domain crates and runs tick phases</td>
+              <td>types, geo, tech, politics, events</td>
+            </tr>
+            <tr>
+              <td><code>faultline-stats</code></td>
+              <td>Monte Carlo runner, statistical aggregation, sensitivity analysis, JSON/CSV output</td>
+              <td>engine, types, rayon, statrs</td>
+            </tr>
+            <tr>
+              <td><code>faultline-backend-wasm</code></td>
+              <td>Browser UI: Canvas/WebGL scenario editor and outcome visualization</td>
+              <td>engine, stats, types, wasm-bindgen</td>
+            </tr>
+            <tr>
+              <td><code>faultline-cli</code></td>
+              <td>Headless batch runner for Monte Carlo evaluation; JSON and CSV output</td>
+              <td>engine, stats, types, clap</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Quick Start ─────────────────────────────────────────────── -->
+  <section>
+    <div class="container">
+      <div class="section-label fade-in">Quick Start</div>
+      <h2 class="section-title fade-in">Run Your First Simulation</h2>
+      <p class="section-desc fade-in">Install the CLI, point it at a scenario, and get a probability distribution in seconds.</p>
+      <div class="card-grid">
+        <div class="card fade-in">
+          <h3>Build</h3>
+          <pre><code># Clone and build the CLI
+git clone https://github.com/AndrewAltimit/faultline
+cd faultline
+cargo build --release</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>Run Monte Carlo</h3>
+          <pre><code># Run 1000 simulations on the tutorial scenario
+faultline run \
+  --scenario scenarios/tutorial_symmetric.toml \
+  --runs 1000 \
+  --output results.json</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>Reproduce a Run</h3>
+          <pre><code># Pin a seed for deterministic replay
+faultline run \
+  --scenario scenarios/tutorial_asymmetric.toml \
+  --runs 1 \
+  --seed 42 \
+  --output replay.json</code></pre>
+        </div>
+        <div class="card fade-in">
+          <h3>Validate a Scenario</h3>
+          <pre><code># Validate config without running
+faultline validate \
+  --scenario my_scenario.toml</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Tech Stack ──────────────────────────────────────────────── -->
+  <section style="background: var(--bg-raised);">
+    <div class="container text-center">
+      <div class="section-label fade-in">Technology</div>
+      <h2 class="section-title fade-in">Built With</h2>
+      <div class="pills-wrap mt-4 fade-in">
+        <span class="pill">Rust 2024</span>
+        <span class="pill">wasm-bindgen</span>
+        <span class="pill">serde + toml</span>
+        <span class="pill">rand-chacha</span>
+        <span class="pill">statrs</span>
+        <span class="pill">nalgebra</span>
+        <span class="pill">rayon</span>
+        <span class="pill">clap</span>
+        <span class="pill">proptest</span>
+        <span class="pill">criterion</span>
+        <span class="pill">geo</span>
+        <span class="pill">tracing</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <p>Licensed under <strong>MIT OR Apache-2.0</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">github.com/AndrewAltimit/faultline</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+  <script type="module">
+    // Load the WASM engine (built by wasm-pack, deployed to pkg/)
+    try {
+      const { default: init, init as faultlineInit } = await import('./pkg/faultline_backend_wasm.js');
+      await init();
+      console.log('Faultline WASM engine loaded');
+    } catch (e) {
+      // WASM not yet built or not available — static site still works
+      console.debug('WASM module not available:', e.message);
+    }
+  </script>
+</body>
+</html>
