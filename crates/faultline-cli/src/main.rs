@@ -301,7 +301,7 @@ fn write_csv_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
             .map_or("none".to_string(), |v| v.to_string());
         let vc = run.outcome.victory_condition.as_deref().unwrap_or("none");
         lines.push(format!(
-            "{},{},{},{},{},{}",
+            "{},{},\"{}\",\"{}\",{},{}",
             run.run_index, run.seed, victor, vc, run.final_tick, run.outcome.final_tension,
         ));
     }
