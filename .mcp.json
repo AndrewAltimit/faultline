@@ -1,0 +1,89 @@
+{
+  "mcpServers": {
+    "code-quality": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-code-quality",
+        "mcp-code-quality",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "content-creation": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-content-creation",
+        "mcp-content-creation",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "opencode": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-opencode",
+        "mcp-opencode",
+        "--mode",
+        "stdio"
+      ]
+    },
+    "_codex_DISABLED_SECURITY_RISK": {
+      "command": "echo",
+      "args": [
+        "DISABLED: OpenAI Codex is phased out due to security concerns (mass surveillance, autonomous weapons). See README.md. Use Anthropic models instead."
+      ]
+    },
+    "_gemini_DISABLED_SECURITY_RISK": {
+      "command": "echo",
+      "args": [
+        "DISABLED: Google Gemini is phased out due to security concerns (government surveillance partnerships). Use Anthropic models instead."
+      ]
+    },
+    "github-board": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "./docker-compose.yml",
+        "--profile",
+        "services",
+        "run",
+        "--rm",
+        "-T",
+        "mcp-github-board",
+        "mcp-github-board",
+        "--mode",
+        "stdio"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "GITHUB_REPOSITORY": "${GITHUB_REPOSITORY}",
+        "GITHUB_PROJECT_NUMBER": "1"
+      }
+    }
+  }
+}

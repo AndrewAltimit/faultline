@@ -1,0 +1,76 @@
+services:
+  # -- CI Services --------------------------------------------------------
+  rust-ci:
+    build:
+      context: .
+      dockerfile: docker/rust-ci.Dockerfile
+    user: "${USER_ID:-1000}:${GROUP_ID:-1000}"
+    volumes:
+      - .:/app
+      - cargo-registry-cache:/tmp/cargo
+    environment:
+      - CARGO_HOME=/tmp/cargo
+      - RUSTUP_HOME=/usr/local/rustup
+      - CARGO_INCREMENTAL=1
+      - CI=true
+    working_dir: /app
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    profiles:
+      - ci
+
+  # -- Agent MCP Services -------------------------------------------------
+  # These services use pre-built Docker images from the tools repository.
+  # Images follow the naming convention: faultline-mcp-<name>:latest
+
+  mcp-code-quality:
+    image: faultline-mcp-code-quality:latest
+    volumes:
+      - ./:/app:ro
+      - /tmp:/tmp
+    environment:
+      - RUST_LOG=info
+      - MCP_CODE_QUALITY_ALLOWED_PATHS=/app,/workspace,/home
+    profiles:
+      - services
+
+  mcp-content-creation:
+    image: faultline-mcp-content-creation:latest
+    volumes:
+      - ./outputs/mcp-content:/output
+      - .:/app:ro
+    environment:
+      - RUST_LOG=info
+      - MCP_OUTPUT_DIR=/output
+      - MCP_PROJECT_ROOT=/app
+      - MCP_HOST_PROJECT_ROOT=${PWD}
+    profiles:
+      - services
+
+  mcp-opencode:
+    image: faultline-mcp-opencode:latest
+    volumes:
+      - ./:/app:ro
+    environment:
+      - PORT=8014
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENCODE_ENABLED=${OPENCODE_ENABLED:-true}
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-qwen/qwen-2.5-coder-32b-instruct}
+    profiles:
+      - services
+
+  mcp-github-board:
+    image: faultline-mcp-github-board:latest
+    volumes:
+      - ./:/app:ro
+    environment:
+      - RUST_LOG=info
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPOSITORY=${GITHUB_REPOSITORY}
+      - GITHUB_PROJECT_NUMBER=${GITHUB_PROJECT_NUMBER:-1}
+    profiles:
+      - services
+
+volumes:
+  cargo-registry-cache:

@@ -1,0 +1,54 @@
+# Pre-commit hooks for faultline
+# Run manually: pre-commit run --all-files
+# Install hooks: pre-commit install
+
+repos:
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+        exclude: '^Cargo\.lock$'
+      - id: check-json
+      - id: pretty-format-json
+        args: [--autofix, --no-sort-keys]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # GitHub Actions workflow linting
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.10
+    hooks:
+      - id: actionlint
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        types: [shell]
+        args: [-x]
+
+  # Rust formatting and linting (local, no Docker rebuild)
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: Rust format check
+        entry: cargo fmt --all -- --check
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+
+      - id: rust-clippy
+        name: Rust clippy lint
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        files: '\.rs$'
+        pass_filenames: false

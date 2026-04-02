@@ -1,0 +1,21 @@
+[package]
+name = "faultline-events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Event system (triggers, effects, chains) for Faultline simulation"
+
+[lints]
+workspace = true
+
+[dependencies]
+faultline-types = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

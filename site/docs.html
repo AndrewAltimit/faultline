@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — Faultline</title>
+  <meta name="description" content="Faultline documentation: scenario schema reference, CLI flags, WASM API, and links to the GitHub README.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- ── Navigation ──────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>Faultline</span></a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="docs.html" class="active">Docs</a>
+        <a href="https://github.com/AndrewAltimit/faultline" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="docs.html">Docs</a>
+    <a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs container">
+    <a href="index.html">Home</a> <span>/</span> Documentation
+  </div>
+
+  <!-- ── Docs Layout ─────────────────────────────────────────────── -->
+  <div class="container">
+    <div class="docs-layout">
+
+      <!-- ── Sidebar TOC ───────────────────────────────────────────── -->
+      <aside class="toc">
+        <h4>Scenario Schema</h4>
+        <a href="#scenario">Scenario</a>
+        <a href="#faction">Faction</a>
+        <a href="#techcard">TechCard</a>
+        <a href="#political">PoliticalClimate</a>
+        <a href="#events">EventDefinition</a>
+        <a href="#victory">VictoryCondition</a>
+        <h4>Interfaces</h4>
+        <a href="#cli">CLI Reference</a>
+        <a href="#wasm">WASM API</a>
+        <h4>More</h4>
+        <a href="#ci-cd">CI/CD Pipeline</a>
+        <a href="#github">GitHub README</a>
+      </aside>
+
+      <!-- ── Content ─────────────────────────────────────────────── -->
+      <main class="docs-content">
+
+        <!-- Scenario -->
+        <section id="scenario" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>Scenario</h2>
+          <p>The root type. A single <code>.toml</code> file maps to one <code>Scenario</code>. All fields are required unless marked optional.</p>
+
+          <pre><code>pub struct Scenario {
+    pub meta:               ScenarioMeta,
+    pub map:                MapConfig,
+    pub factions:           Vec&lt;Faction&gt;,
+    pub technology:         Vec&lt;TechCard&gt;,
+    pub political_climate:  PoliticalClimate,
+    pub events:             Vec&lt;EventDefinition&gt;,
+    pub simulation:         SimulationConfig,
+    pub victory_conditions: Vec&lt;VictoryCondition&gt;,
+}
+
+pub struct ScenarioMeta {
+    pub name:        String,
+    pub description: String,
+    pub author:      String,
+    pub version:     String,
+    /// Freeform tags: "us", "institutional", "2027", "asymmetric"
+    pub tags:        Vec&lt;String&gt;,
+}</code></pre>
+
+          <h3>SimulationConfig</h3>
+          <pre><code>pub struct SimulationConfig {
+    /// Maximum number of ticks before the simulation is declared inconclusive.
+    pub max_ticks:     u32,
+    /// RNG seed. Omit to use a random seed (stored in output for reproducibility).
+    pub seed:          Option&lt;u64&gt;,
+    /// Number of Monte Carlo runs (CLI default: 1000, WASM default: 100).
+    pub runs:          u32,
+    /// Time resolution: how many real-world hours each tick represents.
+    pub hours_per_tick: f64,
+}</code></pre>
+
+          <h3>TOML Example</h3>
+          <pre><code>[meta]
+name        = "Tutorial: Symmetric Forces"
+description = "Two equal forces on flat terrain. Baseline reference scenario."
+author      = "AndrewAltimit"
+version     = "1.0.0"
+tags        = ["tutorial", "symmetric"]
+
+[simulation]
+max_ticks    = 720   # 30 days at 1 hour/tick
+seed         = 1337
+runs         = 1000
+hours_per_tick = 1.0</code></pre>
+        </section>
+
+        <!-- Faction -->
+        <section id="faction" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>Faction</h2>
+          <p>Represents one belligerent actor. A scenario must have at least two factions.</p>
+
+          <pre><code>pub struct Faction {
+    pub id:             FactionId,      // unique string slug
+    pub name:           String,
+    pub faction_type:   FactionType,
+    pub forces:         Vec&lt;ForceUnit&gt;,
+    pub objectives:     Vec&lt;Objective&gt;,
+    pub tech_cards:     Vec&lt;TechCardId&gt;, // references TechCard.id
+    pub supply_sources: Vec&lt;RegionId&gt;,
+    pub morale:         f64,            // 0.0–1.0
+    pub cohesion:       f64,            // 0.0–1.0
+    pub ai_profile:     AiProfile,
+}
+
+pub enum FactionType {
+    ConventionalMilitary,
+    Paramilitary,
+    Insurgent,
+    StateInstitution, // law enforcement, national guard
+    ExternalActor,    // foreign state support
+}
+
+pub struct ForceUnit {
+    pub id:           UnitId,
+    pub name:         String,
+    pub unit_type:    UnitType,
+    pub strength:     f64,      // abstract combat power (1.0 = baseline company)
+    pub quality:      f64,      // training/equipment multiplier (0.5–2.0)
+    pub location:     RegionId,
+    pub supply_level: f64,      // 0.0–1.0
+}</code></pre>
+
+          <h3>TOML Example</h3>
+          <pre><code>[[factions]]
+id           = "blue_force"
+name         = "Federal Forces"
+faction_type = "ConventionalMilitary"
+morale       = 0.75
+cohesion     = 0.80
+tech_cards   = ["drone_swarm", "sigint"]
+supply_sources = ["region_dc", "region_norfolk"]
+
+[[factions.forces]]
+id         = "1st_brigade"
+name       = "1st Brigade Combat Team"
+unit_type  = "Infantry"
+strength   = 3.0
+quality    = 1.2
+location   = "region_northern_virginia"
+supply_level = 1.0</code></pre>
+        </section>
+
+        <!-- TechCard -->
+        <section id="techcard" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>TechCard</h2>
+          <p>A named bundle of statistical modifiers. Assigned to factions via <code>faction.tech_cards</code>. Effects stack multiplicatively when multiple cards apply to the same parameter.</p>
+
+          <pre><code>pub struct TechCard {
+    pub id:          TechCardId,
+    pub name:        String,
+    pub description: String,
+    pub effects:     Vec&lt;TechEffect&gt;,
+    /// Card IDs this card partially or fully counters.
+    pub counters:    Vec&lt;CounterSpec&gt;,
+}
+
+pub struct TechEffect {
+    /// Which simulation parameter this effect modifies.
+    pub parameter:    TechParameter,
+    /// Multiplicative modifier sampled each application.
+    /// Expressed as a statistical distribution.
+    pub multiplier:   EffectDistribution,
+    /// Which phase(s) this effect applies in (None = all phases).
+    pub phases:       Option&lt;Vec&lt;TickPhase&gt;&gt;,
+}
+
+pub enum EffectDistribution {
+    /// Fixed scalar (no variance).
+    Fixed(f64),
+    /// Normal distribution: mean, std_dev.
+    Normal { mean: f64, std_dev: f64 },
+    /// Uniform distribution: low, high.
+    Uniform { low: f64, high: f64 },
+    /// Beta distribution (bounded 0–1, then scaled).
+    Beta { alpha: f64, beta: f64, scale: f64 },
+}</code></pre>
+
+          <h3>TOML Example</h3>
+          <pre><code>[[technology]]
+id          = "drone_swarm"
+name        = "Drone Swarm (Gen 3)"
+description = "Autonomous aerial ISR and strike drones operating in coordinated mesh."
+
+[[technology.effects]]
+parameter  = "IsrVisibility"
+multiplier = { Normal = { mean = 1.35, std_dev = 0.10 } }
+
+[[technology.effects]]
+parameter  = "AirAttackModifier"
+multiplier = { Normal = { mean = 1.25, std_dev = 0.15 } }
+phases     = ["Combat"]
+
+[[technology.counters]]
+card       = "c_uas"
+reduces_to = { Uniform = { low = 0.15, high = 0.45 } }</code></pre>
+        </section>
+
+        <!-- PoliticalClimate -->
+        <section id="political" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>PoliticalClimate</h2>
+          <p>Defines the initial political environment and per-faction institutional relationships. Drives defection probability and loyalty shift events in the political tick phase.</p>
+
+          <pre><code>pub struct PoliticalClimate {
+    /// Global instability index (0.0 = stable, 1.0 = maximal chaos).
+    pub instability:           f64,
+    /// Per-faction institutional loyalty ratings.
+    pub loyalties:             Vec&lt;InstitutionalLoyalty&gt;,
+    /// Population sentiment per region.
+    pub population_sentiment:  Vec&lt;RegionSentiment&gt;,
+    /// External actor influence per faction.
+    pub external_support:      Vec&lt;ExternalSupport&gt;,
+}
+
+pub struct InstitutionalLoyalty {
+    pub faction_id:       FactionId,
+    /// Which institutions currently back this faction (military branches,
+    /// law enforcement, intelligence community, judiciary, etc.).
+    pub institutions:     Vec&lt;InstitutionLoyaltyEntry&gt;,
+    /// Base defection probability per tick (modified by instability and events).
+    pub defection_rate:   f64,
+}</code></pre>
+        </section>
+
+        <!-- EventDefinition -->
+        <section id="events" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>EventDefinition</h2>
+          <p>Conditional events that fire when triggers are satisfied. Events can have immediate effects, modify scenario parameters, or enqueue chained events.</p>
+
+          <pre><code>pub struct EventDefinition {
+    pub id:          EventId,
+    pub name:        String,
+    pub description: String,
+    pub trigger:     EventTrigger,
+    pub effects:     Vec&lt;EventEffect&gt;,
+    /// Probability the event fires when the trigger is satisfied (default 1.0).
+    pub probability: f64,
+    /// Whether the event can fire more than once.
+    pub repeatable:  bool,
+}
+
+pub enum EventTrigger {
+    /// Fires at a specific tick number.
+    Tick(u32),
+    /// Fires when a faction's control of a region reaches a threshold.
+    RegionControl { region: RegionId, faction: FactionId, threshold: f64 },
+    /// Fires when a faction's morale drops below a threshold.
+    MoraleBelow { faction: FactionId, threshold: f64 },
+    /// Fires when an infrastructure node drops below an operational threshold.
+    InfrastructureDegraded { node: InfraId, below: f64 },
+    /// Compound trigger: all sub-triggers must be true.
+    All(Vec&lt;EventTrigger&gt;),
+    /// Compound trigger: any sub-trigger must be true.
+    Any(Vec&lt;EventTrigger&gt;),
+}</code></pre>
+        </section>
+
+        <!-- VictoryCondition -->
+        <section id="victory" class="docs-section">
+          <div class="section-label">Scenario Schema</div>
+          <h2>VictoryCondition</h2>
+          <p>Terminal conditions that end the simulation. The first condition satisfied in a run determines that run's outcome. Multiple conditions allow modeling negotiated settlements, stalemates, and unconditional wins.</p>
+
+          <pre><code>pub struct VictoryCondition {
+    pub id:          VictoryId,
+    pub name:        String,
+    pub winner:      Option&lt;FactionId&gt;, // None = inconclusive / stalemate
+    pub condition:   VictoryCheck,
+}
+
+pub enum VictoryCheck {
+    /// Faction controls at least `min_fraction` of total strategic value.
+    StrategicControl { faction: FactionId, min_fraction: f64 },
+    /// Opposing faction's combined strength drops below threshold.
+    ForceElimination { faction: FactionId, below: f64 },
+    /// A specific region is held continuously for N ticks.
+    RegionHeld { region: RegionId, faction: FactionId, ticks: u32 },
+    /// All of the sub-conditions are met.
+    All(Vec&lt;VictoryCheck&gt;),
+    /// Any of the sub-conditions are met.
+    Any(Vec&lt;VictoryCheck&gt;),
+}</code></pre>
+        </section>
+
+        <!-- CLI Reference -->
+        <section id="cli" class="docs-section">
+          <div class="section-label">Interfaces</div>
+          <h2>CLI Reference</h2>
+          <p>The <code>faultline-cli</code> crate builds a headless binary for batch Monte Carlo evaluation. All flags are available via <code>faultline --help</code>.</p>
+
+          <h3>Subcommands</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Subcommand</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td><code>run</code></td><td>Execute Monte Carlo simulation batch and write results</td></tr>
+                <tr><td><code>validate</code></td><td>Parse and validate a scenario file without running</td></tr>
+                <tr><td><code>inspect</code></td><td>Pretty-print a parsed scenario as JSON for debugging</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>faultline run</h3>
+          <pre><code>faultline run [OPTIONS] --scenario &lt;PATH&gt;
+
+OPTIONS:
+  -s, --scenario &lt;PATH&gt;     Path to the scenario TOML file [required]
+  -r, --runs &lt;N&gt;            Number of Monte Carlo runs [default: 1000]
+      --seed &lt;SEED&gt;         Fixed RNG seed for deterministic output
+  -o, --output &lt;PATH&gt;       Output file path [default: stdout]
+      --format &lt;FMT&gt;        Output format: json | csv [default: json]
+      --threads &lt;N&gt;         Parallel worker threads [default: num_cpus]
+      --verbose             Emit per-tick trace logs (very noisy)
+  -h, --help                Print help</code></pre>
+
+          <h3>faultline validate</h3>
+          <pre><code>faultline validate --scenario &lt;PATH&gt;
+
+OPTIONS:
+  -s, --scenario &lt;PATH&gt;     Path to the scenario TOML file [required]
+      --strict              Treat warnings as errors
+  -h, --help                Print help</code></pre>
+
+          <h3>Output Format (JSON)</h3>
+          <pre><code>{
+  "scenario":    "Tutorial: Symmetric Forces",
+  "runs":        1000,
+  "seed":        1337,
+  "outcomes": [
+    {
+      "condition_id":  "blue_wins",
+      "probability":   0.612,
+      "ci_95":         [0.581, 0.643],
+      "median_ticks":  218,
+      "p10_ticks":     140,
+      "p90_ticks":     380
+    }
+  ],
+  "sensitivity": [
+    { "parameter": "blue_force.morale",  "spearman_rho": 0.41 },
+    { "parameter": "tech.drone_swarm",   "spearman_rho": 0.28 }
+  ]
+}</code></pre>
+        </section>
+
+        <!-- WASM API -->
+        <section id="wasm" class="docs-section">
+          <div class="section-label">Interfaces</div>
+          <h2>WASM API</h2>
+          <p>The <code>faultline-backend-wasm</code> crate exposes a JavaScript API via <code>wasm-bindgen</code>. All functions are async-compatible and work in a browser <code>Worker</code> context for non-blocking execution.</p>
+
+          <h3>load_scenario</h3>
+          <pre><code>/**
+ * Parse and validate a TOML scenario string.
+ * Returns a ScenarioHandle (opaque token) on success.
+ * Throws a string error message on parse or validation failure.
+ */
+async function load_scenario(toml_string: string): Promise&lt;ScenarioHandle&gt;</code></pre>
+
+          <h3>validate</h3>
+          <pre><code>/**
+ * Validate a TOML scenario string without creating a handle.
+ * Returns a ValidationResult with ok: bool and errors: string[].
+ */
+function validate(toml_string: string): ValidationResult
+
+interface ValidationResult {
+  ok:      boolean;
+  errors:  string[];
+  warnings: string[];
+}</code></pre>
+
+          <h3>run_single</h3>
+          <pre><code>/**
+ * Execute a single simulation run on the given handle.
+ * Returns a full tick-by-tick snapshot array for replay/visualization.
+ * seed is optional; omit for random.
+ */
+async function run_single(
+  handle: ScenarioHandle,
+  seed?: bigint
+): Promise&lt;RunResult&gt;
+
+interface RunResult {
+  seed:       bigint;
+  ticks:      TickSnapshot[];
+  outcome:    string | null;  // winning condition id, or null if inconclusive
+  ticks_elapsed: number;
+}</code></pre>
+
+          <h3>run_batch</h3>
+          <pre><code>/**
+ * Run N simulations and return aggregated statistics.
+ * Progress callbacks fire after each completed run.
+ */
+async function run_batch(
+  handle:   ScenarioHandle,
+  runs:     number,
+  on_progress?: (completed: number, total: number) =&gt; void
+): Promise&lt;BatchResult&gt;
+
+interface BatchResult {
+  runs:       number;
+  outcomes:   OutcomeStats[];
+  sensitivity: SensitivityEntry[];
+}</code></pre>
+
+          <h3>Usage Example</h3>
+          <pre><code>import init, { load_scenario, run_batch } from './faultline_wasm.js';
+
+await init();
+
+const toml = await fetch('scenarios/tutorial_symmetric.toml').then(r =&gt; r.text());
+const handle = await load_scenario(toml);
+
+const results = await run_batch(handle, 500, (done, total) =&gt; {
+  console.log(`${done}/${total} runs complete`);
+});
+
+console.log(results.outcomes);</code></pre>
+        </section>
+
+        <!-- CI/CD -->
+        <section id="ci-cd" class="docs-section">
+          <div class="section-label">Infrastructure</div>
+          <h2>CI/CD Pipeline</h2>
+          <p>All CI runs inside Docker containers via <code>docker compose --profile ci</code> on a self-hosted runner.</p>
+
+          <h3>Pipeline Stages</h3>
+          <div class="table-wrap" style="margin-top: 16px;">
+            <table>
+              <thead><tr><th>Stage</th><th>Command</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td>1. Format</td><td><code>cargo fmt --all -- --check</code></td><td>Consistent code style (100-char width)</td></tr>
+                <tr><td>2. Lint</td><td><code>cargo clippy --all-targets -- -D warnings</code></td><td>Static analysis (warnings = errors)</td></tr>
+                <tr><td>3. Test</td><td><code>cargo test</code></td><td>Unit, integration, and property tests</td></tr>
+                <tr><td>4. Build</td><td><code>cargo build --release</code></td><td>Release binary compilation</td></tr>
+                <tr><td>5. Audit</td><td><code>cargo deny check</code></td><td>License and advisory checking</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Workflows</h3>
+          <ul>
+            <li><strong>ci.yml</strong> &mdash; Runs on push to main. Full format, lint, test, build, cargo-deny pipeline.</li>
+            <li><strong>main-ci.yml</strong> &mdash; Runs on main push and tags. Same CI stages plus auto-creates GitHub issues on failure. Deploys <code>site/</code> to GitHub Pages.</li>
+            <li><strong>pr-validation.yml</strong> &mdash; Runs on pull requests. CI stages + Gemini AI review (primary) + automated agent fix iterations (max 5, extendable with <code>[CONTINUE]</code> comment). Add <code>no-auto-fix</code> label to disable automated fixes.</li>
+          </ul>
+
+          <h3>Advisory Exemptions</h3>
+          <p>Two advisories are currently exempted in <code>deny.toml</code>:</p>
+          <ul>
+            <li><code>RUSTSEC-2025-0141</code> &mdash; bincode unmaintained (migration planned)</li>
+            <li><code>RUSTSEC-2026-0007</code> &mdash; bytes integer overflow (update pending)</li>
+          </ul>
+        </section>
+
+        <!-- GitHub README -->
+        <section id="github" class="docs-section">
+          <div class="section-label">More</div>
+          <h2>GitHub README</h2>
+          <p>The canonical project documentation lives alongside the source code on GitHub. The README includes full build instructions, scenario authoring guides, and the CHANGELOG.</p>
+          <div style="margin-top: 24px;">
+            <a href="https://github.com/AndrewAltimit/faultline" class="btn btn-primary" target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+              View on GitHub
+            </a>
+            <a href="https://github.com/AndrewAltimit/faultline/tree/main/scenarios" class="btn btn-secondary" target="_blank" rel="noopener" style="margin-left: 12px;">
+              Example Scenarios
+            </a>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────────── -->
+  <footer class="footer" style="margin-top: 80px;">
+    <div class="container">
+      <p>Licensed under <strong>MIT OR Apache-2.0</strong></p>
+      <p><a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">github.com/AndrewAltimit/faultline</a></p>
+      <p class="footer-ai">Code authored by AI agents under human direction</p>
+    </div>
+  </footer>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
