@@ -109,8 +109,6 @@ If you get permission errors:
 1. Ensure scripts are executable: `chmod +x *.sh`
 2. Check Docker permissions: `docker ps`
 
-## Company Integration
+## Additional Documentation
 
-For the company-specific OpenCode integration with proxy support, see:
-- `/automation/corporate-proxy/` - Corporate proxy integrations for Crush and OpenCode
-- `/OPENCODE_COMPANY_INTEGRATION.md` - Full documentation
+See the project root [README.md](../../../README.md) for overall project documentation.

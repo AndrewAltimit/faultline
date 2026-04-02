@@ -271,65 +271,70 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
             .find(|t| t.region == *region)
             .map_or(1.0, |t| t.defense_modifier);
 
-        // Simple pairwise combat: first faction vs. second faction.
+        // Pairwise combat: all faction pairs engage each other.
         let factions: Vec<&FactionId> = faction_forces.keys().collect();
 
-        // Process the first pair of opposing factions.
-        if factions.len() >= 2 {
-            let fid_a = factions[0];
-            let fid_b = factions[1];
+        for i in 0..factions.len() {
+            for j in (i + 1)..factions.len() {
+                let fid_a = factions[i];
+                let fid_b = factions[j];
 
-            let str_a = faction_forces.get(fid_a).copied().unwrap_or(0.0);
-            let str_b = faction_forces.get(fid_b).copied().unwrap_or(0.0);
+                let str_a = faction_forces.get(fid_a).copied().unwrap_or(0.0);
+                let str_b = faction_forces.get(fid_b).copied().unwrap_or(0.0);
 
-            let morale_a = state.faction_states.get(fid_a).map_or(0.5, |fs| fs.morale);
-            let morale_b = state.faction_states.get(fid_b).map_or(0.5, |fs| fs.morale);
-
-            let guerrilla_a = state
-                .faction_states
-                .get(fid_a)
-                .is_some_and(|fs| fs.has_guerrilla_units());
-            let guerrilla_b = state
-                .faction_states
-                .get(fid_b)
-                .is_some_and(|fs| fs.has_guerrilla_units());
-
-            let params = CombatParams {
-                strength_a: str_a,
-                strength_b: str_b,
-                morale_a,
-                morale_b,
-                terrain_defense,
-                tech_modifier_a: 1.0,
-                tech_modifier_b: 1.0,
-                guerrilla_a,
-                guerrilla_b,
-                attrition_coeff: 0.01,
-            };
-
-            let result = combat::resolve_combat(&params, &scenario.simulation.attrition_model, rng);
-
-            // Apply attrition to forces in this region.
-            apply_attrition_to_region(state, region, fid_a, result.attrition_a);
-            apply_attrition_to_region(state, region, fid_b, result.attrition_b);
-
-            // Morale impact from combat.
-            if let Some(fs) = state.faction_states.get_mut(fid_a) {
-                if result.rout_a || result.surrender_a {
-                    fs.morale = (fs.morale - 0.15).max(0.0);
-                } else {
-                    fs.morale = (fs.morale - 0.02).max(0.0);
+                if str_a <= 0.0 || str_b <= 0.0 {
+                    continue;
                 }
-            }
-            if let Some(fs) = state.faction_states.get_mut(fid_b) {
-                if result.rout_b || result.surrender_b {
-                    fs.morale = (fs.morale - 0.15).max(0.0);
-                } else {
-                    fs.morale = (fs.morale - 0.02).max(0.0);
-                }
-            }
 
-            combats += 1;
+                let morale_a = state.faction_states.get(fid_a).map_or(0.5, |fs| fs.morale);
+                let morale_b = state.faction_states.get(fid_b).map_or(0.5, |fs| fs.morale);
+
+                let guerrilla_a = state
+                    .faction_states
+                    .get(fid_a)
+                    .is_some_and(|fs| fs.has_guerrilla_units());
+                let guerrilla_b = state
+                    .faction_states
+                    .get(fid_b)
+                    .is_some_and(|fs| fs.has_guerrilla_units());
+
+                let params = CombatParams {
+                    strength_a: str_a,
+                    strength_b: str_b,
+                    morale_a,
+                    morale_b,
+                    terrain_defense,
+                    tech_modifier_a: 1.0,
+                    tech_modifier_b: 1.0,
+                    guerrilla_a,
+                    guerrilla_b,
+                    attrition_coeff: 0.01,
+                };
+
+                let result =
+                    combat::resolve_combat(&params, &scenario.simulation.attrition_model, rng);
+
+                apply_attrition_to_region(state, region, fid_a, result.attrition_a);
+                apply_attrition_to_region(state, region, fid_b, result.attrition_b);
+
+                // Morale impact from combat.
+                if let Some(fs) = state.faction_states.get_mut(fid_a) {
+                    if result.rout_a || result.surrender_a {
+                        fs.morale = (fs.morale - 0.15).max(0.0);
+                    } else {
+                        fs.morale = (fs.morale - 0.02).max(0.0);
+                    }
+                }
+                if let Some(fs) = state.faction_states.get_mut(fid_b) {
+                    if result.rout_b || result.surrender_b {
+                        fs.morale = (fs.morale - 0.15).max(0.0);
+                    } else {
+                        fs.morale = (fs.morale - 0.02).max(0.0);
+                    }
+                }
+
+                combats += 1;
+            }
         }
     }
 
@@ -670,7 +675,7 @@ pub fn update_region_control(state: &mut SimulationState, _scenario: &Scenario) 
         let strongest = region_strength.get(rid).and_then(|factions| {
             factions
                 .iter()
-                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .max_by(|a, b| a.1.total_cmp(b.1))
                 .map(|(fid, _)| fid.clone())
         });
         *control = strongest;

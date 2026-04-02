@@ -123,11 +123,7 @@ pub fn evaluate_actions(
     evaluate_recruit_actions(faction_state, &weights, &mut actions);
 
     // Sort by score descending.
-    actions.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    actions.sort_by(|a, b| b.score.total_cmp(&a.score));
 
     actions
 }

@@ -187,29 +187,19 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
 
     let scenario_clone = scenario.clone();
     let num_runs = cli.runs;
+    let failed_runs = std::sync::atomic::AtomicU32::new(0);
 
     let runs: Vec<RunResult> = pool.install(|| {
         (0..num_runs)
             .into_par_iter()
-            .map(|i| {
+            .filter_map(|i| {
                 let seed = base_seed.wrapping_add(u64::from(i));
                 let mut engine = match Engine::with_seed(scenario_clone.clone(), seed) {
                     Ok(e) => e,
                     Err(e) => {
                         error!(run_index = i, "engine creation failed: {e}");
-                        // Return a dummy result to avoid panicking
-                        // inside the parallel iterator.
-                        return RunResult {
-                            run_index: i,
-                            seed,
-                            outcome: faultline_types::stats::Outcome {
-                                victor: None,
-                                victory_condition: None,
-                                final_tension: 0.0,
-                            },
-                            final_tick: 0,
-                            snapshots: Vec::new(),
-                        };
+                        failed_runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        return None;
                     },
                 };
 
@@ -217,26 +207,26 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
                     Ok(mut result) => {
                         result.run_index = i;
                         result.seed = seed;
-                        result
+                        Some(result)
                     },
                     Err(e) => {
                         error!(run_index = i, "engine run failed: {e}");
-                        RunResult {
-                            run_index: i,
-                            seed,
-                            outcome: faultline_types::stats::Outcome {
-                                victor: None,
-                                victory_condition: None,
-                                final_tension: 0.0,
-                            },
-                            final_tick: 0,
-                            snapshots: Vec::new(),
-                        }
+                        failed_runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        None
                     },
                 }
             })
             .collect()
     });
+
+    let num_failed = failed_runs.load(std::sync::atomic::Ordering::Relaxed);
+    if num_failed > 0 {
+        tracing::warn!(
+            failed = num_failed,
+            succeeded = runs.len(),
+            "some Monte Carlo runs failed"
+        );
+    }
 
     let summary = compute_summary(&runs, scenario);
     let mc_result = MonteCarloResult { runs, summary };
@@ -316,7 +306,7 @@ fn write_csv_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
         ));
     }
 
-    fs::write(&path, lines.join("\n"))
+    fs::write(&path, lines.join("\n") + "\n")
         .with_context(|| format!("failed to write {}", path.display()))?;
     info!(path = %path.display(), "wrote CSV runs");
     Ok(())

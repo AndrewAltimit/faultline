@@ -63,7 +63,7 @@ faultline-types          (shared data structures — no logic, no deps)
 | `faultline-events` | Conditional event triggers, effect application, event chains |
 | `faultline-engine` | Deterministic tick loop: events, AI, movement, combat, politics |
 | `faultline-stats` | Monte Carlo runner, win probabilities, distribution stats |
-| `faultline-backend-wasm` | Browser UI (Canvas map, scenario editor, results dashboard) |
+| `faultline-backend-wasm` | WASM API (load, validate, run scenarios from browser) |
 | `faultline-cli` | Headless CLI with rayon parallelism for batch runs |
 
 ## Design Philosophy
@@ -72,6 +72,10 @@ faultline-types          (shared data structures — no logic, no deps)
 - **Monte Carlo first.** Single runs tell stories. Thousands of runs give distributions.
 - **Technology as capability cards.** Named bundles of statistical effects, not simulated hardware.
 - **Deterministic.** Same config + same seed = identical output on native and WASM.
+
+## Legal
+
+Faultline is an analytical research tool. All scenario data is derived from publicly available open-source intelligence (OSINT). The software models aggregate statistical effects of military systems — it does not implement, simulate, or contain any controlled defense technology, classified information, or export-restricted algorithms. See [LEGAL.md](LEGAL.md) for full details.
 
 ## Security Notice
 

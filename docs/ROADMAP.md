@@ -52,7 +52,7 @@ Current state: Phase 1 complete, portions of Phases 2-3 scaffolded.
 
 **Goal:** WASM app on GitHub Pages with map visualization and scenario editor.
 
-- [ ] WASM compilation pipeline (wasm-pack build in CI, output to `site/`)
+- [x] WASM compilation pipeline (wasm-pack build in CI, output to `site/pkg/`)
 - [ ] Canvas/WebGL map renderer with region coloring by controlling faction
 - [ ] Force unit icons with strength indicators on map
 - [ ] Scenario editor — TOML text editor with syntax highlighting (CodeMirror/Monaco from CDN)
@@ -64,7 +64,7 @@ Current state: Phase 1 complete, portions of Phases 2-3 scaffolded.
 - [ ] Timeline scrubber (jump to any snapshotted tick)
 - [ ] Results dashboard: win probability bar chart, duration histogram
 - [ ] Single-run replay with event log sidebar
-- [ ] GitHub Pages deployment of WASM artifacts
+- [x] GitHub Pages deployment of WASM artifacts
 
 ---
 

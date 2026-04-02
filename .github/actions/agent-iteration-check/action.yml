@@ -89,9 +89,12 @@ runs:
           --paginate --jq "[.[] | select(.body | contains(\"agent-metadata:type=${AGENT_TYPE}\"))] | length" \
           2>/dev/null || echo "0")
 
-        # Count [CONTINUE] comments from admins
+        # Count [CONTINUE] comments from repo admins/collaborators.
+        # NOTE: The github-agents CLI (primary path above) filters by
+        # agent_admins from .agents.yaml. This fallback path filters by
+        # ADMIN/WRITE association to limit who can extend iterations.
         CONTINUE_COUNT=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-          --paginate --jq '[.[] | select(.body | test("\\[CONTINUE\\]"))] | length' \
+          --paginate --jq '[.[] | select(.body | test("\\[CONTINUE\\]")) | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")] | length' \
           2>/dev/null || echo "0")
 
         EFFECTIVE_MAX=$(( MAX_ITERATIONS + CONTINUE_COUNT * MAX_ITERATIONS ))
