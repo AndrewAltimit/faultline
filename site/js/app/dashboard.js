@@ -252,7 +252,7 @@ export class Dashboard {
 
     entries.forEach(([fid, rate], i) => {
       const y = padding + i * (barHeight + gap);
-      const color = scenario?.factions?.[fid]?.color || '#7c5bf0';
+      const color = this._safeColor(scenario?.factions?.[fid]?.color);
       const name = scenario?.factions?.[fid]?.name || fid;
 
       // Label.
@@ -397,7 +397,7 @@ export class Dashboard {
       for (const [fid, prob] of Object.entries(factionProbs)) {
         const segW = barW * prob;
         if (segW < 1) continue;
-        const color = scenario?.factions?.[fid]?.color || '#7c5bf0';
+        const color = this._safeColor(scenario?.factions?.[fid]?.color);
         ctx.fillStyle = color;
         ctx.fillRect(offsetX, y + 2, segW, barHeight);
         offsetX += segW;
