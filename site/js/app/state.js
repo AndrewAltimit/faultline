@@ -28,4 +28,7 @@ export const AppState = {
 
   /** @type {object|null} MonteCarloResult from batch run */
   mcResult: null,
+
+  /** @type {object|null} Last outcome from a tick result (for victory detection) */
+  lastOutcome: null,
 };

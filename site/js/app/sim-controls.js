@@ -91,7 +91,7 @@ export class SimControls {
     const engine = AppState.engine;
     if (engine.is_finished()) {
       this._pause();
-      this.bus.emit('sim:finished');
+      this.bus.emit('sim:finished', AppState.lastOutcome || undefined);
       return;
     }
 
@@ -118,14 +118,15 @@ export class SimControls {
       // Update timeline slider.
       this.timelineSlider.value = engine.current_tick();
 
+      // Stash any outcome for the guard check on re-entry.
+      const lastResult = results[results.length - 1];
+      if (lastResult?.outcome) {
+        AppState.lastOutcome = lastResult.outcome;
+      }
+
       // Check if finished after this tick batch.
       if (engine.is_finished()) {
-        const lastResult = results[results.length - 1];
-        if (lastResult?.outcome) {
-          this.bus.emit('sim:finished', lastResult.outcome);
-        } else {
-          this.bus.emit('sim:finished');
-        }
+        this.bus.emit('sim:finished', AppState.lastOutcome || undefined);
         this._pause();
         return;
       }
@@ -162,9 +163,13 @@ export class SimControls {
       this._updateTickDisplay();
       this.timelineSlider.value = AppState.engine.current_tick();
 
+      const lastResult = results[results.length - 1];
+      if (lastResult?.outcome) {
+        AppState.lastOutcome = lastResult.outcome;
+      }
+
       if (AppState.engine.is_finished()) {
-        const lastResult = results[results.length - 1];
-        this.bus.emit('sim:finished', lastResult?.outcome);
+        this.bus.emit('sim:finished', AppState.lastOutcome || undefined);
       }
     } catch (e) {
       console.error('Step error:', e);
@@ -184,6 +189,7 @@ export class SimControls {
       AppState.currentSnapshot = null;
       AppState.snapshots = [];
       AppState.eventLog = [];
+      AppState.lastOutcome = null;
 
       this.timelineSlider.value = 0;
       this._updateTickDisplay();

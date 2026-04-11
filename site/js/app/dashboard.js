@@ -113,7 +113,7 @@ export class Dashboard {
     for (const [fid, state] of Object.entries(snapshot.faction_states)) {
       const factionInfo = scenario?.factions?.[fid];
       const name = factionInfo?.name || fid;
-      const color = factionInfo?.color || '#7c5bf0';
+      const color = this._safeColor(factionInfo?.color || '#7c5bf0');
 
       html += `
         <div class="state-faction">
@@ -409,5 +409,11 @@ export class Dashboard {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  /** Sanitize a color value for safe use in inline styles. */
+  _safeColor(color) {
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+    return '#7c5bf0';
   }
 }

@@ -1949,8 +1949,8 @@ fn tick_batch_stepping_n_at_a_time() {
 
 #[test]
 fn is_finished_not_triggered_by_victory() {
-    // is_finished() only checks max_ticks, not victory.
-    // Victory is reported via TickResult.outcome.
+    // is_finished() checks both max_ticks and outcome_reached (victory).
+    // Victory is also reported via TickResult.outcome.
     let scenario = base_scenario();
     let mut engine = Engine::new(scenario).expect("engine creation");
 
