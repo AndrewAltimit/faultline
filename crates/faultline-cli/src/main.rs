@@ -366,7 +366,10 @@ fn write_sensitivity_output(
 
         let mut line = format!(
             "\"{}\",{},{},{}",
-            result.parameter, value, summary.average_duration, stalemate_rate,
+            csv_escape(&result.parameter),
+            value,
+            summary.average_duration,
+            stalemate_rate,
         );
 
         // Add per-faction win rates in consistent order from first outcome.
@@ -390,6 +393,11 @@ fn write_sensitivity_output(
 // ---------------------------------------------------------------------------
 // Output helpers
 // ---------------------------------------------------------------------------
+
+/// Escape a string for RFC 4180 CSV: double quotes become `""`.
+fn csv_escape(s: &str) -> String {
+    s.replace('"', "\"\"")
+}
 
 fn write_result_json(cli: &Cli, result: &RunResult) -> Result<()> {
     let path = cli.output.join("single_run.json");
@@ -443,7 +451,12 @@ fn write_csv_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
         let vc = run.outcome.victory_condition.as_deref().unwrap_or("none");
         lines.push(format!(
             "{},{},\"{}\",\"{}\",{},{}",
-            run.run_index, run.seed, victor, vc, run.final_tick, run.outcome.final_tension,
+            run.run_index,
+            run.seed,
+            csv_escape(&victor),
+            csv_escape(vc),
+            run.final_tick,
+            run.outcome.final_tension,
         ));
     }
 
@@ -462,7 +475,9 @@ fn write_event_log(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
         for record in &run.event_log {
             lines.push(format!(
                 "{},{},\"{}\"",
-                run.run_index, record.tick, record.event_id
+                run.run_index,
+                record.tick,
+                csv_escape(&record.event_id.to_string())
             ));
         }
     }

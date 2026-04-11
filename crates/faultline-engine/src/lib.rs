@@ -262,10 +262,10 @@ mod tests {
         let mut engine = Engine::new(scenario).expect("engine creation");
         let result = engine.run().expect("run should succeed");
 
-        // Snapshots taken every 10 ticks; final_state is always present.
-        assert!(
-            result.final_state.tick >= result.final_tick,
-            "final_state should be at or after final_tick"
+        // final_state.tick and final_tick are set from the same value.
+        assert_eq!(
+            result.final_state.tick, result.final_tick,
+            "final_state.tick should equal final_tick"
         );
 
         if !result.snapshots.is_empty() {
