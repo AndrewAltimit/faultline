@@ -24,8 +24,10 @@ pub struct SimulationState {
     pub institution_loyalty: BTreeMap<InstitutionId, f64>,
     /// Political climate (cloned from scenario, mutated at runtime).
     pub political_climate: PoliticalClimate,
-    /// Set of event IDs that have already fired.
+    /// Set of event IDs that have already fired (cumulative, for one-shot guard).
     pub events_fired: BTreeSet<EventId>,
+    /// Events that fired during the current tick (cleared each tick).
+    pub events_fired_this_tick: Vec<EventId>,
     /// Periodic state snapshots for analysis.
     pub snapshots: Vec<StateSnapshot>,
 }

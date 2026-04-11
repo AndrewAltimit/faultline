@@ -49,9 +49,29 @@ struct Cli {
     #[arg(long = "single-run")]
     single_run: bool,
 
-    /// Run sensitivity analysis (placeholder).
+    /// Run sensitivity analysis on a parameter.
     #[arg(long = "sensitivity")]
     sensitivity: bool,
+
+    /// Parameter path for sensitivity analysis (e.g. "faction.gov.initial_morale").
+    #[arg(long = "sensitivity-param", requires = "sensitivity")]
+    sensitivity_param: Option<String>,
+
+    /// Sensitivity range as "low:high:steps" (e.g. "0.2:1.0:5").
+    #[arg(
+        long = "sensitivity-range",
+        default_value = "0.1:0.9:5",
+        requires = "sensitivity"
+    )]
+    sensitivity_range: String,
+
+    /// Number of Monte Carlo runs per sensitivity step.
+    #[arg(
+        long = "sensitivity-runs",
+        default_value_t = 100,
+        requires = "sensitivity"
+    )]
+    sensitivity_runs: u32,
 
     /// Suppress progress output.
     #[arg(long = "quiet")]
@@ -122,8 +142,7 @@ fn main() -> Result<()> {
     }
 
     if cli.sensitivity {
-        info!("sensitivity analysis is not yet implemented");
-        return Ok(());
+        return run_sensitivity_analysis(&cli, &scenario);
     }
 
     // Monte Carlo run.
@@ -248,6 +267,127 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Sensitivity analysis
+// ---------------------------------------------------------------------------
+
+fn run_sensitivity_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    let param = cli.sensitivity_param.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("--sensitivity-param is required for sensitivity analysis")
+    })?;
+
+    let (low, high, steps) = parse_sensitivity_range(&cli.sensitivity_range)?;
+
+    let base_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+
+    let config = faultline_types::stats::MonteCarloConfig {
+        num_runs: cli.sensitivity_runs,
+        seed: Some(base_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    info!(
+        param,
+        low,
+        high,
+        steps,
+        runs_per_step = cli.sensitivity_runs,
+        "starting sensitivity analysis"
+    );
+
+    let result =
+        faultline_stats::sensitivity::run_sensitivity(scenario, &config, param, low, high, steps)
+            .with_context(|| "sensitivity analysis failed")?;
+
+    info!(
+        param = result.parameter,
+        baseline = result.baseline_value,
+        steps = result.varied_values.len(),
+        "sensitivity analysis complete"
+    );
+
+    write_sensitivity_output(cli, &result)?;
+
+    Ok(())
+}
+
+fn parse_sensitivity_range(range: &str) -> Result<(f64, f64, u32)> {
+    let parts: Vec<&str> = range.split(':').collect();
+    if parts.len() != 3 {
+        anyhow::bail!("sensitivity range must be 'low:high:steps', got '{range}'");
+    }
+    let low: f64 = parts[0]
+        .parse()
+        .with_context(|| format!("invalid low value: '{}'", parts[0]))?;
+    let high: f64 = parts[1]
+        .parse()
+        .with_context(|| format!("invalid high value: '{}'", parts[1]))?;
+    let steps: u32 = parts[2]
+        .parse()
+        .with_context(|| format!("invalid steps value: '{}'", parts[2]))?;
+    Ok((low, high, steps))
+}
+
+fn write_sensitivity_output(
+    cli: &Cli,
+    result: &faultline_types::stats::SensitivityResult,
+) -> Result<()> {
+    // JSON output.
+    let json_path = cli.output.join("sensitivity.json");
+    let json = serde_json::to_string_pretty(result)
+        .with_context(|| "failed to serialize sensitivity result")?;
+    fs::write(&json_path, json)
+        .with_context(|| format!("failed to write {}", json_path.display()))?;
+    info!(path = %json_path.display(), "wrote sensitivity JSON");
+
+    // CSV summary: one row per step with key metrics.
+    let csv_path = cli.output.join("sensitivity.csv");
+    let mut lines = Vec::with_capacity(result.varied_values.len() + 1);
+    lines.push(format!(
+        "parameter,value,avg_duration,stalemate_rate{}",
+        result
+            .outcomes
+            .first()
+            .map(|s| {
+                s.win_rates
+                    .keys()
+                    .map(|fid| format!(",win_rate_{fid}"))
+                    .collect::<String>()
+            })
+            .unwrap_or_default()
+    ));
+
+    for (i, summary) in result.outcomes.iter().enumerate() {
+        let value = result.varied_values[i];
+        let total_win_rate: f64 = summary.win_rates.values().sum();
+        let stalemate_rate = 1.0 - total_win_rate;
+
+        let mut line = format!(
+            "\"{}\",{},{},{}",
+            result.parameter, value, summary.average_duration, stalemate_rate,
+        );
+
+        // Add per-faction win rates in consistent order from first outcome.
+        if let Some(first) = result.outcomes.first() {
+            for fid in first.win_rates.keys() {
+                let rate = summary.win_rates.get(fid).copied().unwrap_or(0.0);
+                line.push_str(&format!(",{rate}"));
+            }
+        }
+
+        lines.push(line);
+    }
+
+    fs::write(&csv_path, lines.join("\n") + "\n")
+        .with_context(|| format!("failed to write {}", csv_path.display()))?;
+    info!(path = %csv_path.display(), "wrote sensitivity CSV");
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Output helpers
 // ---------------------------------------------------------------------------
 
@@ -271,6 +411,7 @@ fn write_outputs(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
     match cli.format {
         OutputFormat::Csv | OutputFormat::Both => {
             write_csv_summary(cli, result)?;
+            write_event_log(cli, result)?;
         },
         OutputFormat::Json => {},
     }
@@ -309,5 +450,30 @@ fn write_csv_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
     fs::write(&path, lines.join("\n") + "\n")
         .with_context(|| format!("failed to write {}", path.display()))?;
     info!(path = %path.display(), "wrote CSV runs");
+    Ok(())
+}
+
+fn write_event_log(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
+    let path = cli.output.join("event_log.csv");
+
+    let mut lines = vec!["run_index,tick,event_id".to_string()];
+
+    for run in &result.runs {
+        for record in &run.event_log {
+            lines.push(format!(
+                "{},{},\"{}\"",
+                run.run_index, record.tick, record.event_id
+            ));
+        }
+    }
+
+    if lines.len() > 1 {
+        fs::write(&path, lines.join("\n") + "\n")
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        info!(path = %path.display(), events = lines.len() - 1, "wrote event log CSV");
+    } else {
+        info!("no events fired across runs, skipping event_log.csv");
+    }
+
     Ok(())
 }

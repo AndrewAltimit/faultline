@@ -5,13 +5,16 @@
 //! statistics including win probabilities, duration distributions,
 //! and metric distributions.
 
+pub mod delta;
+pub mod sensitivity;
+
 use std::collections::BTreeMap;
 
 use thiserror::Error;
 use tracing::{debug, info};
 
 use faultline_engine::{Engine, EngineError};
-use faultline_types::ids::FactionId;
+use faultline_types::ids::{EventId, FactionId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
     DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult, MonteCarloSummary, RunResult,
@@ -98,7 +101,7 @@ impl MonteCarloRunner {
 ///
 /// Produces win probabilities per faction, average duration, and
 /// metric distributions (duration, final tension).
-pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSummary {
+pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSummary {
     let total = runs.len() as f64;
     if total == 0.0 {
         return MonteCarloSummary {
@@ -106,6 +109,8 @@ pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSu
             win_rates: BTreeMap::new(),
             average_duration: 0.0,
             metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
         };
     }
 
@@ -132,12 +137,154 @@ pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSu
     metric_distributions.insert(MetricType::Duration, compute_distribution(&durations));
     metric_distributions.insert(MetricType::FinalTension, compute_distribution(&tensions));
 
+    // Total casualties: sum of (initial_strength - final_strength) across all factions per run.
+    let initial_total_strength: f64 = scenario
+        .factions
+        .values()
+        .flat_map(|f| f.forces.values())
+        .map(|u| u.strength)
+        .sum();
+    let casualties: Vec<f64> = runs
+        .iter()
+        .map(|run| {
+            let final_strength: f64 = run
+                .final_state
+                .faction_states
+                .values()
+                .map(|fs| fs.total_strength)
+                .sum();
+            (initial_total_strength - final_strength).max(0.0)
+        })
+        .collect();
+    metric_distributions.insert(
+        MetricType::TotalCasualties,
+        compute_distribution(&casualties),
+    );
+
+    // Infrastructure damage: sum of (initial_status - final_status) across all infra nodes.
+    if !scenario.map.infrastructure.is_empty() {
+        let infra_damage: Vec<f64> = runs
+            .iter()
+            .map(|run| {
+                scenario
+                    .map
+                    .infrastructure
+                    .iter()
+                    .map(|(iid, node)| {
+                        let initial = node.initial_status;
+                        let final_status = run
+                            .final_state
+                            .infra_status
+                            .get(iid)
+                            .copied()
+                            .unwrap_or(initial);
+                        (initial - final_status).max(0.0)
+                    })
+                    .sum()
+            })
+            .collect();
+        metric_distributions.insert(
+            MetricType::InfrastructureDamage,
+            compute_distribution(&infra_damage),
+        );
+    }
+
+    // Resources expended: sum of (initial_resources - final_resources) across all factions.
+    let initial_total_resources: f64 = scenario
+        .factions
+        .values()
+        .map(|f| f.initial_resources)
+        .sum();
+    let resources_expended: Vec<f64> = runs
+        .iter()
+        .map(|run| {
+            let final_resources: f64 = run
+                .final_state
+                .faction_states
+                .values()
+                .map(|fs| fs.resources)
+                .sum();
+            (initial_total_resources - final_resources).max(0.0)
+        })
+        .collect();
+    metric_distributions.insert(
+        MetricType::ResourcesExpended,
+        compute_distribution(&resources_expended),
+    );
+
+    // Regional control probabilities from final state.
+    let regional_control = compute_regional_control(runs);
+
+    // Event firing probabilities across all runs.
+    let event_probabilities = compute_event_probabilities(runs);
+
     MonteCarloSummary {
         total_runs: runs.len() as u32,
         win_rates,
         average_duration,
         metric_distributions,
+        regional_control,
+        event_probabilities,
     }
+}
+
+/// Compute per-region faction control probability from final states.
+fn compute_regional_control(runs: &[RunResult]) -> BTreeMap<RegionId, BTreeMap<FactionId, f64>> {
+    let total = runs.len() as f64;
+    if total == 0.0 {
+        return BTreeMap::new();
+    }
+
+    let mut counts: BTreeMap<RegionId, BTreeMap<FactionId, u32>> = BTreeMap::new();
+
+    for run in runs {
+        for (rid, controller) in &run.final_state.region_control {
+            if let Some(fid) = controller {
+                *counts
+                    .entry(rid.clone())
+                    .or_default()
+                    .entry(fid.clone())
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+
+    counts
+        .into_iter()
+        .map(|(rid, faction_counts)| {
+            let probabilities = faction_counts
+                .into_iter()
+                .map(|(fid, count)| (fid, f64::from(count) / total))
+                .collect();
+            (rid, probabilities)
+        })
+        .collect()
+}
+
+/// Compute the probability of each event firing at least once across runs.
+fn compute_event_probabilities(runs: &[RunResult]) -> BTreeMap<EventId, f64> {
+    let total = runs.len() as f64;
+    if total == 0.0 {
+        return BTreeMap::new();
+    }
+
+    let mut event_run_counts: BTreeMap<EventId, u32> = BTreeMap::new();
+
+    for run in runs {
+        // Collect unique events from the complete event log for this run.
+        let mut seen_in_run = std::collections::BTreeSet::new();
+        for record in &run.event_log {
+            seen_in_run.insert(record.event_id.clone());
+        }
+        for eid in seen_in_run {
+            *event_run_counts.entry(eid).or_insert(0) += 1;
+        }
+    }
+
+    event_run_counts
+        .into_iter()
+        .map(|(eid, count)| (eid, f64::from(count) / total))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +550,7 @@ mod tests {
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
     fn make_run(index: u32, victor: Option<FactionId>, ticks: u32, tension: f64) -> RunResult {
-        use faultline_types::stats::Outcome;
+        use faultline_types::stats::{Outcome, StateSnapshot};
         RunResult {
             run_index: index,
             seed: u64::from(index),
@@ -413,7 +560,16 @@ mod tests {
                 final_tension: tension,
             },
             final_tick: ticks,
+            final_state: StateSnapshot {
+                tick: ticks,
+                faction_states: BTreeMap::new(),
+                region_control: BTreeMap::new(),
+                infra_status: BTreeMap::new(),
+                tension,
+                events_fired_this_tick: vec![],
+            },
             snapshots: vec![],
+            event_log: vec![],
         }
     }
 

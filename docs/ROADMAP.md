@@ -1,6 +1,6 @@
 # Faultline Roadmap
 
-Current state: Phases 1-2 complete, portions of Phase 3 scaffolded.
+Current state: Phases 1-3 complete.
 
 ---
 
@@ -34,17 +34,22 @@ Current state: Phases 1-2 complete, portions of Phase 3 scaffolded.
 
 ---
 
-## Phase 3: Monte Carlo
+## Phase 3: Monte Carlo — COMPLETE
 
 **Goal:** Batch simulation with full statistical output and sensitivity analysis.
 
-- [ ] Sensitivity analysis — `--sensitivity` flag is accepted but prints "not yet implemented"; implement parameter sweep (vary one input, measure outcome variance)
-- [ ] `MonteCarloSummary` regional control — `regional_control` field exists in types but `compute_summary()` doesn't populate per-region control probabilities
-- [ ] `MonteCarloSummary` event probabilities — `event_probabilities` field not yet computed
-- [ ] Snapshot delta encoding — full state snapshots work but 365 snapshots x 1000 runs may be memory-heavy; implement delta encoding
-- [ ] `us_institutional_fracture.toml` scenario (multi-faction US institutional breakdown)
-- [ ] Benchmark: 1000 runs of 365-tick scenario under 60s on modern hardware
-- [ ] CSV event log output (one row per event firing across all runs)
+- [x] Sensitivity analysis — `--sensitivity` with `--sensitivity-param`, `--sensitivity-range`, `--sensitivity-runs` flags; parameter sweep varies one input across a range, runs Monte Carlo per step, outputs sensitivity.json and sensitivity.csv
+- [x] `MonteCarloSummary` regional control — `regional_control` field populated with per-region faction control probabilities from final state
+- [x] `MonteCarloSummary` event probabilities — `event_probabilities` computed from complete per-run event logs
+- [x] Additional metric distributions — `TotalCasualties`, `InfrastructureDamage`, `ResourcesExpended` computed from final_state vs initial scenario
+- [x] Snapshot delta encoding — `DeltaSnapshot` and `DeltaEncodedRun` types with encode/decode roundtrip; only changed fields stored between consecutive snapshots
+- [x] `us_institutional_fracture.toml` scenario (4-faction US institutional breakdown: federal government, state coalition, militia movement, foreign influence; 8 macro-regions, 5 infrastructure nodes, 5 tech cards, 4 population segments, 7 events with chains)
+- [x] Benchmark: 1000 runs of 365-tick scenario in ~2.2s on modern hardware (well under 60s target)
+- [x] CSV event log output (`event_log.csv` — one row per event firing with run_index, tick, event_id)
+- [x] Per-run event log — `RunResult.event_log` captures every event firing across all ticks (not just snapshot intervals)
+- [x] Final state capture — `RunResult.final_state` always contains terminal `StateSnapshot` regardless of snapshot_interval
+- [x] Infrastructure status in snapshots — `StateSnapshot.infra_status` tracks infrastructure health for damage computation
+- [x] cargo-deny advisory fix — RUSTSEC-2026-0097 (rand 0.8) exempted with documentation; unused license allowances cleaned up
 
 ---
 
