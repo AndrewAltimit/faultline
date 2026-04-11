@@ -32,6 +32,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         final_tick: run.final_tick,
         final_state: run.final_state.clone(),
         snapshots: deltas,
+        event_log: run.event_log.clone(),
     }
 }
 
@@ -56,7 +57,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         final_tick: encoded.final_tick,
         final_state: encoded.final_state.clone(),
         snapshots,
-        event_log: vec![],
+        event_log: encoded.event_log.clone(),
     }
 }
 
@@ -382,5 +383,160 @@ mod tests {
             decoded.snapshots[1].events_fired_this_tick,
             vec![EventId::from("uprising")]
         );
+    }
+
+    #[test]
+    fn event_log_preserved_through_roundtrip() {
+        use faultline_types::stats::EventRecord;
+
+        let snap = make_snapshot(10, 0.8, 0.5);
+        let event_log = vec![
+            EventRecord {
+                tick: 2,
+                event_id: EventId::from("crisis"),
+            },
+            EventRecord {
+                tick: 5,
+                event_id: EventId::from("uprising"),
+            },
+            EventRecord {
+                tick: 5,
+                event_id: EventId::from("crisis"),
+            },
+        ];
+
+        let run = RunResult {
+            run_index: 0,
+            seed: 42,
+            outcome: Outcome {
+                victor: None,
+                victory_condition: None,
+                final_tension: 0.5,
+            },
+            final_tick: 10,
+            final_state: snap.clone(),
+            snapshots: vec![snap],
+            event_log: event_log.clone(),
+        };
+
+        let encoded = encode_run(&run);
+        assert_eq!(
+            encoded.event_log.len(),
+            3,
+            "encoded should preserve event_log"
+        );
+
+        let decoded = decode_run(&encoded);
+        assert_eq!(
+            decoded.event_log.len(),
+            3,
+            "decoded should preserve event_log"
+        );
+        assert_eq!(decoded.event_log[0].tick, 2);
+        assert_eq!(decoded.event_log[0].event_id, EventId::from("crisis"));
+        assert_eq!(decoded.event_log[1].tick, 5);
+        assert_eq!(decoded.event_log[2].event_id, EventId::from("crisis"));
+    }
+
+    #[test]
+    fn infra_status_delta_tracked() {
+        let mut snap1 = make_snapshot(10, 0.8, 0.5);
+        let mut snap2 = make_snapshot(20, 0.8, 0.5);
+
+        let iid = InfraId::from("power_grid");
+        snap1.infra_status.insert(iid.clone(), 1.0);
+        snap2.infra_status.insert(iid.clone(), 0.7); // Damaged.
+
+        let delta = diff_snapshots(&snap1, &snap2);
+        assert_eq!(
+            delta.infra_status.len(),
+            1,
+            "changed infra should appear in delta"
+        );
+        assert!(
+            (delta.infra_status[&iid] - 0.7).abs() < f64::EPSILON,
+            "infra delta should contain new value"
+        );
+    }
+
+    #[test]
+    fn infra_status_unchanged_omitted() {
+        let mut snap1 = make_snapshot(10, 0.8, 0.5);
+        let mut snap2 = make_snapshot(20, 0.8, 0.5);
+
+        let iid = InfraId::from("power_grid");
+        snap1.infra_status.insert(iid.clone(), 1.0);
+        snap2.infra_status.insert(iid, 1.0); // Same value.
+
+        let delta = diff_snapshots(&snap1, &snap2);
+        assert!(
+            delta.infra_status.is_empty(),
+            "unchanged infra should not appear in delta"
+        );
+    }
+
+    #[test]
+    fn infra_status_roundtrip() {
+        let mut snap1 = make_snapshot(10, 0.8, 0.5);
+        let mut snap2 = make_snapshot(20, 0.8, 0.5);
+
+        let iid_a = InfraId::from("grid");
+        let iid_b = InfraId::from("telecom");
+        snap1.infra_status.insert(iid_a.clone(), 1.0);
+        snap1.infra_status.insert(iid_b.clone(), 0.9);
+        snap2.infra_status.insert(iid_a.clone(), 0.6); // Changed.
+        snap2.infra_status.insert(iid_b.clone(), 0.9); // Unchanged.
+
+        let run = RunResult {
+            run_index: 0,
+            seed: 42,
+            outcome: Outcome {
+                victor: None,
+                victory_condition: None,
+                final_tension: 0.5,
+            },
+            final_tick: 20,
+            final_state: snap2.clone(),
+            snapshots: vec![snap1, snap2],
+            event_log: vec![],
+        };
+
+        let decoded = decode_run(&encode_run(&run));
+        assert!(
+            (decoded.snapshots[1].infra_status[&iid_a] - 0.6).abs() < f64::EPSILON,
+            "grid should be 0.6 after decode"
+        );
+        assert!(
+            (decoded.snapshots[1].infra_status[&iid_b] - 0.9).abs() < f64::EPSILON,
+            "telecom should be 0.9 (carried from snap1)"
+        );
+    }
+
+    #[test]
+    fn first_delta_includes_all_fields() {
+        let mut snap = make_snapshot(10, 0.8, 0.5);
+        let iid = InfraId::from("grid");
+        snap.infra_status.insert(iid.clone(), 0.95);
+
+        let delta = full_to_delta(&snap);
+
+        // All fields should be present in first delta.
+        assert_eq!(delta.tick, 10);
+        assert_eq!(
+            delta.faction_states.len(),
+            1,
+            "faction_states should be in first delta"
+        );
+        assert_eq!(
+            delta.region_control.len(),
+            1,
+            "region_control should be in first delta"
+        );
+        assert_eq!(
+            delta.infra_status.len(),
+            1,
+            "infra_status should be in first delta"
+        );
+        assert!((delta.tension - 0.5).abs() < f64::EPSILON);
     }
 }

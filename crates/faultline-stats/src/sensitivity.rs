@@ -445,4 +445,142 @@ mod tests {
             run_sensitivity(&scenario, &config, "political_climate.tension", 0.0, 1.0, 0).is_err()
         );
     }
+
+    #[test]
+    fn sensitivity_inverted_range_errors() {
+        let scenario = minimal_scenario();
+        let config = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        assert!(
+            run_sensitivity(&scenario, &config, "political_climate.tension", 0.9, 0.1, 3).is_err()
+        );
+    }
+
+    #[test]
+    fn get_set_all_faction_params() {
+        let scenario = minimal_scenario();
+        let params = [
+            ("faction.gov.initial_resources", 1000.0),
+            ("faction.gov.resource_rate", 10.0),
+            ("faction.gov.logistics_capacity", 100.0),
+            ("faction.gov.command_resilience", 0.5),
+            ("faction.gov.intelligence", 0.5),
+        ];
+        for (param, expected) in &params {
+            let val = get_param(&scenario, param).unwrap_or_else(|_| panic!("get {param} failed"));
+            assert!(
+                (val - expected).abs() < f64::EPSILON,
+                "{param} expected {expected}, got {val}"
+            );
+        }
+
+        // Set and verify round-trip.
+        for (param, _) in &params {
+            let mut s = scenario.clone();
+            set_param(&mut s, param, 42.0).unwrap_or_else(|_| panic!("set {param} failed"));
+            let val = get_param(&s, param).unwrap_or_else(|_| panic!("get {param} after set"));
+            assert!(
+                (val - 42.0).abs() < f64::EPSILON,
+                "{param} should be 42.0 after set"
+            );
+        }
+    }
+
+    #[test]
+    fn get_set_media_params() {
+        let scenario = minimal_scenario();
+
+        let val = get_param(
+            &scenario,
+            "political_climate.media.disinformation_susceptibility",
+        )
+        .expect("should get disinfo");
+        assert!((val - 0.3).abs() < f64::EPSILON);
+
+        let val =
+            get_param(&scenario, "political_climate.media.state_control").expect("should get sc");
+        assert!((val - 0.4).abs() < f64::EPSILON);
+
+        let mut s = scenario.clone();
+        set_param(
+            &mut s,
+            "political_climate.media.disinformation_susceptibility",
+            0.8,
+        )
+        .expect("set disinfo");
+        let val = get_param(&s, "political_climate.media.disinformation_susceptibility")
+            .expect("get disinfo after set");
+        assert!((val - 0.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn get_set_institutional_trust() {
+        let scenario = minimal_scenario();
+        let val = get_param(&scenario, "political_climate.institutional_trust")
+            .expect("should get trust");
+        assert!((val - 0.6).abs() < f64::EPSILON);
+
+        let mut s = scenario;
+        set_param(&mut s, "political_climate.institutional_trust", 0.2).expect("set trust");
+        let val =
+            get_param(&s, "political_climate.institutional_trust").expect("get trust after set");
+        assert!((val - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sensitivity_single_step_uses_low_value() {
+        let scenario = minimal_scenario();
+        let config = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = run_sensitivity(&scenario, &config, "political_climate.tension", 0.3, 0.3, 1)
+            .expect("single step should succeed");
+
+        assert_eq!(result.varied_values.len(), 1);
+        assert!((result.varied_values[0] - 0.3).abs() < f64::EPSILON);
+        assert_eq!(result.outcomes.len(), 1);
+    }
+
+    #[test]
+    fn sensitivity_outcomes_match_varied_values_count() {
+        let scenario = minimal_scenario();
+        let config = MonteCarloConfig {
+            num_runs: 2,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = run_sensitivity(
+            &scenario,
+            &config,
+            "faction.gov.initial_morale",
+            0.1,
+            0.9,
+            5,
+        )
+        .expect("sweep should succeed");
+
+        assert_eq!(
+            result.outcomes.len(),
+            result.varied_values.len(),
+            "one outcome per varied value"
+        );
+        assert_eq!(result.outcomes.len(), 5);
+
+        for summary in &result.outcomes {
+            assert_eq!(
+                summary.total_runs, 2,
+                "each step should run 2 Monte Carlo runs"
+            );
+        }
+    }
 }

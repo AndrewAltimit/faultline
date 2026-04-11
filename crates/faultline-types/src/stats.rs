@@ -138,4 +138,6 @@ pub struct DeltaEncodedRun {
     /// First snapshot is a full `StateSnapshot` serialized as a delta (all fields present).
     /// Subsequent snapshots only contain changed fields.
     pub snapshots: Vec<DeltaSnapshot>,
+    /// Complete event log preserved through encoding (not delta-encoded).
+    pub event_log: Vec<EventRecord>,
 }
