@@ -752,12 +752,45 @@ fn process_civilian_activation(
                     }
                 }
             },
-            CivilianAction::Intelligence { .. } | CivilianAction::NonCooperation { .. } => {
-                // These effects are logged but require fog-of-war or
-                // effectiveness tracking to fully resolve.
-                tracing::debug!(
-                    action = ?action,
-                    "civilian action noted (partial implementation)"
+            CivilianAction::Intelligence {
+                target_faction,
+                quality,
+            } => {
+                // Civilian intelligence degrades the target faction's
+                // morale (pressure from surveillance/infiltration) and
+                // provides a small resource bonus to the favored faction
+                // (actionable intel is an asset).
+                if let Some(fs) = state.faction_states.get_mut(target_faction) {
+                    fs.morale = (fs.morale - quality * 0.05).max(0.0);
+                }
+                if let Some(fs) = state.faction_states.get_mut(&activation.favored_faction) {
+                    fs.resources += quality * 5.0;
+                }
+                tracing::info!(
+                    target = %target_faction,
+                    quality = quality,
+                    "civilian intelligence gathered"
+                );
+            },
+            CivilianAction::NonCooperation {
+                effectiveness_reduction,
+            } => {
+                // Non-cooperation reduces resource income for factions
+                // controlling the segment's concentrated regions (strikes,
+                // refusal to work, bureaucratic obstruction).
+                for region in &activation.concentrated_in {
+                    let controller = state.region_control.get(region).and_then(|c| c.clone());
+                    if let Some(ctrl_fid) = controller
+                        && ctrl_fid != activation.favored_faction
+                        && let Some(fs) = state.faction_states.get_mut(&ctrl_fid)
+                    {
+                        let loss = fs.resources * effectiveness_reduction;
+                        fs.resources = (fs.resources - loss).max(0.0);
+                    }
+                }
+                tracing::info!(
+                    reduction = effectiveness_reduction,
+                    "civilian non-cooperation applied"
                 );
             },
         }

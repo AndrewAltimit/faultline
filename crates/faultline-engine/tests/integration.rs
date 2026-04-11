@@ -1633,3 +1633,144 @@ fn event_chain_empty_evaluator_no_panic() {
     let evaluator = result.expect("just checked is_ok");
     assert!(evaluator.events.is_empty());
 }
+
+// =======================================================================
+// Civilian activation — Intelligence and NonCooperation
+// =======================================================================
+
+#[test]
+fn civilian_activation_intelligence_degrades_target_morale() {
+    let mut scenario = base_scenario();
+    scenario.political_climate.tension = 0.8;
+
+    // Segment favors alpha, provides intel against bravo.
+    scenario
+        .political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("spies"),
+            name: "Informants".into(),
+            fraction: 0.2,
+            concentrated_in: vec![RegionId::from("r1")],
+            sympathies: vec![FactionSympathy {
+                faction: FactionId::from("alpha"),
+                sympathy: 0.95,
+            }],
+            activation_threshold: 0.9,
+            activation_actions: vec![CivilianAction::Intelligence {
+                target_faction: FactionId::from("bravo"),
+                quality: 0.8,
+            }],
+            volatility: 0.1,
+            activated: false,
+        });
+
+    let mut engine = Engine::new(scenario.clone()).expect("engine");
+
+    // Baseline without intelligence segment.
+    let mut scenario_baseline = base_scenario();
+    scenario_baseline.political_climate.tension = 0.8;
+    let mut engine_baseline = Engine::new(scenario_baseline).expect("engine");
+
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+        engine_baseline.tick().expect("tick");
+    }
+
+    let bravo_morale = engine
+        .state()
+        .faction_states
+        .get(&FactionId::from("bravo"))
+        .expect("bravo")
+        .morale;
+    let bravo_baseline = engine_baseline
+        .state()
+        .faction_states
+        .get(&FactionId::from("bravo"))
+        .expect("bravo")
+        .morale;
+
+    assert!(
+        bravo_morale < bravo_baseline,
+        "intelligence action should degrade target morale.\n\
+         With intel: {bravo_morale:.3}, Baseline: {bravo_baseline:.3}"
+    );
+
+    // Alpha should get a resource bonus from intel.
+    let alpha_resources = engine
+        .state()
+        .faction_states
+        .get(&FactionId::from("alpha"))
+        .expect("alpha")
+        .resources;
+    let alpha_baseline = engine_baseline
+        .state()
+        .faction_states
+        .get(&FactionId::from("alpha"))
+        .expect("alpha")
+        .resources;
+
+    assert!(
+        alpha_resources > alpha_baseline,
+        "intelligence should grant resource bonus to favored faction.\n\
+         With intel: {alpha_resources:.1}, Baseline: {alpha_baseline:.1}"
+    );
+}
+
+#[test]
+fn civilian_activation_noncooperation_reduces_controller_resources() {
+    let mut scenario = base_scenario();
+    scenario.political_climate.tension = 0.8;
+
+    // Segment concentrated in r1 (controlled by alpha). Favors bravo.
+    // NonCooperation should reduce alpha's resources.
+    scenario
+        .political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("strikers"),
+            name: "Labor Strikers".into(),
+            fraction: 0.3,
+            concentrated_in: vec![RegionId::from("r1")],
+            sympathies: vec![FactionSympathy {
+                faction: FactionId::from("bravo"),
+                sympathy: 0.95,
+            }],
+            activation_threshold: 0.9,
+            activation_actions: vec![CivilianAction::NonCooperation {
+                effectiveness_reduction: 0.15,
+            }],
+            volatility: 0.1,
+            activated: false,
+        });
+
+    let mut engine = Engine::new(scenario.clone()).expect("engine");
+
+    let mut scenario_baseline = base_scenario();
+    scenario_baseline.political_climate.tension = 0.8;
+    let mut engine_baseline = Engine::new(scenario_baseline).expect("engine");
+
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+        engine_baseline.tick().expect("tick");
+    }
+
+    let alpha_resources = engine
+        .state()
+        .faction_states
+        .get(&FactionId::from("alpha"))
+        .expect("alpha")
+        .resources;
+    let alpha_baseline = engine_baseline
+        .state()
+        .faction_states
+        .get(&FactionId::from("alpha"))
+        .expect("alpha")
+        .resources;
+
+    assert!(
+        alpha_resources < alpha_baseline,
+        "non-cooperation should reduce controlling faction's resources.\n\
+         With strike: {alpha_resources:.1}, Baseline: {alpha_baseline:.1}"
+    );
+}
