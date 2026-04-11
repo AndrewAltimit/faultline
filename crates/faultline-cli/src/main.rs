@@ -345,18 +345,21 @@ fn write_sensitivity_output(
     // CSV summary: one row per step with key metrics.
     let csv_path = cli.output.join("sensitivity.csv");
     let mut lines = Vec::with_capacity(result.varied_values.len() + 1);
+
+    // Collect union of all faction IDs across all outcomes so factions
+    // that only win in later steps still get a column.
+    let all_factions: std::collections::BTreeSet<_> = result
+        .outcomes
+        .iter()
+        .flat_map(|s| s.win_rates.keys().cloned())
+        .collect();
+
     lines.push(format!(
         "parameter,value,avg_duration,stalemate_rate{}",
-        result
-            .outcomes
-            .first()
-            .map(|s| {
-                s.win_rates
-                    .keys()
-                    .map(|fid| format!(",win_rate_{fid}"))
-                    .collect::<String>()
-            })
-            .unwrap_or_default()
+        all_factions
+            .iter()
+            .map(|fid| format!(",\"win_rate_{}\"", csv_escape(&fid.to_string())))
+            .collect::<String>()
     ));
 
     for (i, summary) in result.outcomes.iter().enumerate() {
@@ -372,12 +375,10 @@ fn write_sensitivity_output(
             stalemate_rate,
         );
 
-        // Add per-faction win rates in consistent order from first outcome.
-        if let Some(first) = result.outcomes.first() {
-            for fid in first.win_rates.keys() {
-                let rate = summary.win_rates.get(fid).copied().unwrap_or(0.0);
-                line.push_str(&format!(",{rate}"));
-            }
+        // Use the same faction order as the header (BTreeSet is sorted).
+        for fid in &all_factions {
+            let rate = summary.win_rates.get(fid).copied().unwrap_or(0.0);
+            line.push_str(&format!(",{rate}"));
         }
 
         lines.push(line);
