@@ -5,7 +5,7 @@
  *  - Geographic: real polygon outlines for known regions (e.g. US macro-regions)
  *  - Grid: fallback colored rectangles for abstract/tutorial scenarios
  */
-import { US_REGIONS, US_OUTLINE, isUSScenario } from './us-regions-geo.js';
+import { US_REGIONS, isUSScenario } from './us-regions-geo.js';
 
 const UNIT_SHAPES = {
   Infantry: 'circle',
@@ -122,22 +122,7 @@ export class MapRenderer {
   // ===================================================================
 
   _renderGeo(ctx, regions, factions, regionControl) {
-    // Draw country outline.
-    ctx.save();
-    const outlineScreen = this._projectPolygon(US_OUTLINE);
-    ctx.beginPath();
-    for (let i = 0; i < outlineScreen.length; i++) {
-      const [sx, sy] = outlineScreen[i];
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = '#3f3f46';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.restore();
-
-    // Draw each region polygon.
+    // Draw each region's state polygons.
     for (const [rid] of Object.entries(regions)) {
       const geoData = this._geoRegions.get(rid);
       if (!geoData) continue;
@@ -150,7 +135,6 @@ export class MapRenderer {
       for (const screenPoly of geoData.screenPolygons) {
         ctx.save();
 
-        // Draw polygon path.
         ctx.beginPath();
         for (let i = 0; i < screenPoly.length; i++) {
           const [sx, sy] = screenPoly[i];
@@ -159,7 +143,7 @@ export class MapRenderer {
         }
         ctx.closePath();
 
-        // Fill.
+        // Fill with faction color.
         ctx.fillStyle = this._hexToRgba(factionColor, GEO_FILL_ALPHA);
         ctx.fill();
 
@@ -169,13 +153,29 @@ export class MapRenderer {
           ctx.fill();
         }
 
-        // Border.
-        ctx.strokeStyle = factionColor;
-        ctx.lineWidth = BORDER_WIDTH;
+        // State border (thin).
+        ctx.strokeStyle = this._hexToRgba(factionColor, 0.6);
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.restore();
       }
+
+      // Draw region boundary (thicker) over the state borders.
+      ctx.save();
+      ctx.strokeStyle = factionColor;
+      ctx.lineWidth = BORDER_WIDTH;
+      for (const screenPoly of geoData.screenPolygons) {
+        ctx.beginPath();
+        for (let i = 0; i < screenPoly.length; i++) {
+          const [sx, sy] = screenPoly[i];
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.restore();
 
       // Region label at label position.
       const region = regions[rid];
@@ -215,14 +215,18 @@ export class MapRenderer {
     const h = this.canvas.height / dpr;
     const padding = 30;
 
-    // Bounding box of the US outline.
+    // Compute bounding box from all state polygons.
     let minLon = Infinity, maxLon = -Infinity;
     let minLat = Infinity, maxLat = -Infinity;
-    for (const [lon, lat] of US_OUTLINE) {
-      if (lon < minLon) minLon = lon;
-      if (lon > maxLon) maxLon = lon;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
+    for (const region of Object.values(US_REGIONS)) {
+      for (const state of region.states) {
+        for (const [lon, lat] of state.coords) {
+          if (lon < minLon) minLon = lon;
+          if (lon > maxLon) maxLon = lon;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        }
+      }
     }
 
     const geoW = maxLon - minLon;
@@ -265,7 +269,7 @@ export class MapRenderer {
       const geo = US_REGIONS[rid];
       if (!geo) continue;
 
-      const screenPolygons = geo.polygons.map((poly) => this._projectPolygon(poly));
+      const screenPolygons = geo.states.map((st) => this._projectPolygon(st.coords));
       this._geoRegions.set(rid, {
         screenPolygons,
         labelPos: geo.labelPos,
