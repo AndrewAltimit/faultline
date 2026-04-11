@@ -66,7 +66,9 @@ pub fn event_phase(
                 state.events_fired.insert(eid.clone());
             }
 
-            // Follow event chain (max depth prevents bugs from undetected cycles).
+            // Follow event chain (depth limit is defense-in-depth for
+            // non-repeatable chains; cycles are prevented by DFS in
+            // EventEvaluator::new).
             fire_event_chain(state, evaluator, rng, def, &mut fired, 10);
         }
     }
@@ -447,7 +449,7 @@ fn compute_tech_combat_modifier(
         }
     }
 
-    modifier
+    modifier.clamp(0.25, 3.0)
 }
 
 /// Find regions where multiple factions have forces.

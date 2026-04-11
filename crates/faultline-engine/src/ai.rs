@@ -443,7 +443,7 @@ pub fn build_world_view(
         }
         for force in fs.forces.values() {
             if visible.contains(&force.region) {
-                // Add noise to estimated strength based on confidence.
+                // Scale estimated strength by confidence (deterministic).
                 let confidence = base_confidence;
                 let estimated_strength = force.strength * confidence;
 
@@ -462,13 +462,13 @@ pub fn build_world_view(
         faction: faction_id.clone(),
         known_regions,
         detected_forces,
-        infra_states: BTreeMap::new(),
+        infra_states: BTreeMap::new(), // Phase 3: populate from visible infra
         political_climate: PoliticalClimateView {
             tension: state.political_climate.tension,
             institutional_trust: state.political_climate.institutional_trust,
-            civilian_sentiment: 0.0,
+            civilian_sentiment: 0.0, // Phase 3: derive from segment sympathies
         },
-        diplomacy: BTreeMap::new(),
+        diplomacy: BTreeMap::new(), // Phase 3: populate from faction diplomacy
         morale: faction_state.morale,
         resources: faction_state.resources,
         tick: state.tick,

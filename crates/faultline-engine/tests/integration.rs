@@ -661,8 +661,11 @@ fn fog_of_war_limits_visible_regions() {
 
 #[test]
 fn asymmetric_scenario_runs_to_completion() {
-    let toml_str = std::fs::read_to_string("../../scenarios/tutorial_asymmetric.toml")
-        .expect("should read asymmetric scenario file");
+    let toml_str = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scenarios/tutorial_asymmetric.toml"
+    ))
+    .expect("should read asymmetric scenario file");
 
     let scenario: Scenario = toml::from_str(&toml_str).expect("should parse TOML");
 
