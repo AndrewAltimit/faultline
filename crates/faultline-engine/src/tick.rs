@@ -61,6 +61,7 @@ pub fn event_phase(
             tracing::info!(event = %eid, "event fired");
             apply_event_effects(state, &effects);
             fired.push(def.name.clone());
+            state.events_fired_this_tick.push(eid.clone());
 
             if !def.repeatable {
                 state.events_fired.insert(eid.clone());
@@ -112,6 +113,7 @@ fn fire_event_chain(
             tracing::info!(event = %chain_id, "chained event fired");
             apply_event_effects(state, &effects);
             fired.push(chained_def.name.clone());
+            state.events_fired_this_tick.push(chain_id.clone());
 
             if !chained_def.repeatable {
                 state.events_fired.insert(chain_id.clone());

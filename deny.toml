@@ -3,7 +3,14 @@
 
 [advisories]
 unmaintained = "workspace"
-ignore = []
+ignore = [
+    # RUSTSEC-2026-0097: rand 0.8 unsound only when a custom logger calls
+    # rand::rng() and ThreadRng reseeds inside that logger. We use tracing
+    # (not log) and never call rand from a logging context. Upgrading to
+    # rand 0.9+ requires coordinated updates across rand_chacha, rand_distr,
+    # statrs, and nalgebra — planned for a future release.
+    "RUSTSEC-2026-0097",
+]
 
 [licenses]
 # Allow common permissive licenses
@@ -15,15 +22,8 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     "Zlib",
-    "CC0-1.0",
     "Unlicense",
-    "MPL-2.0",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
-    "BSL-1.0",
-    "WTFPL",
-    "OFL-1.1",
-    "LicenseRef-UFL-1.0",
 ]
 confidence-threshold = 0.8
 # Workspace crates inherit license from [workspace.package]

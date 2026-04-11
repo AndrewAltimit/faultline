@@ -9,7 +9,7 @@ use faultline_events::EventEvaluator;
 use faultline_geo::{self, GameMap};
 use faultline_types::ids::{EventId, FactionId};
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{Outcome, RunResult, StateSnapshot};
+use faultline_types::stats::{EventRecord, Outcome, RunResult, StateSnapshot};
 use faultline_types::strategy::FactionState;
 
 use crate::error::EngineError;
@@ -79,6 +79,9 @@ impl Engine {
 
         tracing::debug!(tick = current_tick, "tick start");
 
+        // Clear per-tick event log before event phase populates it.
+        self.state.events_fired_this_tick.clear();
+
         // Phase 1: Events.
         let events_fired = tick::event_phase(&mut self.state, &self.event_evaluator, &mut self.rng);
 
@@ -126,17 +129,30 @@ impl Engine {
     pub fn run(&mut self) -> Result<RunResult, EngineError> {
         let max_ticks = self.scenario.simulation.max_ticks;
         let seed = self.scenario.simulation.seed.unwrap_or(0);
+        let mut event_log = Vec::new();
 
         loop {
             let result = self.tick()?;
 
+            // Collect event records from this tick.
+            let current_tick = self.state.tick;
+            for eid in &self.state.events_fired_this_tick {
+                event_log.push(EventRecord {
+                    tick: current_tick,
+                    event_id: eid.clone(),
+                });
+            }
+
             if let Some(outcome) = result.outcome {
+                let final_state = take_snapshot(&self.state);
                 return Ok(RunResult {
                     run_index: 0,
                     seed,
                     outcome,
                     final_tick: self.state.tick,
+                    final_state,
                     snapshots: self.state.snapshots.clone(),
+                    event_log,
                 });
             }
 
@@ -146,12 +162,15 @@ impl Engine {
                     victory_condition: None,
                     final_tension: self.state.political_climate.tension,
                 };
+                let final_state = take_snapshot(&self.state);
                 return Ok(RunResult {
                     run_index: 0,
                     seed,
                     outcome,
                     final_tick: self.state.tick,
+                    final_state,
                     snapshots: self.state.snapshots.clone(),
+                    event_log,
                 });
             }
         }
@@ -238,6 +257,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         institution_loyalty,
         political_climate: scenario.political_climate.clone(),
         events_fired: BTreeSet::new(),
+        events_fired_this_tick: Vec::new(),
         snapshots: Vec::new(),
     })
 }
@@ -264,12 +284,13 @@ fn take_snapshot(state: &SimulationState) -> StateSnapshot {
         })
         .collect();
 
-    let events_this_tick: Vec<EventId> = state.events_fired.iter().cloned().collect();
+    let events_this_tick: Vec<EventId> = state.events_fired_this_tick.clone();
 
     StateSnapshot {
         tick: state.tick,
         faction_states,
         region_control: state.region_control.clone(),
+        infra_status: state.infra_status.clone(),
         tension: state.political_climate.tension,
         events_fired_this_tick: events_this_tick,
     }

@@ -5,13 +5,16 @@
 //! statistics including win probabilities, duration distributions,
 //! and metric distributions.
 
+pub mod delta;
+pub mod sensitivity;
+
 use std::collections::BTreeMap;
 
 use thiserror::Error;
 use tracing::{debug, info};
 
 use faultline_engine::{Engine, EngineError};
-use faultline_types::ids::FactionId;
+use faultline_types::ids::{EventId, FactionId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
     DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult, MonteCarloSummary, RunResult,
@@ -98,7 +101,7 @@ impl MonteCarloRunner {
 ///
 /// Produces win probabilities per faction, average duration, and
 /// metric distributions (duration, final tension).
-pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSummary {
+pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSummary {
     let total = runs.len() as f64;
     if total == 0.0 {
         return MonteCarloSummary {
@@ -106,6 +109,8 @@ pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSu
             win_rates: BTreeMap::new(),
             average_duration: 0.0,
             metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
         };
     }
 
@@ -132,12 +137,154 @@ pub fn compute_summary(runs: &[RunResult], _scenario: &Scenario) -> MonteCarloSu
     metric_distributions.insert(MetricType::Duration, compute_distribution(&durations));
     metric_distributions.insert(MetricType::FinalTension, compute_distribution(&tensions));
 
+    // Total casualties: sum of (initial_strength - final_strength) across all factions per run.
+    let initial_total_strength: f64 = scenario
+        .factions
+        .values()
+        .flat_map(|f| f.forces.values())
+        .map(|u| u.strength)
+        .sum();
+    let casualties: Vec<f64> = runs
+        .iter()
+        .map(|run| {
+            let final_strength: f64 = run
+                .final_state
+                .faction_states
+                .values()
+                .map(|fs| fs.total_strength)
+                .sum();
+            (initial_total_strength - final_strength).max(0.0)
+        })
+        .collect();
+    metric_distributions.insert(
+        MetricType::TotalCasualties,
+        compute_distribution(&casualties),
+    );
+
+    // Infrastructure damage: sum of (initial_status - final_status) across all infra nodes.
+    if !scenario.map.infrastructure.is_empty() {
+        let infra_damage: Vec<f64> = runs
+            .iter()
+            .map(|run| {
+                scenario
+                    .map
+                    .infrastructure
+                    .iter()
+                    .map(|(iid, node)| {
+                        let initial = node.initial_status;
+                        let final_status = run
+                            .final_state
+                            .infra_status
+                            .get(iid)
+                            .copied()
+                            .unwrap_or(initial);
+                        (initial - final_status).max(0.0)
+                    })
+                    .sum()
+            })
+            .collect();
+        metric_distributions.insert(
+            MetricType::InfrastructureDamage,
+            compute_distribution(&infra_damage),
+        );
+    }
+
+    // Resources expended: sum of (initial_resources - final_resources) across all factions.
+    let initial_total_resources: f64 = scenario
+        .factions
+        .values()
+        .map(|f| f.initial_resources)
+        .sum();
+    let resources_expended: Vec<f64> = runs
+        .iter()
+        .map(|run| {
+            let final_resources: f64 = run
+                .final_state
+                .faction_states
+                .values()
+                .map(|fs| fs.resources)
+                .sum();
+            (initial_total_resources - final_resources).max(0.0)
+        })
+        .collect();
+    metric_distributions.insert(
+        MetricType::ResourcesExpended,
+        compute_distribution(&resources_expended),
+    );
+
+    // Regional control probabilities from final state.
+    let regional_control = compute_regional_control(runs);
+
+    // Event firing probabilities across all runs.
+    let event_probabilities = compute_event_probabilities(runs);
+
     MonteCarloSummary {
         total_runs: runs.len() as u32,
         win_rates,
         average_duration,
         metric_distributions,
+        regional_control,
+        event_probabilities,
     }
+}
+
+/// Compute per-region faction control probability from final states.
+fn compute_regional_control(runs: &[RunResult]) -> BTreeMap<RegionId, BTreeMap<FactionId, f64>> {
+    let total = runs.len() as f64;
+    if total == 0.0 {
+        return BTreeMap::new();
+    }
+
+    let mut counts: BTreeMap<RegionId, BTreeMap<FactionId, u32>> = BTreeMap::new();
+
+    for run in runs {
+        for (rid, controller) in &run.final_state.region_control {
+            if let Some(fid) = controller {
+                *counts
+                    .entry(rid.clone())
+                    .or_default()
+                    .entry(fid.clone())
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+
+    counts
+        .into_iter()
+        .map(|(rid, faction_counts)| {
+            let probabilities = faction_counts
+                .into_iter()
+                .map(|(fid, count)| (fid, f64::from(count) / total))
+                .collect();
+            (rid, probabilities)
+        })
+        .collect()
+}
+
+/// Compute the probability of each event firing at least once across runs.
+fn compute_event_probabilities(runs: &[RunResult]) -> BTreeMap<EventId, f64> {
+    let total = runs.len() as f64;
+    if total == 0.0 {
+        return BTreeMap::new();
+    }
+
+    let mut event_run_counts: BTreeMap<EventId, u32> = BTreeMap::new();
+
+    for run in runs {
+        // Collect unique events from the complete event log for this run.
+        let mut seen_in_run = std::collections::BTreeSet::new();
+        for record in &run.event_log {
+            seen_in_run.insert(record.event_id.clone());
+        }
+        for eid in seen_in_run {
+            *event_run_counts.entry(eid).or_insert(0) += 1;
+        }
+    }
+
+    event_run_counts
+        .into_iter()
+        .map(|(eid, count)| (eid, f64::from(count) / total))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +550,7 @@ mod tests {
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
     fn make_run(index: u32, victor: Option<FactionId>, ticks: u32, tension: f64) -> RunResult {
-        use faultline_types::stats::Outcome;
+        use faultline_types::stats::{Outcome, StateSnapshot};
         RunResult {
             run_index: index,
             seed: u64::from(index),
@@ -413,7 +560,16 @@ mod tests {
                 final_tension: tension,
             },
             final_tick: ticks,
+            final_state: StateSnapshot {
+                tick: ticks,
+                faction_states: BTreeMap::new(),
+                region_control: BTreeMap::new(),
+                infra_status: BTreeMap::new(),
+                tension,
+                events_fired_this_tick: vec![],
+            },
             snapshots: vec![],
+            event_log: vec![],
         }
     }
 
@@ -534,6 +690,561 @@ mod tests {
             },
             victory_conditions,
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 metric tests
+    // -----------------------------------------------------------------------
+
+    use faultline_types::ids::{EventId, InfraId};
+    use faultline_types::map::{InfrastructureNode, InfrastructureType};
+    use faultline_types::stats::{EventRecord, StateSnapshot};
+    use faultline_types::strategy::FactionState;
+
+    fn make_faction_state(
+        fid: &FactionId,
+        strength: f64,
+        morale: f64,
+        resources: f64,
+    ) -> FactionState {
+        FactionState {
+            faction_id: fid.clone(),
+            morale,
+            resources,
+            logistics_capacity: 100.0,
+            tech_deployed: vec![],
+            controlled_regions: vec![],
+            total_strength: strength,
+            institution_loyalty: BTreeMap::new(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_rich_run(
+        index: u32,
+        victor: Option<FactionId>,
+        ticks: u32,
+        tension: f64,
+        faction_states: BTreeMap<FactionId, FactionState>,
+        region_control: BTreeMap<RegionId, Option<FactionId>>,
+        infra_status: BTreeMap<InfraId, f64>,
+        event_log: Vec<EventRecord>,
+    ) -> RunResult {
+        use faultline_types::stats::Outcome;
+        RunResult {
+            run_index: index,
+            seed: u64::from(index),
+            outcome: Outcome {
+                victor,
+                victory_condition: None,
+                final_tension: tension,
+            },
+            final_tick: ticks,
+            final_state: StateSnapshot {
+                tick: ticks,
+                faction_states,
+                region_control,
+                infra_status,
+                tension,
+                events_fired_this_tick: vec![],
+            },
+            snapshots: vec![],
+            event_log,
+        }
+    }
+
+    #[test]
+    fn compute_summary_total_casualties() {
+        // Scenario has 2 factions with 100 strength each (200 total).
+        let scenario = minimal_scenario();
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+
+        // Run 0: gov lost 30, rebel lost 50 → 80 total casualties.
+        let mut fs0 = BTreeMap::new();
+        fs0.insert(f_gov.clone(), make_faction_state(&f_gov, 70.0, 0.7, 900.0));
+        fs0.insert(
+            f_rebel.clone(),
+            make_faction_state(&f_rebel, 50.0, 0.6, 800.0),
+        );
+
+        // Run 1: gov lost 10, rebel lost 90 → 100 total casualties.
+        let mut fs1 = BTreeMap::new();
+        fs1.insert(f_gov.clone(), make_faction_state(&f_gov, 90.0, 0.8, 950.0));
+        fs1.insert(
+            f_rebel.clone(),
+            make_faction_state(&f_rebel, 10.0, 0.3, 700.0),
+        );
+
+        let runs = vec![
+            make_rich_run(
+                0,
+                None,
+                10,
+                0.5,
+                fs0,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                vec![],
+            ),
+            make_rich_run(
+                1,
+                Some(f_gov.clone()),
+                8,
+                0.4,
+                fs1,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                vec![],
+            ),
+        ];
+
+        let summary = compute_summary(&runs, &scenario);
+        let casualties = summary
+            .metric_distributions
+            .get(&MetricType::TotalCasualties)
+            .expect("should have TotalCasualties");
+
+        // Mean: (80 + 100) / 2 = 90.
+        assert!(
+            (casualties.mean - 90.0).abs() < 0.01,
+            "mean casualties should be 90, got {}",
+            casualties.mean
+        );
+        assert!(
+            (casualties.min - 80.0).abs() < 0.01,
+            "min casualties should be 80"
+        );
+        assert!(
+            (casualties.max - 100.0).abs() < 0.01,
+            "max casualties should be 100"
+        );
+    }
+
+    #[test]
+    fn compute_summary_zero_casualties() {
+        // Both factions at full strength.
+        let scenario = minimal_scenario();
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+
+        let mut fs = BTreeMap::new();
+        fs.insert(
+            f_gov.clone(),
+            make_faction_state(&f_gov, 100.0, 0.8, 1000.0),
+        );
+        fs.insert(
+            f_rebel.clone(),
+            make_faction_state(&f_rebel, 100.0, 0.8, 1000.0),
+        );
+
+        let runs = vec![make_rich_run(
+            0,
+            None,
+            10,
+            0.5,
+            fs,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            vec![],
+        )];
+        let summary = compute_summary(&runs, &scenario);
+        let casualties = summary
+            .metric_distributions
+            .get(&MetricType::TotalCasualties)
+            .expect("should have TotalCasualties");
+        assert!(
+            casualties.mean.abs() < f64::EPSILON,
+            "zero casualties expected"
+        );
+    }
+
+    #[test]
+    fn compute_summary_resources_expended() {
+        // Scenario has 2 factions with 1000 resources each (2000 total).
+        let scenario = minimal_scenario();
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+
+        // Run: gov spent 200, rebel spent 300 → 500 total expended.
+        let mut fs = BTreeMap::new();
+        fs.insert(f_gov.clone(), make_faction_state(&f_gov, 100.0, 0.8, 800.0));
+        fs.insert(
+            f_rebel.clone(),
+            make_faction_state(&f_rebel, 100.0, 0.8, 700.0),
+        );
+
+        let runs = vec![make_rich_run(
+            0,
+            None,
+            10,
+            0.5,
+            fs,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            vec![],
+        )];
+        let summary = compute_summary(&runs, &scenario);
+        let resources = summary
+            .metric_distributions
+            .get(&MetricType::ResourcesExpended)
+            .expect("should have ResourcesExpended");
+        assert!(
+            (resources.mean - 500.0).abs() < 0.01,
+            "should expend 500 resources, got {}",
+            resources.mean
+        );
+    }
+
+    #[test]
+    fn compute_summary_infrastructure_damage() {
+        // Build a scenario with infrastructure.
+        let mut scenario = minimal_scenario();
+        let iid = InfraId::from("power_grid");
+        scenario.map.infrastructure.insert(
+            iid.clone(),
+            InfrastructureNode {
+                id: iid.clone(),
+                name: "Power Grid".into(),
+                region: RegionId::from("region-a"),
+                infra_type: InfrastructureType::PowerGrid,
+                criticality: 0.9,
+                initial_status: 1.0,
+                repairable: Some(30),
+            },
+        );
+
+        // Run: infra dropped from 1.0 to 0.7 → 0.3 damage.
+        let mut infra = BTreeMap::new();
+        infra.insert(iid, 0.7);
+
+        let runs = vec![make_rich_run(
+            0,
+            None,
+            10,
+            0.5,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            infra,
+            vec![],
+        )];
+        let summary = compute_summary(&runs, &scenario);
+        let damage = summary
+            .metric_distributions
+            .get(&MetricType::InfrastructureDamage)
+            .expect("should have InfrastructureDamage");
+        assert!(
+            (damage.mean - 0.3).abs() < 0.01,
+            "infra damage should be 0.3, got {}",
+            damage.mean
+        );
+    }
+
+    #[test]
+    fn compute_summary_no_infrastructure_skips_metric() {
+        // Default minimal scenario has no infrastructure.
+        let scenario = minimal_scenario();
+        let runs = vec![make_run(0, None, 10, 0.5)];
+        let summary = compute_summary(&runs, &scenario);
+        assert!(
+            !summary
+                .metric_distributions
+                .contains_key(&MetricType::InfrastructureDamage),
+            "should not have InfrastructureDamage when no infra exists"
+        );
+    }
+
+    #[test]
+    fn compute_summary_regional_control() {
+        let f_gov = FactionId::from("gov");
+        let f_rebel = FactionId::from("rebel");
+        let r1 = RegionId::from("region-a");
+        let r2 = RegionId::from("region-b");
+
+        // Run 0: gov controls r1, rebel controls r2.
+        let mut rc0 = BTreeMap::new();
+        rc0.insert(r1.clone(), Some(f_gov.clone()));
+        rc0.insert(r2.clone(), Some(f_rebel.clone()));
+
+        // Run 1: rebel controls both.
+        let mut rc1 = BTreeMap::new();
+        rc1.insert(r1.clone(), Some(f_rebel.clone()));
+        rc1.insert(r2.clone(), Some(f_rebel.clone()));
+
+        // Run 2: gov controls both.
+        let mut rc2 = BTreeMap::new();
+        rc2.insert(r1.clone(), Some(f_gov.clone()));
+        rc2.insert(r2.clone(), Some(f_gov.clone()));
+
+        let scenario = minimal_scenario();
+        let runs = vec![
+            make_rich_run(
+                0,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                rc0,
+                BTreeMap::new(),
+                vec![],
+            ),
+            make_rich_run(
+                1,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                rc1,
+                BTreeMap::new(),
+                vec![],
+            ),
+            make_rich_run(
+                2,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                rc2,
+                BTreeMap::new(),
+                vec![],
+            ),
+        ];
+
+        let summary = compute_summary(&runs, &scenario);
+
+        // r1: gov=2/3, rebel=1/3.
+        let r1_ctrl = summary
+            .regional_control
+            .get(&r1)
+            .expect("should have region-a control");
+        let r1_gov = r1_ctrl.get(&f_gov).copied().unwrap_or(0.0);
+        let r1_rebel = r1_ctrl.get(&f_rebel).copied().unwrap_or(0.0);
+        assert!(
+            (r1_gov - 2.0 / 3.0).abs() < 0.01,
+            "r1 gov control should be 2/3, got {r1_gov}"
+        );
+        assert!(
+            (r1_rebel - 1.0 / 3.0).abs() < 0.01,
+            "r1 rebel control should be 1/3, got {r1_rebel}"
+        );
+
+        // r2: rebel=2/3, gov=1/3.
+        let r2_ctrl = summary
+            .regional_control
+            .get(&r2)
+            .expect("should have region-b control");
+        let r2_rebel = r2_ctrl.get(&f_rebel).copied().unwrap_or(0.0);
+        let r2_gov = r2_ctrl.get(&f_gov).copied().unwrap_or(0.0);
+        assert!(
+            (r2_rebel - 2.0 / 3.0).abs() < 0.01,
+            "r2 rebel should be 2/3"
+        );
+        assert!((r2_gov - 1.0 / 3.0).abs() < 0.01, "r2 gov should be 1/3");
+    }
+
+    #[test]
+    fn compute_summary_regional_control_uncontrolled_ignored() {
+        let r1 = RegionId::from("region-a");
+        let mut rc = BTreeMap::new();
+        rc.insert(r1.clone(), None); // No controller.
+
+        let scenario = minimal_scenario();
+        let runs = vec![make_rich_run(
+            0,
+            None,
+            10,
+            0.5,
+            BTreeMap::new(),
+            rc,
+            BTreeMap::new(),
+            vec![],
+        )];
+
+        let summary = compute_summary(&runs, &scenario);
+        // r1 has no controller, so it shouldn't appear (or have empty map).
+        let r1_ctrl = summary.regional_control.get(&r1);
+        assert!(
+            r1_ctrl.is_none() || r1_ctrl.expect("checked some").is_empty(),
+            "uncontrolled region should have no faction entries"
+        );
+    }
+
+    #[test]
+    fn compute_summary_event_probabilities() {
+        let scenario = minimal_scenario();
+
+        let e_a = EventId::from("event_a");
+        let e_b = EventId::from("event_b");
+
+        // Run 0: event_a fires.
+        let log0 = vec![EventRecord {
+            tick: 5,
+            event_id: e_a.clone(),
+        }];
+        // Run 1: event_a and event_b fire.
+        let log1 = vec![
+            EventRecord {
+                tick: 3,
+                event_id: e_a.clone(),
+            },
+            EventRecord {
+                tick: 7,
+                event_id: e_b.clone(),
+            },
+        ];
+        // Run 2: no events.
+        let log2 = vec![];
+
+        let runs = vec![
+            make_rich_run(
+                0,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                log0,
+            ),
+            make_rich_run(
+                1,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                log1,
+            ),
+            make_rich_run(
+                2,
+                None,
+                10,
+                0.5,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                log2,
+            ),
+        ];
+
+        let summary = compute_summary(&runs, &scenario);
+
+        // event_a fires in 2/3 runs.
+        let prob_a = summary
+            .event_probabilities
+            .get(&e_a)
+            .copied()
+            .expect("event_a should have probability");
+        assert!(
+            (prob_a - 2.0 / 3.0).abs() < 0.01,
+            "event_a should fire in 2/3 runs, got {prob_a}"
+        );
+
+        // event_b fires in 1/3 runs.
+        let prob_b = summary
+            .event_probabilities
+            .get(&e_b)
+            .copied()
+            .expect("event_b should have probability");
+        assert!(
+            (prob_b - 1.0 / 3.0).abs() < 0.01,
+            "event_b should fire in 1/3 runs, got {prob_b}"
+        );
+    }
+
+    #[test]
+    fn compute_summary_event_probability_deduplication() {
+        // Same event fires multiple times in one run — should count as 1 for probability.
+        let scenario = minimal_scenario();
+        let e_a = EventId::from("event_a");
+
+        let log = vec![
+            EventRecord {
+                tick: 1,
+                event_id: e_a.clone(),
+            },
+            EventRecord {
+                tick: 5,
+                event_id: e_a.clone(),
+            },
+            EventRecord {
+                tick: 10,
+                event_id: e_a.clone(),
+            },
+        ];
+
+        let runs = vec![make_rich_run(
+            0,
+            None,
+            10,
+            0.5,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            log,
+        )];
+
+        let summary = compute_summary(&runs, &scenario);
+        let prob = summary
+            .event_probabilities
+            .get(&e_a)
+            .copied()
+            .expect("event_a should have probability");
+        assert!(
+            (prob - 1.0).abs() < f64::EPSILON,
+            "event firing 3 times in 1 run should give probability 1.0"
+        );
+    }
+
+    #[test]
+    fn compute_summary_empty_runs_returns_zeroed() {
+        let scenario = minimal_scenario();
+        let summary = compute_summary(&[], &scenario);
+        assert_eq!(summary.total_runs, 0);
+        assert!(summary.win_rates.is_empty());
+        assert!(summary.regional_control.is_empty());
+        assert!(summary.event_probabilities.is_empty());
+        assert!(summary.metric_distributions.is_empty());
+    }
+
+    #[test]
+    fn compute_summary_has_all_expected_metrics() {
+        let scenario = minimal_scenario();
+        let runs = vec![make_run(0, None, 10, 0.5)];
+        let summary = compute_summary(&runs, &scenario);
+
+        assert!(
+            summary
+                .metric_distributions
+                .contains_key(&MetricType::Duration),
+            "should have Duration"
+        );
+        assert!(
+            summary
+                .metric_distributions
+                .contains_key(&MetricType::FinalTension),
+            "should have FinalTension"
+        );
+        assert!(
+            summary
+                .metric_distributions
+                .contains_key(&MetricType::TotalCasualties),
+            "should have TotalCasualties"
+        );
+        assert!(
+            summary
+                .metric_distributions
+                .contains_key(&MetricType::ResourcesExpended),
+            "should have ResourcesExpended"
+        );
+        // InfrastructureDamage is only present when scenario has infrastructure.
+        assert!(
+            !summary
+                .metric_distributions
+                .contains_key(&MetricType::InfrastructureDamage),
+            "should NOT have InfrastructureDamage without infra"
+        );
     }
 
     fn make_faction(id: FactionId, name: &str, region: RegionId) -> Faction {

@@ -115,6 +115,7 @@ fn make_ai_test_state() -> SimulationState {
             global_modifiers: vec![],
         },
         events_fired: std::collections::BTreeSet::new(),
+        events_fired_this_tick: vec![],
         snapshots: vec![],
     }
 }

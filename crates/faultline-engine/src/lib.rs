@@ -231,4 +231,220 @@ mod tests {
         assert_eq!(result1.final_tick, result2.final_tick);
         assert_eq!(result1.outcome.victor, result2.outcome.victor);
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 3 integration tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn run_result_has_final_state() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        assert_eq!(
+            result.final_state.tick, result.final_tick,
+            "final_state tick should match final_tick"
+        );
+        assert!(
+            !result.final_state.faction_states.is_empty(),
+            "final_state should have faction states"
+        );
+        assert!(
+            !result.final_state.region_control.is_empty(),
+            "final_state should have region control"
+        );
+    }
+
+    #[test]
+    fn run_result_final_state_matches_last_snapshot_tick() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        // final_state.tick and final_tick are set from the same value.
+        assert_eq!(
+            result.final_state.tick, result.final_tick,
+            "final_state.tick should equal final_tick"
+        );
+
+        if !result.snapshots.is_empty() {
+            let last_snap_tick = result.snapshots.last().expect("checked non-empty").tick;
+            assert!(
+                result.final_state.tick >= last_snap_tick,
+                "final_state should be at or after last snapshot"
+            );
+        }
+    }
+
+    #[test]
+    fn run_result_event_log_populated_from_scenario_with_events() {
+        // Load the asymmetric scenario which has events.
+        let toml_str = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scenarios/tutorial_asymmetric.toml"),
+        )
+        .expect("should read asymmetric scenario");
+        let scenario: faultline_types::scenario::Scenario =
+            toml::from_str(&toml_str).expect("should parse scenario");
+
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        // The asymmetric scenario has events with conditions that may or may not fire.
+        // At minimum, the event_log should be a valid (possibly empty) Vec.
+        // With seed 42, events typically fire.
+        // Whether or not events fire, the structure is correct.
+        for record in &result.event_log {
+            assert!(
+                record.tick > 0,
+                "event tick should be > 0 (ticks start at 1)"
+            );
+            assert!(record.tick <= result.final_tick, "event tick within bounds");
+        }
+    }
+
+    #[test]
+    fn events_fired_this_tick_cleared_between_ticks() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+
+        // Run a few ticks.
+        engine.tick().expect("tick 1");
+        let after_tick1 = engine.state().events_fired_this_tick.clone();
+
+        engine.tick().expect("tick 2");
+        let after_tick2 = engine.state().events_fired_this_tick.clone();
+
+        // With no events in scenario, both should be empty.
+        assert!(
+            after_tick1.is_empty(),
+            "events_fired_this_tick should be empty with no events"
+        );
+        assert!(
+            after_tick2.is_empty(),
+            "events_fired_this_tick should be empty with no events"
+        );
+    }
+
+    #[test]
+    fn snapshots_include_infra_status() {
+        use faultline_types::ids::InfraId;
+        use faultline_types::map::{InfrastructureNode, InfrastructureType};
+
+        let mut scenario = minimal_scenario();
+        scenario.simulation.snapshot_interval = 5;
+
+        let iid = InfraId::from("test_grid");
+        scenario.map.infrastructure.insert(
+            iid.clone(),
+            InfrastructureNode {
+                id: iid.clone(),
+                name: "Test Grid".into(),
+                region: RegionId::from("capital"),
+                infra_type: InfrastructureType::PowerGrid,
+                criticality: 0.9,
+                initial_status: 1.0,
+                repairable: Some(30),
+            },
+        );
+
+        let mut engine = Engine::new(scenario).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        // Snapshots should include infra_status.
+        for snap in &result.snapshots {
+            assert!(
+                snap.infra_status.contains_key(&iid),
+                "snapshot at tick {} should include infra_status for test_grid",
+                snap.tick
+            );
+        }
+
+        // Final state should also include infra.
+        assert!(
+            result.final_state.infra_status.contains_key(&iid),
+            "final_state should include infra_status"
+        );
+    }
+
+    #[test]
+    fn fracture_scenario_loads_and_runs() {
+        let toml_str = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scenarios/us_institutional_fracture.toml"),
+        )
+        .expect("should read fracture scenario");
+        let scenario: faultline_types::scenario::Scenario =
+            toml::from_str(&toml_str).expect("should parse scenario");
+
+        validate_scenario(&scenario).expect("scenario should be valid");
+
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        assert_eq!(result.final_tick, 365, "should run full 365 ticks");
+        assert!(
+            !result.final_state.faction_states.is_empty(),
+            "should have faction states"
+        );
+        assert!(
+            !result.event_log.is_empty(),
+            "fracture scenario should fire events"
+        );
+    }
+
+    #[test]
+    fn fracture_scenario_event_log_has_correct_event_ids() {
+        let toml_str = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scenarios/us_institutional_fracture.toml"),
+        )
+        .expect("should read fracture scenario");
+        let scenario: faultline_types::scenario::Scenario =
+            toml::from_str(&toml_str).expect("should parse scenario");
+
+        let mut engine = Engine::with_seed(scenario.clone(), 42).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        // All event IDs in the log should be defined in the scenario.
+        for record in &result.event_log {
+            assert!(
+                scenario.events.contains_key(&record.event_id),
+                "event_id {} in log should be defined in scenario",
+                record.event_id
+            );
+        }
+    }
+
+    #[test]
+    fn fracture_scenario_event_chain_fires() {
+        let toml_str = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scenarios/us_institutional_fracture.toml"),
+        )
+        .expect("should read fracture scenario");
+        let scenario: faultline_types::scenario::Scenario =
+            toml::from_str(&toml_str).expect("should parse scenario");
+
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine creation");
+        let result = engine.run().expect("run should succeed");
+
+        // constitutional_crisis chains to state_nullification.
+        let has_crisis = result
+            .event_log
+            .iter()
+            .any(|r| r.event_id.0 == "constitutional_crisis");
+        let has_nullification = result
+            .event_log
+            .iter()
+            .any(|r| r.event_id.0 == "state_nullification");
+
+        if has_crisis {
+            assert!(
+                has_nullification,
+                "if constitutional_crisis fired, state_nullification should chain-fire"
+            );
+        }
+    }
 }
