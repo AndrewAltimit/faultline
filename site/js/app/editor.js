@@ -140,7 +140,7 @@ export class Editor {
     a.href = url;
     a.download = 'scenario.toml';
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   _import(e) {

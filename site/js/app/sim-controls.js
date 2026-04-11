@@ -24,6 +24,7 @@ export class SimControls {
     this.tickDisplay = document.getElementById('tick-display');
     this.tickMax = document.getElementById('tick-max');
     this.timelineSlider = document.getElementById('timeline-slider');
+    this.outcomeBanner = document.getElementById('outcome-banner');
     this.playIcon = document.getElementById('play-icon');
 
     // Bind events.
@@ -35,9 +36,14 @@ export class SimControls {
 
     // Listen for scenario loaded.
     bus.on('scenario:loaded', () => this._onScenarioLoaded());
+    bus.on('sim:finished', (outcome) => this._showOutcome(outcome));
   }
 
   _onScenarioLoaded() {
+    // Stop any running simulation before loading new scenario.
+    this._pause();
+    this._hideOutcome();
+
     this.btnPlay.disabled = false;
     this.btnStep.disabled = false;
     this.btnReset.disabled = false;
@@ -181,6 +187,7 @@ export class SimControls {
 
       this.timelineSlider.value = 0;
       this._updateTickDisplay();
+      this._hideOutcome();
 
       this.bus.emit('sim:reset');
     } catch (e) {
@@ -228,6 +235,30 @@ export class SimControls {
         '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
     } else {
       this.playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    }
+  }
+
+  _showOutcome(outcome) {
+    if (!this.outcomeBanner) return;
+
+    const tick = AppState.engine ? AppState.engine.current_tick() : '?';
+
+    if (outcome?.victor) {
+      const scenario = AppState.scenario;
+      const factionName = scenario?.factions?.[outcome.victor]?.name || outcome.victor;
+      const condition = outcome.victory_condition || 'strategic control';
+      this.outcomeBanner.textContent = `Victory: ${factionName} — ${condition} (tick ${tick})`;
+      this.outcomeBanner.className = 'outcome-banner victory';
+    } else {
+      this.outcomeBanner.textContent = `Stalemate at tick ${tick} — no victory condition met`;
+      this.outcomeBanner.className = 'outcome-banner stalemate';
+    }
+    this.outcomeBanner.style.display = '';
+  }
+
+  _hideOutcome() {
+    if (this.outcomeBanner) {
+      this.outcomeBanner.style.display = 'none';
     }
   }
 }

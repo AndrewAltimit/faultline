@@ -132,7 +132,6 @@ pub struct WasmEngine {
     engine: Engine,
     scenario: Scenario,
     event_log: Vec<EventRecord>,
-    finished: bool,
 }
 
 #[wasm_bindgen]
@@ -152,7 +151,6 @@ impl WasmEngine {
             engine,
             scenario,
             event_log: Vec::new(),
-            finished: false,
         })
     }
 
@@ -164,7 +162,7 @@ impl WasmEngine {
         let mut tick_results = Vec::new();
 
         for _ in 0..n {
-            if self.finished {
+            if self.engine.is_finished() {
                 break;
             }
 
@@ -181,10 +179,6 @@ impl WasmEngine {
                     tick: current_tick,
                     event_id: eid.clone(),
                 });
-            }
-
-            if result.outcome.is_some() || current_tick >= self.engine.max_ticks() {
-                self.finished = true;
             }
 
             tick_results.push(result);
@@ -225,7 +219,7 @@ impl WasmEngine {
 
     /// Check whether the simulation has finished.
     pub fn is_finished(&self) -> bool {
-        self.finished
+        self.engine.is_finished()
     }
 }
 

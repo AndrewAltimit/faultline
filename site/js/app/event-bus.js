@@ -39,7 +39,11 @@ export class EventBus {
     const fns = this._listeners.get(event);
     if (fns) {
       for (const fn of fns) {
-        fn(data);
+        try {
+          fn(data);
+        } catch (e) {
+          console.error(`EventBus: listener error on "${event}":`, e);
+        }
       }
     }
   }

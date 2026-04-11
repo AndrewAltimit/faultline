@@ -177,18 +177,32 @@ export class MapRenderer {
       }
       ctx.restore();
 
-      // Region label at label position.
+      // Region label at label position with background pill.
       const region = regions[rid];
+      if (!region) continue;
       const labelScreen = this._projectPoint(geoData.labelPos[0], geoData.labelPos[1]);
 
       ctx.save();
       ctx.font = `600 ${LABEL_FONT_SIZE}px Inter, system-ui, sans-serif`;
+      const labelText = region.name || rid;
+      const textWidth = ctx.measureText(labelText).width;
+      const pillPad = 6;
+
+      // Background pill.
+      ctx.fillStyle = 'rgba(10, 10, 11, 0.7)';
+      const pillX = labelScreen[0] - textWidth / 2 - pillPad;
+      const pillY = labelScreen[1] - LABEL_FONT_SIZE / 2 - 3;
+      const pillW = textWidth + pillPad * 2;
+      const pillH = LABEL_FONT_SIZE + 6;
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillW, pillH, 4);
+      ctx.fill();
+
+      // Label text.
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(0,0,0,0.8)';
-      ctx.shadowBlur = 4;
-      ctx.fillText(region?.name || rid, labelScreen[0], labelScreen[1]);
+      ctx.fillText(labelText, labelScreen[0], labelScreen[1]);
       ctx.restore();
 
       // Population sub-label.

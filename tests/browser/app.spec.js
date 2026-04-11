@@ -150,4 +150,121 @@ test.describe('Faultline Simulator App', () => {
     await snap(page, '09-tutorial-asymmetric-map');
   });
 
+  test('10 - reset during play', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    await page.selectOption('#preset-select', 'scenarios/tutorial_symmetric.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+
+    // Play a few ticks.
+    await page.click('#btn-play');
+    await page.waitForTimeout(500);
+
+    // Reset while playing.
+    await page.click('#btn-reset');
+    await page.waitForTimeout(500);
+
+    // Tick should be back to 0.
+    const tickText = await page.locator('#tick-display').textContent();
+    expect(tickText).toContain('0');
+    await snap(page, '10-reset-during-play');
+  });
+
+  test('11 - load multiple scenarios in sequence', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    // Load US scenario first.
+    await page.selectOption('#preset-select', 'scenarios/us_institutional_fracture.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+    await snap(page, '11-first-scenario-loaded');
+
+    // Now load tutorial scenario — map should change.
+    await page.selectOption('#preset-select', 'scenarios/tutorial_symmetric.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+    await snap(page, '11-second-scenario-loaded');
+
+    // Tick should be 0 again.
+    const tickText = await page.locator('#tick-display').textContent();
+    expect(tickText).toContain('0');
+  });
+
+  test('12 - invalid TOML shows validation error', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    // Type invalid TOML into the editor.
+    await page.fill('#toml-editor', 'this is not valid toml {{{{');
+    await page.click('#btn-validate');
+    await page.waitForTimeout(500);
+
+    // Check that a validation error is shown.
+    const msg = await page.locator('#validation-msg').textContent();
+    expect(msg.length).toBeGreaterThan(0);
+    await snap(page, '12-invalid-toml-error');
+  });
+
+  test('13 - drone swarm scenario loads and runs', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    await page.selectOption('#preset-select', 'scenarios/drone_swarm_destabilization.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+    await snap(page, '13-drone-swarm-loaded');
+
+    // Step 10 ticks.
+    for (let i = 0; i < 10; i++) {
+      await page.click('#btn-step');
+      await page.waitForTimeout(100);
+    }
+    await snap(page, '13-drone-swarm-after-10-steps');
+  });
+
+  test('14 - Monte Carlo on US fracture scenario', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    await page.selectOption('#preset-select', 'scenarios/us_institutional_fracture.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+
+    await page.fill('#mc-runs', '10');
+    await page.click('#btn-mc-run');
+    await page.waitForTimeout(10000);
+    await snap(page, '14-us-fracture-monte-carlo');
+  });
+
+  test('15 - outcome banner shows on completion', async ({ page }) => {
+    await page.goto('/app.html');
+    await page.waitForTimeout(2000);
+
+    await page.selectOption('#preset-select', 'scenarios/tutorial_symmetric.toml');
+    await page.waitForTimeout(1000);
+    await page.click('#btn-load');
+    await page.waitForTimeout(1000);
+
+    // Set max speed and play to completion.
+    await page.fill('#speed-slider', '5');
+    await page.dispatchEvent('#speed-slider', 'input');
+    await page.click('#btn-play');
+    await page.waitForTimeout(5000);
+
+    // Outcome banner should be visible.
+    const banner = page.locator('#outcome-banner');
+    await expect(banner).toBeVisible();
+    const bannerText = await banner.textContent();
+    console.log('Outcome banner:', bannerText);
+    await snap(page, '15-outcome-banner');
+  });
+
 });
