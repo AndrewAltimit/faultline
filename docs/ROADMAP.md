@@ -94,8 +94,94 @@ Current state: Phases 1-4 complete.
 
 ---
 
+## Phase 6: Analytical Depth
+
+**Goal:** Simulation engine produces ETRA-grade analysis — multi-phase kill chains, cost asymmetry modeling, detection/attribution scoring, and defensive gap identification.
+
+### 6.1 — Multi-Phase Campaign Model
+
+The current engine models each tick independently. Real threat campaigns are multi-phase kill chains where intelligence from early phases (sensor emplacement, wireless recon) directly enables later phases (credential harvest, coercion, kinetic action). Phase 6.1 adds a campaign layer on top of the tick engine.
+
+- [ ] `CampaignPhase` type — named phase with prerequisites (prior phases), success probability, duration range, and output effects
+- [ ] `KillChain` type — ordered sequence of `CampaignPhase`s with branching (e.g., coercion vs kinetic after intelligence acquisition)
+- [ ] Phase prerequisite resolution — a phase cannot begin until its prerequisites have completed; intelligence outputs from prior phases modify success probability of subsequent phases
+- [ ] Campaign-level Monte Carlo — run the full kill chain N times, producing probability distributions over which phases succeed, at what tick, and which branch is taken
+- [ ] Compound kill chain visualization in browser — Sankey diagram or flow chart showing phase progression with probability annotations
+
+### 6.2 — Cost Asymmetry Analysis
+
+The ETRA's central finding is that defense costs orders of magnitude more than attack. The engine should quantify this.
+
+- [ ] `AttackerBudget` and `DefenderBudget` tracking — separate resource pools with explicit dollar-denominated costs per capability
+- [ ] Cost-per-capability cards — each tech card carries acquisition cost, recurring cost, and deployment timeline (not just abstract resource units)
+- [ ] Asymmetry ratio output — for each scenario, compute the ratio of defender investment required to close each gap vs attacker investment to exploit it
+- [ ] Budget constraint mode — run simulations with defender budget caps to identify which gaps remain open at each funding level
+- [ ] Cost-effectiveness frontier visualization — chart showing defensive coverage vs investment, with diminishing returns visible
+
+### 6.3 — Detection and Attribution Modeling
+
+Current engine treats combat as symmetric Lanchester attrition. Covert operations are fundamentally about detection probability, not force-on-force combat.
+
+- [ ] `DetectionProbability` per operation phase — each campaign phase has a per-tick detection probability that accumulates over time (the longer you operate, the more likely you're caught)
+- [ ] `AttributionDifficulty` scoring — post-incident, how hard is it to identify the actor? Scored by hardware traceability, operational footprint, forensic recoverability
+- [ ] Detection triggers — when an operation is detected, model the defender's response (investigation, perimeter hardening, public disclosure) and its effect on subsequent phases
+- [ ] False positive modeling — defender classification systems have false positive rates; each false positive (destroying a CNN drone, investigating a utility sensor that's actually legitimate) carries political and resource cost
+- [ ] Attribution confidence output — Monte Carlo produces probability distribution over attribution outcomes (definitive identification, analytical assessment, no attribution)
+
+### 6.4 — Doctrinal Seam Analysis
+
+The ETRA identifies that the most dangerous attacks exploit gaps between defensive disciplines (physical security, cyber, C-UAS). The engine should model this explicitly.
+
+- [ ] `DefensiveDomain` type — physical security, network security, counter-UAS, executive protection, each with coverage area, response time, and organizational owner
+- [ ] Seam identification — automatically detect regions/operations that fall between two or more defensive domains with no single owner
+- [ ] Cross-domain correlation — model the delay and friction of cross-domain incident response (C-UAS detects drone → physical security investigates rooftop → IT security checks wireless → 45-minute loop vs 15-second attack window)
+- [ ] Seam exploitation scoring — for each scenario, compute how much of the attack success probability comes from exploiting inter-domain gaps vs overcoming any single domain
+- [ ] Organizational friction model — model the "not my job" heuristic where no single role owns verification of exterior equipment, off-site staff device security, or rooftop inspection
+
+### 6.5 — Feasibility Matrix Output
+
+The ETRA uses structured feasibility tables. The engine should produce them automatically.
+
+- [ ] Per-scenario feasibility matrix — technology readiness, operational complexity, detection probability, success probability, consequence severity, attribution difficulty
+- [ ] Confidence ratings — each feasibility factor has a confidence level (high/medium/low) based on the variance in Monte Carlo outcomes
+- [ ] Sensitivity to assumptions — which feasibility factors change the outcome most? (connects to existing sensitivity analysis)
+- [ ] Comparative scenario matrix — side-by-side feasibility comparison across scenarios (which is cheapest, most likely to succeed, hardest to attribute)
+- [ ] PDF/Markdown report generation — export analysis results as a structured document matching ETRA format
+
+### 6.6 — Non-Kinetic Outcome Modeling
+
+Current engine measures outcomes as territorial control and force elimination. Many ETRA scenarios succeed through coercion, information operations, or institutional erosion — not kinetic action.
+
+- [ ] `InformationDominance` metric — who controls the narrative? Measured by media coverage, public trust delta, and narrative coherence
+- [ ] `InstitutionalErosion` metric — cumulative damage to institutional trust, legitimacy, and operational effectiveness
+- [ ] `CoercionPressure` metric — the credible threat level imposed by demonstrated capability (even without kinetic use)
+- [ ] `PoliticalCost` metric — the cost to the defender of overreaction (security theater, restricted events, civil liberties impact)
+- [ ] Victory conditions based on non-kinetic metrics — coercion succeeds when the target changes policy, not when territory changes hands
+
+---
+
+## Phase 7: Scenario Library
+
+**Goal:** Comprehensive library of ETRA-grade scenarios covering major threat archetypes.
+
+- [ ] Autonomous drone swarm executive decapitation (ETRA Scenario 1)
+- [ ] Drone-assisted coup facilitation (ETRA Scenario 2)
+- [ ] Revolutionary infrastructure seizure with drone ISR (ETRA Scenario 3)
+- [ ] Asymmetric coercion campaign — proof-of-capability escalation (ETRA Scenario 4)
+- [ ] Persistent covert surveillance network (ETRA Scenario 5)
+- [ ] Cyber-physical network exploitation via drone-delivered rogue APs (ETRA Scenario 6)
+- [ ] Persistent covert sensor emplacement with solar-sustained nodes (ETRA Scenario 7)
+- [ ] Compound kill chains (ETRA Appendix D: Alpha, Bravo, Charlie)
+- [ ] Taiwan Strait crisis — multi-domain great power competition
+- [ ] European energy infrastructure sabotage
+- [ ] Arctic sovereignty disputes with drone swarm force projection
+- [ ] Domestic critical infrastructure ransomware + physical drone attack convergence
+
+---
+
 ## Ongoing
 
 - [ ] Scenario validation improvements — check referential integrity (all IDs resolve), no dangling faction references, probability bounds [0,1], event chain cycle detection
 - [ ] Property tests — determinism across platforms (native vs WASM), conservation laws (no strength created from nothing), monotonic clocks
 - [ ] Additional scenarios covering different conflict archetypes
+- [ ] Playwright screenshot regression tests for all UI features

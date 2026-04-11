@@ -19,4 +19,9 @@ export const PRESETS = [
     path: 'scenarios/us_institutional_fracture.toml',
     description: '4-faction institutional crisis across 8 US macro-regions.',
   },
+  {
+    name: 'Drone Swarm Destabilization',
+    path: 'scenarios/drone_swarm_destabilization.toml',
+    description: 'Multi-phase autonomous drone swarm campaign — kill chain from sensor emplacement through coercion.',
+  },
 ];
