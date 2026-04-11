@@ -22,7 +22,6 @@ export class SimControls {
     this.speedLabel = document.getElementById('speed-label');
     this.tickDisplay = document.getElementById('tick-display');
     this.tickMax = document.getElementById('tick-max');
-    this.tensionValue = document.getElementById('tension-value');
     this.timelineSlider = document.getElementById('timeline-slider');
     this.playIcon = document.getElementById('play-icon');
 
@@ -220,11 +219,6 @@ export class SimControls {
 
     this.tickDisplay.innerHTML =
       `Tick <span class="tick-value">${tick}</span> / <span class="tick-value">${max}</span>`;
-
-    const snapshot = AppState.currentSnapshot;
-    if (snapshot && snapshot.tension !== undefined) {
-      this.tensionValue.textContent = snapshot.tension.toFixed(2);
-    }
   }
 
   _setPlayIcon(playing) {

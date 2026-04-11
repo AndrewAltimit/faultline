@@ -19,7 +19,7 @@ async function bootstrap() {
 
   let wasm;
   try {
-    const wasmModule = await import('../pkg/faultline_backend_wasm.js');
+    const wasmModule = await import('../../pkg/faultline_backend_wasm.js');
     await wasmModule.default();
     wasmModule.init();
     wasm = wasmModule;
