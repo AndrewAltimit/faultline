@@ -228,3 +228,331 @@ impl WasmEngine {
         self.finished
     }
 }
+
+// ---------------------------------------------------------------------------
+// Native tests (exercise underlying logic without WASM runtime)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TUTORIAL_TOML: &str = include_str!("../../../scenarios/tutorial_symmetric.toml");
+
+    fn load_toml(toml_str: &str) -> Scenario {
+        toml::from_str(toml_str).expect("should parse TOML")
+    }
+
+    // -- Scenario parsing ------------------------------------------------
+
+    #[test]
+    fn parse_tutorial_scenario() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        assert_eq!(scenario.meta.name, "Tutorial \u{2014} Symmetric Conflict");
+        assert_eq!(scenario.factions.len(), 2);
+        assert_eq!(scenario.map.regions.len(), 4);
+    }
+
+    #[test]
+    fn parse_invalid_toml_returns_error() {
+        let result: Result<Scenario, _> = toml::from_str("not valid toml {{{{");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_tutorial_scenario_passes() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        assert!(validate_scenario(&scenario).is_ok());
+    }
+
+    #[test]
+    fn validate_empty_factions_fails() {
+        let mut scenario = load_toml(TUTORIAL_TOML);
+        scenario.factions.clear();
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    // -- Engine lifecycle (WasmEngine logic paths) -----------------------
+
+    #[test]
+    fn engine_lifecycle_create_and_tick() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine init");
+
+        assert_eq!(engine.current_tick(), 0);
+        assert!(!engine.is_finished());
+
+        let result = engine.tick().expect("tick 1");
+        assert_eq!(result.tick, 1);
+        assert_eq!(engine.current_tick(), 1);
+    }
+
+    #[test]
+    fn engine_lifecycle_tick_n_batch() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine init");
+
+        // Simulate tick_n(5) by calling tick() 5 times.
+        let mut results = Vec::new();
+        let mut event_log: Vec<EventRecord> = Vec::new();
+        let mut finished = false;
+
+        for _ in 0..5 {
+            if finished {
+                break;
+            }
+            let result = engine.tick().expect("tick should succeed");
+            let current_tick = engine.current_tick();
+            for eid in &engine.state().events_fired_this_tick {
+                event_log.push(EventRecord {
+                    tick: current_tick,
+                    event_id: eid.clone(),
+                });
+            }
+            if result.outcome.is_some() || current_tick >= engine.max_ticks() {
+                finished = true;
+            }
+            results.push(result);
+        }
+
+        assert_eq!(results.len(), 5);
+        assert_eq!(results[0].tick, 1);
+        assert_eq!(results[4].tick, 5);
+    }
+
+    #[test]
+    fn engine_lifecycle_snapshot_serializable() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let engine = Engine::with_seed(scenario, 42).expect("engine init");
+
+        let snapshot = engine.snapshot();
+        let json = serde_json::to_string(&snapshot).expect("snapshot should serialize");
+        assert!(json.contains("\"tick\":0"));
+        assert!(json.contains("\"region_control\""));
+        assert!(json.contains("\"faction_states\""));
+    }
+
+    #[test]
+    fn engine_lifecycle_scenario_serializable() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let json = serde_json::to_string(&scenario).expect("scenario should serialize");
+        assert!(json.contains("\"alpha\""));
+        assert!(json.contains("\"bravo\""));
+    }
+
+    #[test]
+    fn engine_lifecycle_finished_flag_sync() {
+        let mut scenario = load_toml(TUTORIAL_TOML);
+        scenario.simulation.max_ticks = 10;
+
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine init");
+        let mut finished = false;
+
+        for _ in 0..10 {
+            if finished {
+                break;
+            }
+            let result = engine.tick().expect("tick");
+            if result.outcome.is_some() || engine.current_tick() >= engine.max_ticks() {
+                finished = true;
+            }
+        }
+
+        assert!(finished, "finished flag should be true after max_ticks");
+        assert!(engine.is_finished(), "engine.is_finished() should agree");
+    }
+
+    #[test]
+    fn engine_lifecycle_event_log_accumulation() {
+        let toml_str = include_str!("../../../scenarios/tutorial_asymmetric.toml");
+        let scenario = load_toml(toml_str);
+
+        let mut engine = Engine::with_seed(scenario, 42).expect("engine init");
+        let mut event_log: Vec<EventRecord> = Vec::new();
+
+        loop {
+            let result = engine.tick().expect("tick");
+            let current_tick = engine.current_tick();
+            for eid in &engine.state().events_fired_this_tick {
+                event_log.push(EventRecord {
+                    tick: current_tick,
+                    event_id: eid.clone(),
+                });
+            }
+            if result.outcome.is_some() || current_tick >= engine.max_ticks() {
+                break;
+            }
+        }
+
+        // All event records should have valid tick bounds.
+        for record in &event_log {
+            assert!(record.tick > 0, "event tick should be > 0");
+            assert!(
+                record.tick <= engine.current_tick(),
+                "event tick should be <= final tick"
+            );
+        }
+    }
+
+    // -- Monte Carlo underlying logic ------------------------------------
+
+    #[test]
+    fn monte_carlo_runner_with_tutorial_scenario() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 10,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC should succeed");
+
+        assert_eq!(result.summary.total_runs, 10);
+        assert_eq!(result.runs.len(), 10);
+
+        // Win rates should sum to ~1.0 (allowing for stalemates).
+        let total_win_rate: f64 = result.summary.win_rates.values().sum();
+        assert!(
+            total_win_rate <= 1.0 + f64::EPSILON,
+            "win rates should sum to <= 1.0, got {total_win_rate}"
+        );
+
+        // Duration stats should be populated.
+        assert!(result.summary.average_duration > 0.0);
+    }
+
+    #[test]
+    fn monte_carlo_result_serializable() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 5,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC should succeed");
+
+        let json = serde_json::to_string(&result).expect("MC result should serialize");
+        assert!(json.contains("\"win_rates\""));
+        assert!(json.contains("\"average_duration\""));
+        assert!(json.contains("\"regional_control\""));
+    }
+
+    #[test]
+    fn monte_carlo_zero_runs_errors() {
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 0,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario);
+        assert!(result.is_err(), "zero runs should error");
+    }
+
+    #[test]
+    fn monte_carlo_invalid_scenario_errors() {
+        let mut scenario = load_toml(TUTORIAL_TOML);
+        scenario.factions.clear();
+        scenario.map.regions.clear();
+
+        let config = MonteCarloConfig {
+            num_runs: 5,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario);
+        assert!(result.is_err(), "invalid scenario should error");
+    }
+
+    // -- Tick stepping matches full run ----------------------------------
+
+    #[test]
+    fn tick_stepping_matches_full_run_result() {
+        let scenario = load_toml(TUTORIAL_TOML);
+
+        // Full run.
+        let mut engine_full = Engine::with_seed(scenario.clone(), 42).expect("engine init");
+        let run_result = engine_full.run().expect("run");
+
+        // Tick-stepped run.
+        let mut engine_step = Engine::with_seed(scenario, 42).expect("engine init");
+        let mut event_log: Vec<EventRecord> = Vec::new();
+
+        loop {
+            let result = engine_step.tick().expect("tick");
+            let current_tick = engine_step.current_tick();
+            for eid in &engine_step.state().events_fired_this_tick {
+                event_log.push(EventRecord {
+                    tick: current_tick,
+                    event_id: eid.clone(),
+                });
+            }
+            if result.outcome.is_some() || current_tick >= engine_step.max_ticks() {
+                break;
+            }
+        }
+
+        let step_snapshot = engine_step.snapshot();
+
+        // Final ticks should match.
+        assert_eq!(
+            step_snapshot.tick, run_result.final_state.tick,
+            "final tick mismatch"
+        );
+
+        // Event log lengths should match.
+        assert_eq!(
+            event_log.len(),
+            run_result.event_log.len(),
+            "event log length mismatch"
+        );
+
+        // Faction states should match.
+        for (fid, fs_step) in &step_snapshot.faction_states {
+            let fs_run = run_result
+                .final_state
+                .faction_states
+                .get(fid)
+                .expect("faction should exist");
+            assert!(
+                (fs_step.total_strength - fs_run.total_strength).abs() < f64::EPSILON,
+                "strength mismatch for {fid}"
+            );
+        }
+    }
+
+    // -- Fracture scenario coverage -------------------------------------
+
+    #[test]
+    fn fracture_scenario_monte_carlo() {
+        let toml_str = include_str!("../../../scenarios/us_institutional_fracture.toml");
+        let scenario = load_toml(toml_str);
+        let config = MonteCarloConfig {
+            num_runs: 5,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC should succeed");
+
+        assert_eq!(result.summary.total_runs, 5);
+        assert_eq!(result.runs.len(), 5);
+
+        // Should have 4 faction entries in win_rates (may be 0.0 for some).
+        // Some factions may not appear if they never win.
+        // Regional control should have all 8 regions.
+        assert_eq!(
+            result.summary.regional_control.len(),
+            8,
+            "should have 8 regions in regional_control"
+        );
+    }
+}

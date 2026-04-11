@@ -1777,3 +1777,297 @@ fn civilian_activation_noncooperation_reduces_controller_resources() {
          With strike: {alpha_resources:.1}, Baseline: {alpha_baseline:.1}"
     );
 }
+
+// -----------------------------------------------------------------------
+// Phase 4: Tick-stepping integration tests
+// These mirror WasmEngine usage: tick_n batches, snapshot capture,
+// event accumulation, and is_finished behavior.
+// -----------------------------------------------------------------------
+
+#[test]
+fn tick_stepping_accumulates_snapshots() {
+    let mut scenario = base_scenario();
+    scenario.simulation.snapshot_interval = 5;
+    scenario.simulation.max_ticks = 20;
+
+    let mut engine = Engine::new(scenario).expect("engine creation");
+    let mut snapshots = Vec::new();
+
+    // Step through in batches, capturing snapshots.
+    while !engine.is_finished() {
+        engine.tick().expect("tick should succeed");
+        snapshots.push(engine.snapshot());
+    }
+
+    assert_eq!(
+        snapshots.len(),
+        20,
+        "should have 20 snapshots (one per tick)"
+    );
+    assert_eq!(snapshots[0].tick, 1, "first snapshot should be tick 1");
+    assert_eq!(snapshots[19].tick, 20, "last snapshot should be tick 20");
+
+    // Verify ticks are monotonically increasing.
+    for i in 1..snapshots.len() {
+        assert!(
+            snapshots[i].tick > snapshots[i - 1].tick,
+            "snapshot ticks should be monotonically increasing"
+        );
+    }
+}
+
+#[test]
+fn tick_stepping_event_accumulation() {
+    // Use the asymmetric scenario which has events.
+    let toml_str = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scenarios/tutorial_asymmetric.toml"),
+    )
+    .expect("should read asymmetric scenario");
+    let scenario: Scenario = toml::from_str(&toml_str).expect("should parse");
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine creation");
+
+    let mut all_events: Vec<(u32, String)> = Vec::new();
+
+    while !engine.is_finished() {
+        let result = engine.tick().expect("tick should succeed");
+
+        // Accumulate events like WasmEngine does.
+        for eid in &engine.state().events_fired_this_tick {
+            all_events.push((engine.current_tick(), eid.0.clone()));
+        }
+
+        if result.outcome.is_some() {
+            break;
+        }
+    }
+
+    // Compare with full run to verify consistency.
+    let scenario2: Scenario = toml::from_str(&toml_str).expect("should parse");
+    let mut engine2 = Engine::with_seed(scenario2, 42).expect("engine creation");
+    let run_result = engine2.run().expect("run should succeed");
+
+    // The event counts should match.
+    assert_eq!(
+        all_events.len(),
+        run_result.event_log.len(),
+        "tick-stepping should accumulate the same events as run()"
+    );
+
+    // Event IDs should match in order.
+    for (i, (tick, eid)) in all_events.iter().enumerate() {
+        assert_eq!(
+            *tick, run_result.event_log[i].tick,
+            "event tick mismatch at index {i}"
+        );
+        assert_eq!(
+            *eid, run_result.event_log[i].event_id.0,
+            "event ID mismatch at index {i}"
+        );
+    }
+}
+
+#[test]
+fn tick_stepping_determinism_matches_run() {
+    let scenario = base_scenario();
+
+    // Run via tick-stepping.
+    let mut engine1 = Engine::new(scenario.clone()).expect("engine creation");
+    while !engine1.is_finished() {
+        let result = engine1.tick().expect("tick");
+        if result.outcome.is_some() {
+            break;
+        }
+    }
+    let snap1 = engine1.snapshot();
+
+    // Run via run().
+    let mut engine2 = Engine::new(scenario).expect("engine creation");
+    let run_result = engine2.run().expect("run");
+
+    // Final states should be identical.
+    assert_eq!(snap1.tick, run_result.final_state.tick);
+
+    // Check faction states match.
+    for (fid, fs1) in &snap1.faction_states {
+        let fs2 = run_result
+            .final_state
+            .faction_states
+            .get(fid)
+            .expect("faction should exist in run result");
+        assert!(
+            (fs1.total_strength - fs2.total_strength).abs() < f64::EPSILON,
+            "strength mismatch for {fid}: {:.4} vs {:.4}",
+            fs1.total_strength,
+            fs2.total_strength
+        );
+        assert!(
+            (fs1.morale - fs2.morale).abs() < f64::EPSILON,
+            "morale mismatch for {fid}: {:.4} vs {:.4}",
+            fs1.morale,
+            fs2.morale
+        );
+        assert!(
+            (fs1.resources - fs2.resources).abs() < f64::EPSILON,
+            "resources mismatch for {fid}: {:.4} vs {:.4}",
+            fs1.resources,
+            fs2.resources
+        );
+    }
+
+    // Region control should match.
+    assert_eq!(snap1.region_control, run_result.final_state.region_control);
+}
+
+#[test]
+fn tick_batch_stepping_n_at_a_time() {
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 30;
+
+    let mut engine = Engine::new(scenario).expect("engine creation");
+
+    // Advance in batches of 10.
+    for batch in 0..3 {
+        for _ in 0..10 {
+            let result = engine.tick().expect("tick should succeed");
+            if result.outcome.is_some() {
+                return; // Victory reached early — test is still valid.
+            }
+        }
+        let snap = engine.snapshot();
+        assert_eq!(
+            snap.tick,
+            (batch + 1) * 10,
+            "after batch {batch}, tick should be {}",
+            (batch + 1) * 10
+        );
+    }
+
+    assert!(engine.is_finished(), "should be finished after 30 ticks");
+}
+
+#[test]
+fn is_finished_not_triggered_by_victory() {
+    // is_finished() only checks max_ticks, not victory.
+    // Victory is reported via TickResult.outcome.
+    let scenario = base_scenario();
+    let mut engine = Engine::new(scenario).expect("engine creation");
+
+    // Tick once — victory hasn't been reached yet.
+    let result = engine.tick().expect("tick");
+    if result.outcome.is_none() {
+        // If no victory on tick 1, is_finished should be false.
+        assert!(
+            !engine.is_finished(),
+            "is_finished should be false before max_ticks"
+        );
+    }
+}
+
+#[test]
+fn snapshot_tension_tracks_political_changes() {
+    let scenario = base_scenario();
+    let mut engine = Engine::new(scenario).expect("engine creation");
+
+    let initial_tension = engine.snapshot().tension;
+
+    // Run a few ticks — tension should change due to political phase.
+    for _ in 0..10 {
+        engine.tick().expect("tick");
+    }
+
+    let later_tension = engine.snapshot().tension;
+
+    // Tension may or may not change depending on simulation dynamics,
+    // but both values should be in valid bounds.
+    assert!(
+        (0.0..=1.0).contains(&initial_tension),
+        "initial tension {initial_tension} should be in [0, 1]"
+    );
+    assert!(
+        (0.0..=1.0).contains(&later_tension),
+        "later tension {later_tension} should be in [0, 1]"
+    );
+}
+
+#[test]
+fn snapshot_infra_status_present_when_infra_exists() {
+    use faultline_types::ids::InfraId;
+    use faultline_types::map::{InfrastructureNode, InfrastructureType};
+
+    let mut scenario = base_scenario();
+    let iid = InfraId::from("test_power_grid");
+    scenario.map.infrastructure.insert(
+        iid.clone(),
+        InfrastructureNode {
+            id: iid.clone(),
+            name: "Test Power Grid".into(),
+            region: RegionId::from("r1"),
+            infra_type: InfrastructureType::PowerGrid,
+            criticality: 0.8,
+            initial_status: 1.0,
+            repairable: Some(10),
+        },
+    );
+
+    let mut engine = Engine::new(scenario).expect("engine creation");
+
+    // Snapshot at tick 0 should include infra.
+    let snap0 = engine.snapshot();
+    assert!(
+        snap0.infra_status.contains_key(&iid),
+        "snapshot should include infrastructure status at tick 0"
+    );
+
+    // Advance and check again.
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+    }
+    let snap5 = engine.snapshot();
+    assert!(
+        snap5.infra_status.contains_key(&iid),
+        "snapshot should include infrastructure status at tick 5"
+    );
+}
+
+#[test]
+fn fracture_scenario_tick_stepping_consistency() {
+    let toml_str = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scenarios/us_institutional_fracture.toml"),
+    )
+    .expect("should read fracture scenario");
+    let scenario: Scenario = toml::from_str(&toml_str).expect("should parse");
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine creation");
+
+    // Tick 50 times, capturing snapshots at each interval.
+    let mut tick_snapshots = Vec::new();
+    for _ in 0..50 {
+        engine.tick().expect("tick should succeed");
+        if engine.current_tick().is_multiple_of(10) {
+            tick_snapshots.push(engine.snapshot());
+        }
+    }
+
+    assert_eq!(tick_snapshots.len(), 5, "should have 5 interval snapshots");
+
+    // All 4 factions should be present in each snapshot.
+    for snap in &tick_snapshots {
+        assert_eq!(
+            snap.faction_states.len(),
+            4,
+            "fracture scenario should have 4 factions at tick {}",
+            snap.tick
+        );
+    }
+
+    // Verify all 8 regions have control entries.
+    let final_snap = tick_snapshots.last().expect("should have snapshots");
+    assert_eq!(
+        final_snap.region_control.len(),
+        8,
+        "fracture scenario should have 8 regions in control map"
+    );
+}

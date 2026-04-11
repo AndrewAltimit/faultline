@@ -600,3 +600,100 @@ fn update_region_control_assigns_to_strongest() {
         "ne should be controlled by the faction with most strength"
     );
 }
+
+// -----------------------------------------------------------------------
+// Phase 4: TickResult serialization round-trip tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn tick_result_json_roundtrip_no_outcome() {
+    use crate::tick::TickResult;
+
+    let tr = TickResult {
+        tick: 42,
+        events_fired: vec!["event_a".to_string(), "event_b".to_string()],
+        combats_resolved: 3,
+        outcome: None,
+    };
+
+    let json = serde_json::to_string(&tr).expect("should serialize TickResult");
+    let deserialized: TickResult =
+        serde_json::from_str(&json).expect("should deserialize TickResult");
+
+    assert_eq!(deserialized.tick, 42);
+    assert_eq!(deserialized.events_fired.len(), 2);
+    assert_eq!(deserialized.events_fired[0], "event_a");
+    assert_eq!(deserialized.events_fired[1], "event_b");
+    assert_eq!(deserialized.combats_resolved, 3);
+    assert!(deserialized.outcome.is_none());
+}
+
+#[test]
+fn tick_result_json_roundtrip_with_outcome() {
+    use crate::tick::TickResult;
+    use faultline_types::stats::Outcome;
+
+    let tr = TickResult {
+        tick: 100,
+        events_fired: vec![],
+        combats_resolved: 0,
+        outcome: Some(Outcome {
+            victor: Some(FactionId::from("alpha")),
+            victory_condition: Some("strategic_control".to_string()),
+            final_tension: 0.75,
+        }),
+    };
+
+    let json = serde_json::to_string(&tr).expect("should serialize");
+    let deserialized: TickResult = serde_json::from_str(&json).expect("should deserialize");
+
+    assert_eq!(deserialized.tick, 100);
+    assert!(deserialized.events_fired.is_empty());
+    let outcome = deserialized.outcome.expect("should have outcome");
+    assert_eq!(outcome.victor, Some(FactionId::from("alpha")));
+    assert_eq!(
+        outcome.victory_condition,
+        Some("strategic_control".to_string())
+    );
+    assert!((outcome.final_tension - 0.75).abs() < f64::EPSILON);
+}
+
+#[test]
+fn tick_result_json_roundtrip_stalemate_outcome() {
+    use crate::tick::TickResult;
+    use faultline_types::stats::Outcome;
+
+    let tr = TickResult {
+        tick: 365,
+        events_fired: vec!["final_event".to_string()],
+        combats_resolved: 1,
+        outcome: Some(Outcome {
+            victor: None,
+            victory_condition: None,
+            final_tension: 0.92,
+        }),
+    };
+
+    let json = serde_json::to_string(&tr).expect("should serialize");
+    let deserialized: TickResult = serde_json::from_str(&json).expect("should deserialize");
+
+    assert_eq!(deserialized.tick, 365);
+    let outcome = deserialized.outcome.expect("should have outcome");
+    assert!(outcome.victor.is_none());
+    assert!(outcome.victory_condition.is_none());
+}
+
+#[test]
+fn tick_result_produced_by_engine_serializes() {
+    let scenario = make_test_scenario();
+    let mut engine = Engine::new(scenario).expect("engine creation");
+
+    let result = engine.tick().expect("tick should succeed");
+    let json = serde_json::to_string(&result).expect("engine TickResult should serialize");
+    assert!(!json.is_empty());
+
+    let deserialized: crate::tick::TickResult =
+        serde_json::from_str(&json).expect("should deserialize");
+    assert_eq!(deserialized.tick, result.tick);
+    assert_eq!(deserialized.combats_resolved, result.combats_resolved);
+}
