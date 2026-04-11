@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use faultline_types::faction::Institution;
-use faultline_types::ids::{FactionId, InstitutionId};
-use faultline_types::politics::PoliticalClimate;
+use faultline_types::ids::{FactionId, InstitutionId, SegmentId};
+use faultline_types::politics::{CivilianAction, PoliticalClimate};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -76,16 +76,28 @@ pub fn check_fracture(institution: &Institution) -> bool {
     }
 }
 
+/// A segment that was newly activated this tick.
+#[derive(Clone, Debug)]
+pub struct ActivationResult {
+    pub segment_id: SegmentId,
+    pub favored_faction: FactionId,
+    pub actions: Vec<CivilianAction>,
+    pub concentrated_in: Vec<faultline_types::ids::RegionId>,
+}
+
 /// Stochastically update civilian population segment sympathies.
 ///
 /// Each segment's faction sympathies drift slightly based on the
 /// segment's volatility and the current global tension.
+///
+/// Returns a list of segments that were newly activated this tick.
 pub fn update_civilian_segments(
     climate: &mut PoliticalClimate,
     _tick: u32,
     rng: &mut impl rand::Rng,
-) {
+) -> Vec<ActivationResult> {
     let global_tension = climate.tension;
+    let mut activations = Vec::new();
 
     for segment in &mut climate.population_segments {
         for sympathy in &mut segment.sympathies {
@@ -94,7 +106,29 @@ pub fn update_civilian_segments(
             let tension_pull = (global_tension - 0.5) * 0.02;
             sympathy.sympathy = (sympathy.sympathy + noise + tension_pull).clamp(-1.0, 1.0);
         }
+
+        // Check activation threshold.
+        if !segment.activated && !segment.sympathies.is_empty() {
+            let max_sym = segment
+                .sympathies
+                .iter()
+                .max_by(|a, b| a.sympathy.total_cmp(&b.sympathy));
+
+            if let Some(top) = max_sym
+                && top.sympathy >= segment.activation_threshold
+            {
+                segment.activated = true;
+                activations.push(ActivationResult {
+                    segment_id: segment.id.clone(),
+                    favored_faction: top.faction.clone(),
+                    actions: segment.activation_actions.clone(),
+                    concentrated_in: segment.concentrated_in.clone(),
+                });
+            }
+        }
     }
+
+    activations
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +251,7 @@ mod tests {
             activation_threshold: 0.8,
             activation_actions: vec![],
             volatility: 0.8,
+            activated: false,
         });
 
         let original_sympathies: Vec<f64> = climate.population_segments[0]

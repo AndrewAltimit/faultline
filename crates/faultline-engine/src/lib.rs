@@ -96,6 +96,7 @@ mod tests {
     use faultline_types::politics::{MediaLandscape, PoliticalClimate};
     use faultline_types::scenario::ScenarioMeta;
     use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+    use faultline_types::strategy::Doctrine;
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
     pub(crate) fn minimal_scenario() -> Scenario {
@@ -136,6 +137,7 @@ mod tests {
                 command_resilience: 0.9,
                 intelligence: 0.5,
                 diplomacy: vec![],
+                doctrine: Doctrine::Conventional,
             },
         );
 

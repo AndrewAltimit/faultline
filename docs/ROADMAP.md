@@ -1,6 +1,6 @@
 # Faultline Roadmap
 
-Current state: Phase 1 complete, portions of Phases 2-3 scaffolded.
+Current state: Phases 1-2 complete, portions of Phase 3 scaffolded.
 
 ---
 
@@ -20,17 +20,17 @@ Current state: Phase 1 complete, portions of Phases 2-3 scaffolded.
 
 ---
 
-## Phase 2: Intelligence
+## Phase 2: Intelligence — COMPLETE
 
 **Goal:** Faction AI makes non-trivial decisions, fog of war works, events fire reliably.
 
-- [ ] Faction AI doctrine variants — currently all factions use the same utility weights regardless of `Doctrine` enum value; implement distinct behavior for Guerrilla, Defensive, Disruption, CounterInsurgency, Blitzkrieg
-- [ ] Fog of war — `fog_of_war` config flag exists but `FactionWorldView` is not populated with partial information; factions currently see everything
-- [ ] Event chains — `chain` field on `EventDefinition` is parsed but chained events are not activated when a parent fires
-- [ ] Technology card terrain modifiers — `faultline-tech` resolves effects but the engine doesn't fully integrate terrain-adjusted tech effects into combat/politics phases
-- [ ] Civilian segment activation — `activation_threshold` and `activation_actions` are defined but `update_civilian_segments()` only drifts sympathies; it doesn't spawn militia, trigger sabotage, or produce intelligence
-- [ ] `tutorial_asymmetric.toml` scenario (insurgency vs conventional)
-- [ ] Integration tests: event chains fire correctly, AI adapts to doctrine, fog of war limits detection
+- [x] Faction AI doctrine variants — distinct weight profiles for Conventional, Guerrilla, Defensive, Disruption, CounterInsurgency, Blitzkrieg, Adaptive; morale-based secondary adjustments
+- [x] Fog of war — `FactionWorldView` built per faction with visibility based on controlled regions, force positions, adjacency, and Recon capabilities; `evaluate_actions_fog()` AI path uses partial information
+- [x] Event chains — cycle detection via DFS in `EventEvaluator::new()`; chain firing in `event_phase()` with max depth limit
+- [x] Technology card terrain modifiers — `apply_tech_effects()` integrated into `combat_phase()`; `CombatModifier` effects extracted per faction with terrain scaling and counter-tech checking
+- [x] Civilian segment activation — `update_civilian_segments()` checks activation threshold, returns `ActivationResult`; political phase processes ArmedResistance (militia spawn), Sabotage (infra damage), MaterialSupport, Protest, Flee
+- [x] `tutorial_asymmetric.toml` scenario (6 regions, government CounterInsurgency vs insurgent Guerrilla, tech cards, population segments, event chains, fog of war)
+- [x] Integration tests: 7 tests covering doctrine weights, event chains + cycle detection, tech-terrain modifiers, civilian activation, fog of war visibility, asymmetric scenario loading
 
 ---
 

@@ -12,6 +12,7 @@ use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, Terrai
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
 use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::strategy::Doctrine;
 use faultline_types::strategy::FactionAction;
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
@@ -177,6 +178,7 @@ fn make_test_scenario() -> Scenario {
             command_resilience: 0.5,
             intelligence: 0.5,
             diplomacy: vec![],
+            doctrine: Doctrine::Conventional,
         },
     );
     factions.insert(
@@ -199,6 +201,7 @@ fn make_test_scenario() -> Scenario {
             command_resilience: 0.5,
             intelligence: 0.5,
             diplomacy: vec![],
+            doctrine: Doctrine::Conventional,
         },
     );
 

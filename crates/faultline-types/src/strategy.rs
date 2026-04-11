@@ -16,8 +16,9 @@ pub struct StrategicPriority {
 }
 
 /// High-level military doctrine.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Doctrine {
+    #[default]
     Conventional,
     Guerrilla,
     Defensive,

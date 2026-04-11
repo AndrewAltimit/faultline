@@ -4,10 +4,15 @@ use std::collections::BTreeMap;
 
 use rand::Rng;
 
+use std::collections::BTreeSet;
+
 use faultline_geo::{GameMap, adjacent_regions};
-use faultline_types::faction::FactionType;
+use faultline_types::faction::UnitCapability;
 use faultline_types::ids::{FactionId, RegionId};
-use faultline_types::strategy::FactionAction;
+use faultline_types::scenario::Scenario;
+use faultline_types::strategy::{
+    DetectedForce, Doctrine, FactionAction, FactionWorldView, PoliticalClimateView,
+};
 
 use crate::state::{RuntimeFactionState, SimulationState};
 
@@ -21,38 +26,50 @@ pub struct AiWeights {
 }
 
 impl AiWeights {
-    /// Default weights for a given faction type.
-    pub fn for_faction_type(faction_type: &FactionType) -> Self {
-        match faction_type {
-            FactionType::Insurgent => Self {
-                survival_weight: 0.4,
-                objective_weight: 0.3,
-                opportunity_weight: 0.25,
-                risk_aversion: 0.6,
-            },
-            FactionType::Military { .. } => Self {
-                survival_weight: 0.2,
-                objective_weight: 0.5,
-                opportunity_weight: 0.2,
-                risk_aversion: 0.3,
-            },
-            FactionType::Government { .. } => Self {
+    /// Base weights for a given doctrine variant.
+    pub fn for_doctrine(doctrine: &Doctrine) -> Self {
+        match doctrine {
+            Doctrine::Conventional => Self {
                 survival_weight: 0.3,
                 objective_weight: 0.4,
-                opportunity_weight: 0.15,
-                risk_aversion: 0.5,
-            },
-            FactionType::PrivateMilitary => Self {
-                survival_weight: 0.35,
-                objective_weight: 0.35,
-                opportunity_weight: 0.25,
+                opportunity_weight: 0.2,
                 risk_aversion: 0.4,
             },
-            FactionType::Civilian | FactionType::Foreign { .. } => Self {
+            Doctrine::Guerrilla => Self {
                 survival_weight: 0.5,
                 objective_weight: 0.2,
+                opportunity_weight: 0.2,
+                risk_aversion: 0.7,
+            },
+            Doctrine::Defensive => Self {
+                survival_weight: 0.6,
+                objective_weight: 0.15,
                 opportunity_weight: 0.1,
-                risk_aversion: 0.8,
+                risk_aversion: 0.75,
+            },
+            Doctrine::Disruption => Self {
+                survival_weight: 0.15,
+                objective_weight: 0.3,
+                opportunity_weight: 0.5,
+                risk_aversion: 0.4,
+            },
+            Doctrine::CounterInsurgency => Self {
+                survival_weight: 0.35,
+                objective_weight: 0.35,
+                opportunity_weight: 0.15,
+                risk_aversion: 0.3,
+            },
+            Doctrine::Blitzkrieg => Self {
+                survival_weight: 0.15,
+                objective_weight: 0.6,
+                opportunity_weight: 0.2,
+                risk_aversion: 0.15,
+            },
+            Doctrine::Adaptive => Self {
+                survival_weight: 0.3,
+                objective_weight: 0.4,
+                opportunity_weight: 0.2,
+                risk_aversion: 0.4,
             },
         }
     }
@@ -69,6 +86,7 @@ pub struct ScoredAction {
 pub fn evaluate_actions(
     faction_id: &FactionId,
     state: &SimulationState,
+    scenario: &Scenario,
     map: &GameMap,
     rng: &mut impl Rng,
 ) -> Vec<ScoredAction> {
@@ -85,7 +103,7 @@ pub fn evaluate_actions(
     // faction that controls a region we want or vice versa).
     let enemy_presence = compute_enemy_presence(faction_id, state);
 
-    let weights = determine_weights(faction_id, state);
+    let weights = determine_weights(faction_id, state, scenario);
 
     let mut actions = Vec::new();
 
@@ -132,28 +150,40 @@ pub fn evaluate_actions(
 // Internal helpers
 // -----------------------------------------------------------------------
 
-fn determine_weights(faction_id: &FactionId, state: &SimulationState) -> AiWeights {
+fn determine_weights(
+    faction_id: &FactionId,
+    state: &SimulationState,
+    scenario: &Scenario,
+) -> AiWeights {
     let faction_state = match state.faction_states.get(faction_id) {
         Some(fs) => fs,
-        None => return AiWeights::for_faction_type(&FactionType::Civilian),
+        None => return AiWeights::for_doctrine(&Doctrine::Conventional),
     };
 
-    // Use morale-adjusted weights: low morale -> more survival focused.
-    let mut weights = AiWeights {
-        survival_weight: 0.3,
-        objective_weight: 0.4,
-        opportunity_weight: 0.2,
-        risk_aversion: 0.4,
+    let doctrine = scenario
+        .factions
+        .get(faction_id)
+        .map_or(&Doctrine::Conventional, |f| &f.doctrine);
+
+    let mut weights = AiWeights::for_doctrine(doctrine);
+
+    // Adaptive doctrine and all doctrines get morale-based adjustments.
+    // For Adaptive, morale is the primary driver; for others, it's a
+    // smaller secondary adjustment.
+    let morale_strength = if *doctrine == Doctrine::Adaptive {
+        1.0
+    } else {
+        0.5
     };
 
     if faction_state.morale < 0.3 {
-        weights.survival_weight = 0.6;
-        weights.objective_weight = 0.2;
-        weights.risk_aversion = 0.7;
+        weights.survival_weight += 0.2 * morale_strength;
+        weights.objective_weight -= 0.15 * morale_strength;
+        weights.risk_aversion += 0.2 * morale_strength;
     } else if faction_state.morale > 0.7 {
-        weights.objective_weight = 0.5;
-        weights.opportunity_weight = 0.3;
-        weights.risk_aversion = 0.2;
+        weights.objective_weight += 0.1 * morale_strength;
+        weights.opportunity_weight += 0.1 * morale_strength;
+        weights.risk_aversion -= 0.15 * morale_strength;
     }
 
     weights
@@ -322,5 +352,284 @@ fn evaluate_recruit_actions(
             },
             score,
         });
+    }
+}
+
+// -----------------------------------------------------------------------
+// Fog of war
+// -----------------------------------------------------------------------
+
+/// Build a `FactionWorldView` from the full simulation state.
+///
+/// Visible regions are: regions with own forces, own controlled regions,
+/// regions adjacent to owned forces, and regions within recon range of
+/// units with `Recon` capability.
+///
+/// Enemy forces in visible regions are detected with strength estimates
+/// scaled by the faction's intelligence stat.
+pub fn build_world_view(
+    faction_id: &FactionId,
+    state: &SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+) -> FactionWorldView {
+    let faction_state = state
+        .faction_states
+        .get(faction_id)
+        .expect("faction must exist when building world view");
+
+    let intelligence = scenario
+        .factions
+        .get(faction_id)
+        .map_or(0.5, |f| f.intelligence);
+
+    // Compute visible regions.
+    let mut visible: BTreeSet<RegionId> = BTreeSet::new();
+
+    // Own controlled regions are always visible.
+    for r in &faction_state.controlled_regions {
+        visible.insert(r.clone());
+    }
+
+    // Regions with own forces + adjacent regions are visible.
+    for force in faction_state.forces.values() {
+        visible.insert(force.region.clone());
+        for neighbor in adjacent_regions(&force.region, map) {
+            visible.insert(neighbor);
+        }
+
+        // Extended visibility from Recon capability.
+        for cap in &force.capabilities {
+            if let UnitCapability::Recon { range, .. } = cap {
+                // Treat range as number of hops of extended visibility.
+                let mut frontier = vec![force.region.clone()];
+                let mut seen = BTreeSet::new();
+                seen.insert(force.region.clone());
+                let hops = (*range as u32).min(3); // cap at 3 hops
+                for _ in 0..hops {
+                    let mut next_frontier = Vec::new();
+                    for r in &frontier {
+                        for neighbor in adjacent_regions(r, map) {
+                            if seen.insert(neighbor.clone()) {
+                                next_frontier.push(neighbor.clone());
+                                visible.insert(neighbor);
+                            }
+                        }
+                    }
+                    frontier = next_frontier;
+                }
+            }
+        }
+    }
+
+    // Build known_regions: only visible ones, with control info.
+    let known_regions: BTreeMap<RegionId, Option<FactionId>> = visible
+        .iter()
+        .filter_map(|rid| {
+            state
+                .region_control
+                .get(rid)
+                .map(|ctrl| (rid.clone(), ctrl.clone()))
+        })
+        .collect();
+
+    // Detect enemy forces in visible regions.
+    let mut detected_forces = Vec::new();
+    let base_confidence = (intelligence * 0.6 + 0.2).clamp(0.2, 0.9);
+
+    for (fid, fs) in &state.faction_states {
+        if fid == faction_id || fs.eliminated {
+            continue;
+        }
+        for force in fs.forces.values() {
+            if visible.contains(&force.region) {
+                // Add noise to estimated strength based on confidence.
+                let confidence = base_confidence;
+                let estimated_strength = force.strength * confidence;
+
+                detected_forces.push(DetectedForce {
+                    force_id: force.id.clone(),
+                    faction: fid.clone(),
+                    region: force.region.clone(),
+                    estimated_strength,
+                    confidence,
+                });
+            }
+        }
+    }
+
+    FactionWorldView {
+        faction: faction_id.clone(),
+        known_regions,
+        detected_forces,
+        infra_states: BTreeMap::new(),
+        political_climate: PoliticalClimateView {
+            tension: state.political_climate.tension,
+            institutional_trust: state.political_climate.institutional_trust,
+            civilian_sentiment: 0.0,
+        },
+        diplomacy: BTreeMap::new(),
+        morale: faction_state.morale,
+        resources: faction_state.resources,
+        tick: state.tick,
+    }
+}
+
+/// Evaluate actions using fog-of-war partial information.
+///
+/// Uses the faction's world view instead of full ground truth.
+pub fn evaluate_actions_fog(
+    faction_id: &FactionId,
+    state: &SimulationState,
+    scenario: &Scenario,
+    world_view: &FactionWorldView,
+    map: &GameMap,
+    rng: &mut impl Rng,
+) -> Vec<ScoredAction> {
+    let faction_state = match state.faction_states.get(faction_id) {
+        Some(fs) => fs,
+        None => return Vec::new(),
+    };
+
+    if faction_state.eliminated {
+        return Vec::new();
+    }
+
+    // Build enemy presence from detected forces only.
+    let mut enemy_presence = BTreeMap::new();
+    for df in &world_view.detected_forces {
+        *enemy_presence.entry(df.region.clone()).or_insert(0.0) += df.estimated_strength;
+    }
+
+    let weights = determine_weights(faction_id, state, scenario);
+
+    let mut actions = Vec::new();
+
+    evaluate_defend_actions(
+        faction_id,
+        faction_state,
+        &enemy_presence,
+        &weights,
+        &mut actions,
+    );
+
+    // Attack using known region control instead of ground truth.
+    evaluate_attack_actions_fog(
+        faction_id,
+        faction_state,
+        world_view,
+        map,
+        &weights,
+        rng,
+        &mut actions,
+    );
+
+    evaluate_move_actions_fog(
+        faction_id,
+        faction_state,
+        world_view,
+        map,
+        &weights,
+        &mut actions,
+    );
+
+    evaluate_recruit_actions(faction_state, &weights, &mut actions);
+
+    actions.sort_by(|a, b| b.score.total_cmp(&a.score));
+    actions
+}
+
+/// Attack evaluation using fog-of-war region control.
+fn evaluate_attack_actions_fog(
+    faction_id: &FactionId,
+    faction_state: &RuntimeFactionState,
+    world_view: &FactionWorldView,
+    map: &GameMap,
+    weights: &AiWeights,
+    rng: &mut impl Rng,
+    actions: &mut Vec<ScoredAction>,
+) {
+    for force in faction_state.forces.values() {
+        let neighbors = adjacent_regions(&force.region, map);
+        for neighbor in &neighbors {
+            let enemy_controlled = world_view
+                .known_regions
+                .get(neighbor)
+                .and_then(|ctrl| ctrl.as_ref())
+                .is_some_and(|ctrl| ctrl != faction_id);
+
+            if !enemy_controlled {
+                continue;
+            }
+
+            let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
+            let noise: f64 = rng.r#gen::<f64>() * 0.1;
+
+            let score = weights.objective_weight * strategic_value * 0.1
+                + weights.opportunity_weight * 0.3
+                + noise
+                - weights.risk_aversion * 0.2;
+
+            if score > 0.0 {
+                actions.push(ScoredAction {
+                    action: FactionAction::Attack {
+                        force: force.id.clone(),
+                        target_region: neighbor.clone(),
+                    },
+                    score,
+                });
+            }
+        }
+    }
+}
+
+/// Move evaluation using fog-of-war region control.
+fn evaluate_move_actions_fog(
+    faction_id: &FactionId,
+    faction_state: &RuntimeFactionState,
+    world_view: &FactionWorldView,
+    map: &GameMap,
+    weights: &AiWeights,
+    actions: &mut Vec<ScoredAction>,
+) {
+    for force in faction_state.forces.values() {
+        let neighbors = adjacent_regions(&force.region, map);
+        for neighbor in &neighbors {
+            let is_ours = world_view
+                .known_regions
+                .get(neighbor)
+                .and_then(|ctrl| ctrl.as_ref())
+                .is_some_and(|ctrl| ctrl == faction_id);
+
+            if is_ours {
+                continue;
+            }
+
+            // Unknown regions or unclaimed regions are move targets.
+            let is_enemy = world_view
+                .known_regions
+                .get(neighbor)
+                .and_then(|ctrl| ctrl.as_ref())
+                .is_some_and(|ctrl| ctrl != faction_id);
+
+            if is_enemy {
+                continue; // Attacks handle enemy regions.
+            }
+
+            let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
+
+            let score = weights.objective_weight * strategic_value * 0.05
+                + weights.opportunity_weight * 0.2;
+
+            if score > 0.0 {
+                actions.push(ScoredAction {
+                    action: FactionAction::MoveUnit {
+                        force: force.id.clone(),
+                        destination: neighbor.clone(),
+                    },
+                    score,
+                });
+            }
+        }
     }
 }

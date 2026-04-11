@@ -102,6 +102,7 @@ resource_rate = 5.0
 command_resilience = 0.5
 intelligence = 0.5
 diplomacy = []
+doctrine = "Conventional"
 
 [factions.alpha.faction_type]
 kind = "Military"
@@ -131,6 +132,7 @@ resource_rate = 5.0
 command_resilience = 0.5
 intelligence = 0.5
 diplomacy = []
+doctrine = "Conventional"
 
 [factions.bravo.faction_type]
 kind = "Military"

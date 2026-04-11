@@ -10,9 +10,11 @@ use faultline_politics::{self, TensionDelta};
 use faultline_types::events::EventEffect;
 use faultline_types::faction::ForceUnit;
 use faultline_types::ids::{FactionId, ForceId, RegionId};
+use faultline_types::map::TerrainType;
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::Outcome;
 use faultline_types::strategy::FactionAction;
+use faultline_types::tech::TechEffect;
 use faultline_types::victory::VictoryType;
 
 use crate::ai;
@@ -63,10 +65,63 @@ pub fn event_phase(
             if !def.repeatable {
                 state.events_fired.insert(eid.clone());
             }
+
+            // Follow event chain (max depth prevents bugs from undetected cycles).
+            fire_event_chain(state, evaluator, rng, def, &mut fired, 10);
         }
     }
 
     fired
+}
+
+/// Follow an event's chain, firing chained events if their conditions are met.
+fn fire_event_chain(
+    state: &mut SimulationState,
+    evaluator: &EventEvaluator,
+    rng: &mut impl Rng,
+    parent: &faultline_types::events::EventDefinition,
+    fired: &mut Vec<String>,
+    max_depth: u32,
+) {
+    let mut current_chain = parent.chain.clone();
+    let mut depth = 0;
+
+    while let Some(ref chain_id) = current_chain {
+        if depth >= max_depth {
+            tracing::warn!("event chain depth limit reached at {chain_id}");
+            break;
+        }
+
+        if state.events_fired.contains(chain_id) {
+            break;
+        }
+
+        let chained_def = match evaluator.events.get(chain_id) {
+            Some(def) => def.clone(),
+            None => break,
+        };
+
+        let sim_state = build_sim_state(state);
+        if !faultline_events::evaluate_conditions(&chained_def, &sim_state) {
+            break;
+        }
+
+        if let Some(effects) = faultline_events::fire_event(&chained_def, rng) {
+            tracing::info!(event = %chain_id, "chained event fired");
+            apply_event_effects(state, &effects);
+            fired.push(chained_def.name.clone());
+
+            if !chained_def.repeatable {
+                state.events_fired.insert(chain_id.clone());
+            }
+
+            current_chain = chained_def.chain.clone();
+        } else {
+            break;
+        }
+
+        depth += 1;
+    }
 }
 
 /// Build a `SimState` snapshot for the event evaluator.
@@ -180,16 +235,22 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
 /// Each faction evaluates its situation and queues actions.
 pub fn decision_phase(
     state: &mut SimulationState,
-    _scenario: &Scenario,
+    scenario: &Scenario,
     map: &GameMap,
     rng: &mut impl Rng,
 ) -> BTreeMap<FactionId, Vec<FactionAction>> {
     let faction_ids: Vec<FactionId> = state.faction_states.keys().cloned().collect();
+    let fog_of_war = scenario.simulation.fog_of_war;
 
     let mut all_actions = BTreeMap::new();
 
     for fid in &faction_ids {
-        let scored = ai::evaluate_actions(fid, state, map, rng);
+        let scored = if fog_of_war {
+            let world_view = ai::build_world_view(fid, state, scenario, map);
+            ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, rng)
+        } else {
+            ai::evaluate_actions(fid, state, scenario, map, rng)
+        };
         // Take top 3 actions per faction per tick.
         let top_actions: Vec<FactionAction> =
             scored.into_iter().take(3).map(|sa| sa.action).collect();
@@ -263,13 +324,10 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
             continue;
         }
 
-        // Get terrain defense modifier for this region.
-        let terrain_defense = scenario
-            .map
-            .terrain
-            .iter()
-            .find(|t| t.region == *region)
-            .map_or(1.0, |t| t.defense_modifier);
+        // Get terrain info for this region.
+        let terrain_info = scenario.map.terrain.iter().find(|t| t.region == *region);
+        let terrain_defense = terrain_info.map_or(1.0, |t| t.defense_modifier);
+        let terrain_type = terrain_info.map_or(TerrainType::Rural, |t| t.terrain_type.clone());
 
         // Pairwise combat: all faction pairs engage each other.
         let factions: Vec<&FactionId> = faction_forces.keys().collect();
@@ -298,14 +356,19 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
                     .get(fid_b)
                     .is_some_and(|fs| fs.has_guerrilla_units());
 
+                let tech_modifier_a =
+                    compute_tech_combat_modifier(fid_a, fid_b, state, scenario, &terrain_type);
+                let tech_modifier_b =
+                    compute_tech_combat_modifier(fid_b, fid_a, state, scenario, &terrain_type);
+
                 let params = CombatParams {
                     strength_a: str_a,
                     strength_b: str_b,
                     morale_a,
                     morale_b,
                     terrain_defense,
-                    tech_modifier_a: 1.0,
-                    tech_modifier_b: 1.0,
+                    tech_modifier_a,
+                    tech_modifier_b,
                     guerrilla_a,
                     guerrilla_b,
                     attrition_coeff: 0.01,
@@ -339,6 +402,52 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
     }
 
     combats
+}
+
+/// Compute a faction's cumulative tech combat modifier for a given terrain.
+///
+/// Iterates the faction's deployed tech cards, resolves terrain effects,
+/// extracts `CombatModifier` effects, and multiplies their effectiveness.
+/// Cards countered by the opponent's active techs are skipped.
+fn compute_tech_combat_modifier(
+    faction_id: &FactionId,
+    opponent_id: &FactionId,
+    state: &SimulationState,
+    scenario: &Scenario,
+    terrain: &TerrainType,
+) -> f64 {
+    let tech_deployed = match state.faction_states.get(faction_id) {
+        Some(fs) => &fs.tech_deployed,
+        None => return 1.0,
+    };
+
+    let empty_techs = Vec::new();
+    let opponent_techs = state
+        .faction_states
+        .get(opponent_id)
+        .map_or(&empty_techs, |fs| &fs.tech_deployed);
+
+    let mut modifier = 1.0;
+
+    for tech_id in tech_deployed {
+        let card = match scenario.technology.get(tech_id) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        if faultline_tech::is_countered(card, opponent_techs) {
+            continue;
+        }
+
+        let resolved = faultline_tech::apply_tech_effects(card, terrain);
+        for re in &resolved {
+            if let TechEffect::CombatModifier { factor } = &re.effect {
+                modifier *= factor * re.effectiveness;
+            }
+        }
+    }
+
+    modifier
 }
 
 /// Find regions where multiple factions have forces.
@@ -534,8 +643,125 @@ pub fn political_phase(state: &mut SimulationState, scenario: &Scenario, rng: &m
         }
     }
 
-    // Update civilian segments.
-    faultline_politics::update_civilian_segments(&mut state.political_climate, state.tick, rng);
+    // Update civilian segments and process activations.
+    let activations =
+        faultline_politics::update_civilian_segments(&mut state.political_climate, state.tick, rng);
+
+    for activation in &activations {
+        tracing::info!(
+            segment = %activation.segment_id,
+            faction = %activation.favored_faction,
+            "civilian segment activated"
+        );
+        process_civilian_activation(state, scenario, activation, rng);
+    }
+}
+
+/// Process the effects of a civilian segment activation.
+fn process_civilian_activation(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    activation: &faultline_politics::ActivationResult,
+    rng: &mut impl Rng,
+) {
+    use faultline_types::faction::UnitType;
+    use faultline_types::politics::CivilianAction;
+
+    for action in &activation.actions {
+        match action {
+            CivilianAction::ArmedResistance {
+                target_faction,
+                unit_strength,
+            } => {
+                // Spawn militia for the favored faction in concentrated regions.
+                if let Some(fs) = state.faction_states.get_mut(target_faction) {
+                    for region in &activation.concentrated_in {
+                        let force_id = ForceId::from(format!(
+                            "militia-{}-{}-{}",
+                            activation.segment_id, region, state.tick
+                        ));
+                        let unit = ForceUnit {
+                            id: force_id.clone(),
+                            name: format!("{} Militia", activation.segment_id),
+                            unit_type: UnitType::Militia,
+                            region: region.clone(),
+                            strength: *unit_strength,
+                            mobility: 0.5,
+                            force_projection: None,
+                            upkeep: unit_strength * 0.05,
+                            morale_modifier: 0.0,
+                            capabilities: Vec::new(),
+                        };
+                        fs.forces.insert(force_id, unit);
+                    }
+                    fs.recompute_strength();
+                }
+            },
+            CivilianAction::Sabotage {
+                target_infra_type,
+                probability,
+            } => {
+                let roll: f64 = rng.r#gen();
+                if roll < *probability {
+                    // Damage infrastructure of the matching type in concentrated regions.
+                    for (infra_id, status) in &mut state.infra_status {
+                        let matches = match target_infra_type {
+                            Some(target_type) => scenario
+                                .map
+                                .infrastructure
+                                .get(infra_id)
+                                .is_some_and(|node| {
+                                    node.infra_type == *target_type
+                                        && activation.concentrated_in.contains(&node.region)
+                                }),
+                            None => scenario
+                                .map
+                                .infrastructure
+                                .get(infra_id)
+                                .is_some_and(|node| {
+                                    activation.concentrated_in.contains(&node.region)
+                                }),
+                        };
+                        if matches {
+                            *status = (*status - 0.3).max(0.0);
+                            tracing::info!(
+                                infra = %infra_id,
+                                "infrastructure sabotaged by civilian segment"
+                            );
+                        }
+                    }
+                }
+            },
+            CivilianAction::MaterialSupport {
+                target_faction,
+                rate,
+            } => {
+                if let Some(fs) = state.faction_states.get_mut(target_faction) {
+                    fs.resources += rate;
+                }
+            },
+            CivilianAction::Protest { intensity } => {
+                state.political_climate.tension =
+                    (state.political_climate.tension + intensity * 0.05).min(1.0);
+            },
+            CivilianAction::Flee { rate } => {
+                // Reduce segment fraction (already activated, so find it).
+                for seg in &mut state.political_climate.population_segments {
+                    if seg.id == activation.segment_id {
+                        seg.fraction = (seg.fraction - rate).max(0.0);
+                    }
+                }
+            },
+            CivilianAction::Intelligence { .. } | CivilianAction::NonCooperation { .. } => {
+                // These effects are logged but require fog-of-war or
+                // effectiveness tracking to fully resolve.
+                tracing::debug!(
+                    action = ?action,
+                    "civilian action noted (partial implementation)"
+                );
+            },
+        }
+    }
 }
 
 // -----------------------------------------------------------------------

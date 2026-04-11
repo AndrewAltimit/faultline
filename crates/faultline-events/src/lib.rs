@@ -53,10 +53,32 @@ pub struct EventEvaluator {
 
 impl EventEvaluator {
     /// Create a new evaluator from a list of event definitions.
-    pub fn new(definitions: Vec<EventDefinition>) -> Self {
-        let events = definitions.into_iter().map(|e| (e.id.clone(), e)).collect();
-        Self { events }
+    ///
+    /// Returns an error if event chains form a cycle.
+    pub fn new(definitions: Vec<EventDefinition>) -> Result<Self, EventError> {
+        let events: BTreeMap<_, _> = definitions.into_iter().map(|e| (e.id.clone(), e)).collect();
+        detect_chain_cycles(&events)?;
+        Ok(Self { events })
     }
+}
+
+/// Walk event chains using DFS to detect cycles.
+fn detect_chain_cycles(events: &BTreeMap<EventId, EventDefinition>) -> Result<(), EventError> {
+    use std::collections::BTreeSet;
+
+    for start_id in events.keys() {
+        let mut visited = BTreeSet::new();
+        let mut current = Some(start_id.clone());
+
+        while let Some(ref eid) = current {
+            if !visited.insert(eid.clone()) {
+                return Err(EventError::ChainCycle(eid.clone()));
+            }
+            current = events.get(eid).and_then(|def| def.chain.clone());
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +251,8 @@ mod tests {
 
     #[test]
     fn evaluator_stores_definitions() {
-        let evaluator = EventEvaluator::new(vec![sample_event()]);
+        let evaluator =
+            EventEvaluator::new(vec![sample_event()]).expect("no cycles in sample events");
         assert_eq!(evaluator.events.len(), 1);
         assert!(evaluator.events.contains_key(&EventId::from("uprising-01")));
     }

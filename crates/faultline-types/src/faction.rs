@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{FactionId, ForceId, InstitutionId, RegionId, TechCardId};
+use crate::strategy::Doctrine;
 
 /// A participant in the simulation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,6 +23,8 @@ pub struct Faction {
     pub command_resilience: f64,
     pub intelligence: f64,
     pub diplomacy: Vec<DiplomaticStance>,
+    #[serde(default)]
+    pub doctrine: Doctrine,
 }
 
 /// What kind of faction this is.
