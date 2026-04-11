@@ -1,6 +1,6 @@
 # Faultline Roadmap
 
-Current state: Phases 1-3 complete.
+Current state: Phases 1-4 complete.
 
 ---
 
@@ -53,23 +53,28 @@ Current state: Phases 1-3 complete.
 
 ---
 
-## Phase 4: Browser
+## Phase 4: Browser — COMPLETE
 
 **Goal:** WASM app on GitHub Pages with map visualization and scenario editor.
 
 - [x] WASM compilation pipeline (wasm-pack build in CI, output to `site/pkg/`)
-- [ ] Canvas/WebGL map renderer with region coloring by controlling faction
-- [ ] Force unit icons with strength indicators on map
-- [ ] Scenario editor — TOML text editor with syntax highlighting (CodeMirror/Monaco from CDN)
-- [ ] Visual faction builder (form-based alternative to raw TOML)
-- [ ] Map region selector (click regions to configure)
-- [ ] Scenario import/export via browser file API
-- [ ] Preset library (bundled example scenarios)
-- [ ] Simulation controls: play / pause / step / speed slider
-- [ ] Timeline scrubber (jump to any snapshotted tick)
-- [ ] Results dashboard: win probability bar chart, duration histogram
-- [ ] Single-run replay with event log sidebar
+- [x] Canvas/WebGL map renderer with region coloring by controlling faction
+- [x] Force unit icons with strength indicators on map
+- [x] Scenario editor — TOML text editor with syntax highlighting (CodeMirror/Monaco from CDN)
+- [x] Visual faction builder (form-based alternative to raw TOML)
+- [x] Map region selector (click regions to configure)
+- [x] Scenario import/export via browser file API
+- [x] Preset library (bundled example scenarios)
+- [x] Simulation controls: play / pause / step / speed slider
+- [x] Timeline scrubber (jump to any snapshotted tick)
+- [x] Results dashboard: win probability bar chart, duration histogram
+- [x] Single-run replay with event log sidebar
 - [x] GitHub Pages deployment of WASM artifacts
+- [x] Persistent WasmEngine with tick-stepping API for play/pause/step controls
+- [x] Monte Carlo batch execution via WASM (`run_monte_carlo` export)
+- [x] Three-panel app layout (left sidebar, center canvas, right sidebar)
+- [x] Event bus architecture for inter-module communication
+- [x] Simulator nav link added to all site pages
 
 ---
 

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faultline — Simulator</title>
+  <meta name="description" content="Interactive conflict simulation powered by WASM. Load scenarios, run simulations, and analyze outcomes in the browser.">
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="index.html" class="nav-logo"><span>Faultline</span></a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="architecture.html">Architecture</a>
+        <a href="docs.html">Docs</a>
+        <a href="app.html" class="active">Simulator</a>
+        <a href="https://github.com/AndrewAltimit/faultline" class="github-link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16" aria-label="GitHub"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="nav-overlay">
+    <a href="index.html">Home</a>
+    <a href="architecture.html">Architecture</a>
+    <a href="docs.html">Docs</a>
+    <a href="app.html">Simulator</a>
+    <a href="https://github.com/AndrewAltimit/faultline" target="_blank" rel="noopener">GitHub</a>
+  </div>
+
+  <!-- App Layout -->
+  <div class="app-layout">
+
+    <!-- Left Sidebar -->
+    <aside class="sidebar sidebar-left" id="sidebar-left">
+      <!-- Preset Selector -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">Scenario</div>
+        <select class="preset-select" id="preset-select">
+          <option value="">-- Select a preset --</option>
+        </select>
+        <div class="file-actions" style="margin-top: 8px;">
+          <button class="btn-label" id="btn-import" title="Import TOML file">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import
+          </button>
+          <input type="file" class="file-input" id="file-import" accept=".toml">
+          <button class="btn-label" id="btn-export" title="Export TOML file">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export
+          </button>
+        </div>
+      </div>
+
+      <!-- Editor Tabs -->
+      <div class="app-tabs">
+        <button class="app-tab active" data-tab="tab-editor">TOML Editor</button>
+        <button class="app-tab" data-tab="tab-builder">Faction Builder</button>
+      </div>
+
+      <!-- TOML Editor Tab -->
+      <div class="tab-content active" id="tab-editor">
+        <div class="sidebar-section">
+          <textarea class="editor-textarea" id="toml-editor" spellcheck="false"
+                    placeholder="Paste or edit TOML scenario here..."></textarea>
+          <div class="editor-actions">
+            <button class="btn-label" id="btn-validate">Validate</button>
+            <button class="btn-label" id="btn-load" style="background: var(--gradient); border-color: transparent; color: #fff;">
+              Load &amp; Run
+            </button>
+          </div>
+          <div id="validation-msg"></div>
+        </div>
+      </div>
+
+      <!-- Faction Builder Tab -->
+      <div class="tab-content" id="tab-builder">
+        <div class="sidebar-section" id="faction-builder-container">
+          <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+              <path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            <span>Load a scenario to edit factions</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Panel -->
+    <main class="app-main">
+      <div class="map-container" id="map-container">
+        <canvas id="map-canvas"></canvas>
+        <div class="loading-overlay" id="map-loading" style="display: none;">
+          <div style="text-align: center;">
+            <div class="spinner"></div>
+            <div style="margin-top: 8px; font-size: 0.8125rem; color: var(--text-muted);" id="loading-text">Loading WASM...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Bar -->
+      <div class="controls-bar">
+        <div class="controls-group">
+          <button class="btn-sm" id="btn-reset" title="Reset" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+          </button>
+          <button class="btn-sm" id="btn-step" title="Step 1 tick" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+          </button>
+          <button class="btn-sm" id="btn-play" title="Play / Pause" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="play-icon"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </button>
+        </div>
+
+        <div class="controls-separator"></div>
+
+        <div class="controls-group">
+          <span style="font-size: 0.75rem; color: var(--text-dim);">Speed</span>
+          <input type="range" class="speed-slider" id="speed-slider" min="0" max="5" value="0" step="1" title="Simulation speed">
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono); min-width: 30px;" id="speed-label">1x</span>
+        </div>
+
+        <div class="controls-separator"></div>
+
+        <div class="tick-display" id="tick-display">
+          Tick <span class="tick-value">0</span> / <span class="tick-value" id="tick-max">0</span>
+        </div>
+
+        <div class="tension-badge" id="tension-badge">
+          Tension: <span id="tension-value">0.00</span>
+        </div>
+
+        <div class="controls-separator"></div>
+
+        <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="0" value="0" step="1" disabled title="Timeline scrubber">
+      </div>
+    </main>
+
+    <!-- Right Sidebar -->
+    <aside class="sidebar sidebar-right" id="sidebar-right">
+      <!-- Event Log -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">Event Log</div>
+        <div class="event-log-list" id="event-log-list">
+          <div class="event-log-empty">No events yet</div>
+        </div>
+      </div>
+
+      <!-- State Inspector -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">Faction State</div>
+        <div class="state-tree" id="state-inspector">
+          <div class="empty-state" style="padding: 16px 0;">
+            <span style="font-size: 0.8125rem;">Run a simulation to inspect state</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monte Carlo -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">Monte Carlo Analysis</div>
+        <div class="mc-controls">
+          <input type="number" class="mc-input" id="mc-runs" value="100" min="1" max="10000" title="Number of runs">
+          <span style="font-size: 0.8125rem; color: var(--text-muted);">runs</span>
+          <button class="btn-label" id="btn-mc-run" disabled>Run MC</button>
+        </div>
+        <div id="mc-results">
+          <div class="empty-state" style="padding: 16px 0;">
+            <span style="font-size: 0.8125rem;">Load a scenario first</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <script type="module" src="js/app/main.js"></script>
+</body>
+</html>

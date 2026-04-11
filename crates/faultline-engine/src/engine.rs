@@ -185,6 +185,26 @@ impl Engine {
     pub fn current_tick(&self) -> u32 {
         self.state.tick
     }
+
+    /// Return the maximum tick count from the scenario.
+    pub fn max_ticks(&self) -> u32 {
+        self.scenario.simulation.max_ticks
+    }
+
+    /// Read-only access to the scenario.
+    pub fn scenario(&self) -> &Scenario {
+        &self.scenario
+    }
+
+    /// Take a snapshot of the current simulation state.
+    pub fn snapshot(&self) -> StateSnapshot {
+        take_snapshot(&self.state)
+    }
+
+    /// Check whether the simulation has finished (victory or max ticks).
+    pub fn is_finished(&self) -> bool {
+        self.state.tick >= self.scenario.simulation.max_ticks
+    }
 }
 
 // -----------------------------------------------------------------------
