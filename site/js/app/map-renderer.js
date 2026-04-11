@@ -371,12 +371,12 @@ export class MapRenderer {
     const source = this.scenario.map.source;
 
     let gridW = 1, gridH = 1;
-    if (source.Grid) {
+    if (source.type === 'Grid') {
+      gridW = source.width || 1;
+      gridH = source.height || 1;
+    } else if (source.Grid) {
       gridW = source.Grid.width || 1;
       gridH = source.Grid.height || 1;
-    } else if (source.width) {
-      gridW = source.width;
-      gridH = source.height || 1;
     } else {
       const n = regionIds.length;
       gridW = Math.ceil(Math.sqrt(n));

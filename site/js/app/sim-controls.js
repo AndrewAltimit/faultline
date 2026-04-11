@@ -3,6 +3,7 @@
  * Manages the WasmEngine lifecycle and tick animation loop.
  */
 import { AppState } from './state.js';
+import { mapsToObjects } from './wasm-util.js';
 
 const SPEED_STEPS = [1, 2, 5, 10, 25, 50];
 
@@ -89,8 +90,8 @@ export class SimControls {
     }
 
     try {
-      const tickResults = engine.tick_n(AppState.playSpeed);
-      const state = engine.get_state();
+      const tickResults = mapsToObjects(engine.tick_n(AppState.playSpeed));
+      const state = mapsToObjects(engine.get_state());
 
       AppState.currentSnapshot = state;
       AppState.snapshots.push(state);
@@ -135,8 +136,8 @@ export class SimControls {
     if (!AppState.engine || AppState.engine.is_finished()) return;
 
     try {
-      const tickResults = AppState.engine.tick_n(1);
-      const state = AppState.engine.get_state();
+      const tickResults = mapsToObjects(AppState.engine.tick_n(1));
+      const state = mapsToObjects(AppState.engine.get_state());
 
       AppState.currentSnapshot = state;
       AppState.snapshots.push(state);

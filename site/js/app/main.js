@@ -9,6 +9,7 @@ import { SimControls } from './sim-controls.js';
 import { Editor } from './editor.js';
 import { Dashboard } from './dashboard.js';
 import { FactionBuilder } from './faction-builder.js';
+import { mapsToObjects } from './wasm-util.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -61,7 +62,7 @@ async function bootstrap() {
 
       // Render initial state from engine.
       if (AppState.engine) {
-        const state = AppState.engine.get_state();
+        const state = mapsToObjects(AppState.engine.get_state());
         AppState.currentSnapshot = state;
         map.render(state);
       }
@@ -81,7 +82,7 @@ async function bootstrap() {
     // On reset, re-render map with initial state.
     bus.on('sim:reset', () => {
       if (AppState.engine) {
-        const state = AppState.engine.get_state();
+        const state = mapsToObjects(AppState.engine.get_state());
         AppState.currentSnapshot = state;
         map.render(state);
       } else {

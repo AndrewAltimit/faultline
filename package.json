@@ -1,0 +1,27 @@
+{
+  "name": "faultline",
+  "version": "1.0.0",
+  "description": "A what-if engine for conflict simulation. Users supply scenario configurations — factions, force compositions, institutional loyalties, political climates, technology modifiers, geographic constraints — and the engine simulates the logical consequences across many runs, producing probability distributions of outcomes.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AndrewAltimit/faultline.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AndrewAltimit/faultline/issues"
+  },
+  "homepage": "https://github.com/AndrewAltimit/faultline#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
+  }
+}

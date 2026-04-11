@@ -3,6 +3,7 @@
  * All charts rendered with Canvas 2D (no external dependencies).
  */
 import { AppState } from './state.js';
+import { mapsToObjects } from './wasm-util.js';
 
 export class Dashboard {
   /**
@@ -158,7 +159,7 @@ export class Dashboard {
     // Use setTimeout to let the UI update before blocking.
     setTimeout(() => {
       try {
-        const result = this.wasm.run_monte_carlo(AppState.toml, numRuns);
+        const result = mapsToObjects(this.wasm.run_monte_carlo(AppState.toml, numRuns));
         AppState.mcResult = result;
         this._renderMcResults(result.summary);
         this.bus.emit('mc:complete', result);

@@ -3,6 +3,7 @@
  */
 import { AppState } from './state.js';
 import { PRESETS } from './presets.js';
+import { mapsToObjects } from './wasm-util.js';
 
 export class Editor {
   /**
@@ -103,7 +104,8 @@ export class Editor {
 
     try {
       // Parse scenario for map/UI.
-      const scenario = this.wasm.load_scenario(toml);
+      // Convert Map objects from serde_wasm_bindgen to plain objects.
+      const scenario = mapsToObjects(this.wasm.load_scenario(toml));
       AppState.scenario = scenario;
       AppState.toml = toml;
 

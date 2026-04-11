@@ -105,8 +105,8 @@ export const US_REGIONS = {
     labelPos: [-110.0, 41.0],
   },
 
-  pacific: {
-    name: 'Pacific',
+  pacific_west: {
+    name: 'Pacific West',
     polygons: [
       [
         [-124.5, 49.0], [-117.0, 49.0], [-117.0, 46.0], [-117.0, 42.0],
