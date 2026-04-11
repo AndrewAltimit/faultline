@@ -34,6 +34,8 @@ pub struct PopulationSegment {
     pub activation_threshold: f64,
     pub activation_actions: Vec<CivilianAction>,
     pub volatility: f64,
+    #[serde(default)]
+    pub activated: bool,
 }
 
 /// A segment's sympathy toward a particular faction.

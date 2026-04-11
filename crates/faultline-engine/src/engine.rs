@@ -56,7 +56,7 @@ impl Engine {
         let map = faultline_geo::load_map(&scenario.map)?;
 
         let event_defs: Vec<_> = scenario.events.values().cloned().collect();
-        let event_evaluator = EventEvaluator::new(event_defs);
+        let event_evaluator = EventEvaluator::new(event_defs)?;
 
         let state = initialize_state(&scenario)?;
 

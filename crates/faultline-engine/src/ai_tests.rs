@@ -3,12 +3,13 @@ use std::collections::BTreeMap;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use faultline_types::faction::{FactionType, ForceUnit, MilitaryBranch, UnitType};
+use faultline_types::faction::{ForceUnit, UnitType};
 use faultline_types::ids::{FactionId, ForceId, RegionId};
-use faultline_types::strategy::FactionAction;
+use faultline_types::strategy::{Doctrine, FactionAction};
 
 use crate::ai::{self, AiWeights};
 use crate::state::{RuntimeFactionState, SimulationState};
+use crate::tests::minimal_scenario;
 
 /// Build a minimal `SimulationState` with two factions and four regions.
 /// Alpha controls nw, bravo controls se.
@@ -158,19 +159,16 @@ fn make_ai_test_map() -> faultline_geo::GameMap {
 }
 
 #[test]
-fn ai_weights_military_conventional() {
-    let weights = AiWeights::for_faction_type(&FactionType::Military {
-        branch: MilitaryBranch::Army,
-    });
-    // Military should have high objective_weight (conventional doctrine).
+fn ai_weights_conventional_doctrine() {
+    let weights = AiWeights::for_doctrine(&Doctrine::Conventional);
     assert!(
         weights.objective_weight >= 0.4,
-        "military should have high objective_weight: {}",
+        "conventional should have high objective_weight: {}",
         weights.objective_weight
     );
     assert!(
         weights.objective_weight > weights.survival_weight,
-        "military objective_weight ({}) should exceed \
+        "conventional objective_weight ({}) should exceed \
          survival_weight ({})",
         weights.objective_weight,
         weights.survival_weight,
@@ -178,20 +176,49 @@ fn ai_weights_military_conventional() {
 }
 
 #[test]
-fn ai_weights_insurgent_guerrilla() {
-    let weights = AiWeights::for_faction_type(&FactionType::Insurgent);
-    // Insurgent should have high survival_weight (guerrilla doctrine).
+fn ai_weights_guerrilla_doctrine() {
+    let weights = AiWeights::for_doctrine(&Doctrine::Guerrilla);
     assert!(
-        weights.survival_weight >= 0.35,
-        "insurgent should have high survival_weight: {}",
+        weights.survival_weight >= 0.4,
+        "guerrilla should have high survival_weight: {}",
         weights.survival_weight
     );
     assert!(
         weights.survival_weight > weights.objective_weight,
-        "insurgent survival_weight ({}) should exceed \
+        "guerrilla survival_weight ({}) should exceed \
          objective_weight ({})",
         weights.survival_weight,
         weights.objective_weight,
+    );
+}
+
+#[test]
+fn ai_weights_blitzkrieg_doctrine() {
+    let weights = AiWeights::for_doctrine(&Doctrine::Blitzkrieg);
+    assert!(
+        weights.objective_weight >= 0.5,
+        "blitzkrieg should have very high objective_weight: {}",
+        weights.objective_weight
+    );
+    assert!(
+        weights.risk_aversion < 0.2,
+        "blitzkrieg should have low risk_aversion: {}",
+        weights.risk_aversion
+    );
+}
+
+#[test]
+fn ai_weights_defensive_doctrine() {
+    let weights = AiWeights::for_doctrine(&Doctrine::Defensive);
+    assert!(
+        weights.survival_weight >= 0.5,
+        "defensive should have very high survival_weight: {}",
+        weights.survival_weight
+    );
+    assert!(
+        weights.risk_aversion >= 0.7,
+        "defensive should have high risk_aversion: {}",
+        weights.risk_aversion
     );
 }
 
@@ -229,10 +256,11 @@ fn ai_evaluates_defend_for_threatened_region() {
         .insert(RegionId::from("ne"), Some(bravo.clone()));
 
     let alpha = FactionId::from("alpha");
+    let scenario = minimal_scenario();
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     // The defend logic checks for enemy presence in the same region
     // as our force, so place bravo directly in nw to trigger defense.
-    let _initial_actions = ai::evaluate_actions(&alpha, &state, &map, &mut rng);
+    let _initial_actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
     state
         .faction_states
         .get_mut(&bravo)
@@ -242,7 +270,7 @@ fn ai_evaluates_defend_for_threatened_region() {
         .expect("bravo_threat should exist")
         .region = RegionId::from("nw");
 
-    let actions = ai::evaluate_actions(&alpha, &state, &map, &mut rng);
+    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
 
     let has_defend = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Defend { force, region }
@@ -291,8 +319,9 @@ fn ai_evaluates_attack_for_weak_enemy() {
         .insert(RegionId::from("ne"), Some(bravo.clone()));
 
     let alpha = FactionId::from("alpha");
+    let scenario = minimal_scenario();
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let actions = ai::evaluate_actions(&alpha, &state, &map, &mut rng);
+    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
 
     let has_attack = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Attack { target_region, .. }

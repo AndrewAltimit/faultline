@@ -399,6 +399,7 @@ mod tests {
     use faultline_types::politics::{MediaLandscape, PoliticalClimate};
     use faultline_types::scenario::{Scenario, ScenarioMeta};
     use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+    use faultline_types::strategy::Doctrine;
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
     fn make_run(index: u32, victor: Option<FactionId>, ticks: u32, tension: f64) -> RunResult {
@@ -569,6 +570,7 @@ mod tests {
             command_resilience: 0.5,
             intelligence: 0.5,
             diplomacy: vec![],
+            doctrine: Doctrine::Conventional,
         }
     }
 }
