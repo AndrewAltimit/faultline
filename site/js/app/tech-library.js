@@ -2908,14 +2908,38 @@ export function updateTechAccessFor(tomlText, factionId, cardId) {
   const bodyEndIdx = bodyStartIdx + rel;
 
   const body = tomlText.slice(bodyStartIdx, bodyEndIdx);
-  const taRegex = /\n(\s*)tech_access\s*=\s*\[([^\]]*)\]/;
+  // Match both single-line and multi-line TOML array forms:
+  //   tech_access = ["a", "b"]
+  //   tech_access = [
+  //     "a",
+  //     "b",
+  //   ]
+  // `[\s\S]*?` is the non-greedy "any char including newline" idiom.
+  const taRegex = /\n(\s*)tech_access\s*=\s*\[([\s\S]*?)\]/;
   const match = body.match(taRegex);
   if (match) {
     const currentList = match[2];
     if (currentList.includes(`"${cardId}"`)) return { text: tomlText, granted: false };
-    const trimmed = currentList.trim();
-    const newList = trimmed.length === 0 ? `"${cardId}"` : `${trimmed}, "${cardId}"`;
-    const newLine = `\n${match[1]}tech_access = [${newList}]`;
+    // Preserve whether the existing array is multi-line. If the
+    // captured body contains a newline we rebuild it in that style so
+    // we don't collapse user formatting.
+    const indent = match[1];
+    let newLine;
+    if (currentList.includes('\n')) {
+      const items = currentList
+        .split(/\s*,\s*/)
+        .map((t) => t.trim())
+        .filter((t) => t.length && t !== '"');
+      items.push(`"${cardId}"`);
+      const itemIndent = indent + '  ';
+      newLine = `\n${indent}tech_access = [\n${items
+        .map((it) => itemIndent + it)
+        .join(',\n')}\n${indent}]`;
+    } else {
+      const trimmed = currentList.trim();
+      const newList = trimmed.length === 0 ? `"${cardId}"` : `${trimmed}, "${cardId}"`;
+      newLine = `\n${indent}tech_access = [${newList}]`;
+    }
     const newBody = body.replace(taRegex, newLine);
     return {
       text: tomlText.slice(0, bodyStartIdx) + newBody + tomlText.slice(bodyEndIdx),

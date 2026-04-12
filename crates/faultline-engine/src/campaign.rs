@@ -360,10 +360,13 @@ fn resolve_branches(
             if let Some(cap) = attacker_budget
                 && campaign.attacker_spend + next_phase.cost.attacker_dollars > cap
             {
+                // Mark this branch unaffordable and keep scanning —
+                // another matching branch may point to a cheaper phase
+                // the attacker can still execute.
                 campaign
                     .phase_status
                     .insert(branch.next_phase.clone(), PhaseStatus::Failed { tick });
-                return;
+                continue;
             }
             let duration = sample_duration(next_phase, rng);
             campaign.phase_status.insert(
@@ -373,7 +376,7 @@ fn resolve_branches(
                     duration,
                 },
             );
-            return; // first matching branch wins
+            return; // first affordable matching branch wins
         }
     }
 }

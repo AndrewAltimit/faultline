@@ -60,14 +60,17 @@ pub fn compute_feasibility_matrix(
         } else {
             runs.iter().map(|r| r.final_state.tension).sum::<f64>() / runs.len() as f64
         };
-        let mean_institutional_erosion: f64 = if runs.is_empty() {
-            0.0
-        } else {
-            runs.iter()
+        // Average across runs that actually produced a report for this
+        // chain. Dividing by `runs.len()` would artificially depress the
+        // mean when some runs have no campaign report.
+        let mean_institutional_erosion: f64 = {
+            let (sum, count) = runs
+                .iter()
                 .filter_map(|r| r.campaign_reports.get(chain_id))
-                .map(|r| r.institutional_erosion)
-                .sum::<f64>()
-                / runs.len() as f64
+                .fold((0.0_f64, 0_usize), |(s, n), r| {
+                    (s + r.institutional_erosion, n + 1)
+                });
+            if count == 0 { 0.0 } else { sum / count as f64 }
         };
         let consequence_severity =
             (mean_tension * 0.4 + mean_institutional_erosion * 0.6).clamp(0.0, 1.0);

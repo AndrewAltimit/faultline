@@ -229,15 +229,35 @@ export class TechCardsPanel {
     // Emit an input event so the editor's change listeners fire.
     this.editor.dispatchEvent(new Event('input', { bubbles: true }));
 
-    // Feedback.
-    const msg = added
-      ? granted.length
-        ? `Added ${card.name} and granted to ${granted.join(', ')}`
-        : `Added ${card.name} to scenario (no faction grant)`
-      : granted.length
-        ? `Granted ${card.name} to ${granted.join(', ')}`
-        : `${card.name} already present`;
-    this._flash(msg, added || granted.length > 0);
+    // Feedback — surface the case where a grant was requested but
+    // updateTechAccessFor refused (e.g. faction block not found or
+    // regex couldn't locate a tech_access list). Previously these
+    // failed silently.
+    const requested = grantTo.length;
+    const grantFailed = requested > 0 && granted.length < requested;
+    let msg;
+    let success;
+    if (added && granted.length > 0) {
+      msg = `Added ${card.name} and granted to ${granted.join(', ')}`;
+      success = true;
+    } else if (added && requested === 0) {
+      msg = `Added ${card.name} to scenario (no faction selected)`;
+      success = true;
+    } else if (added && grantFailed) {
+      const missing = grantTo.filter((f) => !granted.includes(f));
+      msg = `Added ${card.name}, but could not update tech_access for ${missing.join(', ')} — edit the TOML manually`;
+      success = false;
+    } else if (!added && granted.length > 0) {
+      msg = `Granted ${card.name} to ${granted.join(', ')}`;
+      success = true;
+    } else if (!added && grantFailed) {
+      msg = `${card.name} already present, but tech_access update failed for ${grantTo.join(', ')}`;
+      success = false;
+    } else {
+      msg = `${card.name} already present`;
+      success = true;
+    }
+    this._flash(msg, success);
   }
 
   _allFactionIds() {
