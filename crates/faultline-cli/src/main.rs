@@ -261,7 +261,7 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
         info!(faction = %fid, win_rate = rate, "faction win rate");
     }
 
-    write_outputs(cli, &mc_result)?;
+    write_outputs(cli, &mc_result, scenario)?;
 
     Ok(())
 }
@@ -409,10 +409,11 @@ fn write_result_json(cli: &Cli, result: &RunResult) -> Result<()> {
     Ok(())
 }
 
-fn write_outputs(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
+fn write_outputs(cli: &Cli, result: &MonteCarloResult, scenario: &Scenario) -> Result<()> {
     match cli.format {
         OutputFormat::Json | OutputFormat::Both => {
             write_json_summary(cli, result)?;
+            write_markdown_report(cli, result, scenario)?;
         },
         OutputFormat::Csv => {},
     }
@@ -434,6 +435,19 @@ fn write_json_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
         .with_context(|| "failed to serialize summary")?;
     fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
     info!(path = %path.display(), "wrote JSON summary");
+    Ok(())
+}
+
+fn write_markdown_report(cli: &Cli, result: &MonteCarloResult, scenario: &Scenario) -> Result<()> {
+    // Only emit the report if there's something Phase-6 to show.
+    if result.summary.campaign_summaries.is_empty() && result.summary.feasibility_matrix.is_empty()
+    {
+        return Ok(());
+    }
+    let path = cli.output.join("report.md");
+    let md = faultline_stats::report::render_markdown(&result.summary, scenario);
+    fs::write(&path, md).with_context(|| format!("failed to write {}", path.display()))?;
+    info!(path = %path.display(), "wrote Markdown analysis report");
     Ok(())
 }
 

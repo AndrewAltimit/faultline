@@ -6,6 +6,7 @@
  *  - Grid: fallback colored rectangles for abstract/tutorial scenarios
  */
 import { US_REGIONS, isUSScenario } from './us-regions-geo.js';
+import { MAP_LIBRARY, detectMap, getMapRegions } from './map-library.js';
 
 const UNIT_SHAPES = {
   Infantry: 'circle',
@@ -66,12 +67,9 @@ export class MapRenderer {
   setScenario(scenario) {
     this.scenario = scenario;
 
-    // Detect rendering mode.
-    if (scenario && isUSScenario(scenario.map.regions)) {
-      this.mode = 'geo';
-    } else {
-      this.mode = 'grid';
-    }
+    // Detect rendering mode against the bundled map library.
+    this._mapKey = scenario ? detectMap(scenario.map.regions) : null;
+    this.mode = this._mapKey ? 'geo' : 'grid';
 
     this._computeLayout();
     this.render(null);
@@ -229,16 +227,34 @@ export class MapRenderer {
     const h = this.canvas.height / dpr;
     const padding = 30;
 
-    // Compute bounding box from all state polygons.
+    // Compute bounding box from the regions of the active bundled map
+    // (restricted to regions referenced by the current scenario so maps
+    // zoom to their actual footprint).
+    const mapRegions = getMapRegions(this._mapKey) || {};
+    const scenarioRegionIds = new Set(Object.keys(this.scenario?.map?.regions || {}));
     let minLon = Infinity, maxLon = -Infinity;
     let minLat = Infinity, maxLat = -Infinity;
-    for (const region of Object.values(US_REGIONS)) {
+    for (const [rid, region] of Object.entries(mapRegions)) {
+      if (scenarioRegionIds.size > 0 && !scenarioRegionIds.has(rid)) continue;
       for (const state of region.states) {
         for (const [lon, lat] of state.coords) {
           if (lon < minLon) minLon = lon;
           if (lon > maxLon) maxLon = lon;
           if (lat < minLat) minLat = lat;
           if (lat > maxLat) maxLat = lat;
+        }
+      }
+    }
+    if (!isFinite(minLon)) {
+      // Fallback: use the full bundled map extent.
+      for (const region of Object.values(mapRegions)) {
+        for (const state of region.states) {
+          for (const [lon, lat] of state.coords) {
+            if (lon < minLon) minLon = lon;
+            if (lon > maxLon) maxLon = lon;
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+          }
         }
       }
     }
@@ -249,8 +265,9 @@ export class MapRenderer {
     const availW = w - padding * 2;
     const availH = h - padding * 2;
 
-    // Scale to fit, maintaining aspect ratio (lon/lat ~= 1.3 at US latitudes).
-    const latCorrectionFactor = 1.3;
+    // Latitude correction: cos(mid-latitude) roughly preserves aspect.
+    const midLat = (minLat + maxLat) / 2;
+    const latCorrectionFactor = 1 / Math.max(Math.cos((midLat * Math.PI) / 180), 0.1);
     const scaleX = availW / geoW;
     const scaleY = availH / (geoH * latCorrectionFactor);
     const scale = Math.min(scaleX, scaleY);
@@ -279,8 +296,9 @@ export class MapRenderer {
     this._geoRegions.clear();
     if (!this.scenario) return;
 
+    const mapRegions = getMapRegions(this._mapKey) || {};
     for (const rid of Object.keys(this.scenario.map.regions)) {
-      const geo = US_REGIONS[rid];
+      const geo = mapRegions[rid];
       if (!geo) continue;
 
       const screenPolygons = geo.states.map((st) => this._projectPolygon(st.coords));

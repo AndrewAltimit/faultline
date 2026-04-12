@@ -33,6 +33,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         final_state: run.final_state.clone(),
         snapshots: deltas,
         event_log: run.event_log.clone(),
+        campaign_reports: run.campaign_reports.clone(),
     }
 }
 
@@ -58,6 +59,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         final_state: encoded.final_state.clone(),
         snapshots,
         event_log: encoded.event_log.clone(),
+        campaign_reports: encoded.campaign_reports.clone(),
     }
 }
 
@@ -245,6 +247,7 @@ mod tests {
             final_state: snap.clone(),
             snapshots: vec![snap],
             event_log: vec![],
+            campaign_reports: Default::default(),
         };
 
         let encoded = encode_run(&run);
@@ -301,6 +304,7 @@ mod tests {
             final_state: snap3.clone(),
             snapshots: vec![snap1.clone(), snap2.clone(), snap3.clone()],
             event_log: vec![],
+            campaign_reports: Default::default(),
         };
 
         let encoded = encode_run(&run);
@@ -353,6 +357,7 @@ mod tests {
             final_state: snap2.clone(),
             snapshots: vec![snap1, snap2.clone()],
             event_log: vec![],
+            campaign_reports: Default::default(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -376,6 +381,7 @@ mod tests {
             final_state: snap2.clone(),
             snapshots: vec![snap1, snap2],
             event_log: vec![],
+            campaign_reports: Default::default(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -417,6 +423,7 @@ mod tests {
             final_state: snap.clone(),
             snapshots: vec![snap],
             event_log: event_log.clone(),
+            campaign_reports: Default::default(),
         };
 
         let encoded = encode_run(&run);
@@ -499,6 +506,7 @@ mod tests {
             final_state: snap2.clone(),
             snapshots: vec![snap1, snap2],
             event_log: vec![],
+            campaign_reports: Default::default(),
         };
 
         let decoded = decode_run(&encode_run(&run));

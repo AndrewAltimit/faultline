@@ -49,6 +49,11 @@
         <select class="preset-select" id="preset-select">
           <option value="">-- Select a preset --</option>
         </select>
+        <div style="margin-top: 6px;">
+          <button class="btn-label btn-tutorial" id="btn-tutorial" title="Take the guided tour">
+            Take the guided tour
+          </button>
+        </div>
         <div class="file-actions" style="margin-top: 8px;">
           <button class="btn-label" id="btn-import" title="Import TOML file">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -70,6 +75,7 @@
       <div class="app-tabs">
         <button class="app-tab active" data-tab="tab-editor">TOML Editor</button>
         <button class="app-tab" data-tab="tab-builder">Faction Builder</button>
+        <button class="app-tab" data-tab="tab-tech">Tech Cards</button>
       </div>
 
       <!-- TOML Editor Tab -->
@@ -84,6 +90,15 @@
             </button>
           </div>
           <div id="validation-msg"></div>
+        </div>
+      </div>
+
+      <!-- Tech Cards Tab -->
+      <div class="tab-content" id="tab-tech">
+        <div class="sidebar-section" id="tech-cards-container">
+          <div class="empty-state">
+            <span style="font-size: 0.75rem;">Load a scenario to inject tech cards from the Drone Threat Library.</span>
+          </div>
         </div>
       </div>
 

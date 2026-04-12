@@ -7,11 +7,12 @@ use rand_chacha::ChaCha8Rng;
 
 use faultline_events::EventEvaluator;
 use faultline_geo::{self, GameMap};
-use faultline_types::ids::{EventId, FactionId};
+use faultline_types::ids::{EventId, FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{EventRecord, Outcome, RunResult, StateSnapshot};
 use faultline_types::strategy::FactionState;
 
+use crate::campaign::{self, CampaignState};
 use crate::error::EngineError;
 use crate::state::{RuntimeFactionState, SimulationState};
 use crate::tick::{self, TickResult};
@@ -27,6 +28,7 @@ pub struct Engine {
     map: GameMap,
     event_evaluator: EventEvaluator,
     outcome_reached: bool,
+    campaigns: BTreeMap<KillChainId, CampaignState>,
 }
 
 impl Engine {
@@ -60,6 +62,7 @@ impl Engine {
         let event_evaluator = EventEvaluator::new(event_defs)?;
 
         let state = initialize_state(&scenario)?;
+        let campaigns = campaign::initialize_campaigns(&scenario);
 
         Ok(Self {
             scenario,
@@ -68,6 +71,7 @@ impl Engine {
             map,
             event_evaluator,
             outcome_reached: false,
+            campaigns,
         })
     }
 
@@ -105,6 +109,16 @@ impl Engine {
 
         // Phase 7: Information warfare.
         tick::information_phase(&mut self.state, &self.scenario);
+
+        // Phase 7b: Campaigns / kill chains (Phase 6.1).
+        if !self.scenario.kill_chains.is_empty() {
+            campaign::campaign_phase(
+                &mut self.state,
+                &self.scenario,
+                &mut self.campaigns,
+                &mut self.rng,
+            );
+        }
 
         // Update region control after all modifications.
         tick::update_region_control(&mut self.state, &self.scenario);
@@ -158,6 +172,7 @@ impl Engine {
                     final_state,
                     snapshots: self.state.snapshots.clone(),
                     event_log,
+                    campaign_reports: campaign::reports(&self.campaigns),
                 });
             }
 
@@ -176,6 +191,7 @@ impl Engine {
                     final_state,
                     snapshots: self.state.snapshots.clone(),
                     event_log,
+                    campaign_reports: campaign::reports(&self.campaigns),
                 });
             }
         }
@@ -204,6 +220,11 @@ impl Engine {
     /// Take a snapshot of the current simulation state.
     pub fn snapshot(&self) -> StateSnapshot {
         take_snapshot(&self.state)
+    }
+
+    /// Read-only access to in-flight campaign state (Phase 6.1).
+    pub fn campaigns(&self) -> &BTreeMap<KillChainId, CampaignState> {
+        &self.campaigns
     }
 
     /// Check whether the simulation has finished (victory or max ticks).
@@ -284,6 +305,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         events_fired: BTreeSet::new(),
         events_fired_this_tick: Vec::new(),
         snapshots: Vec::new(),
+        non_kinetic: Default::default(),
     })
 }
 

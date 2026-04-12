@@ -5,7 +5,9 @@
 //! statistics including win probabilities, duration distributions,
 //! and metric distributions.
 
+pub mod analysis;
 pub mod delta;
+pub mod report;
 pub mod sensitivity;
 
 use std::collections::BTreeMap;
@@ -14,10 +16,11 @@ use thiserror::Error;
 use tracing::{debug, info};
 
 use faultline_engine::{Engine, EngineError};
-use faultline_types::ids::{EventId, FactionId, RegionId};
+use faultline_types::ids::{EventId, FactionId, KillChainId, PhaseId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult, MonteCarloSummary, RunResult,
+    CampaignSummary, DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult,
+    MonteCarloSummary, PhaseOutcome, PhaseStats, RunResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +117,9 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             metric_distributions: BTreeMap::new(),
             regional_control: BTreeMap::new(),
             event_probabilities: BTreeMap::new(),
+            campaign_summaries: BTreeMap::new(),
+            feasibility_matrix: Vec::new(),
+            seam_scores: BTreeMap::new(),
         };
     }
 
@@ -221,6 +227,14 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // Event firing probabilities across all runs.
     let event_probabilities = compute_event_probabilities(runs);
 
+    // Campaign / kill chain aggregation (Phase 6.1).
+    let campaign_summaries = compute_campaign_summaries(runs, scenario);
+
+    // Phase 6.5 feasibility matrix + 6.4 seam scores.
+    let feasibility_matrix =
+        analysis::compute_feasibility_matrix(runs, scenario, &campaign_summaries);
+    let seam_scores = analysis::compute_seam_scores(runs, scenario);
+
     MonteCarloSummary {
         total_runs: runs.len() as u32,
         win_rates,
@@ -228,7 +242,139 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         metric_distributions,
         regional_control,
         event_probabilities,
+        campaign_summaries,
+        feasibility_matrix,
+        seam_scores,
     }
+}
+
+/// Aggregate per-kill-chain statistics across runs.
+fn compute_campaign_summaries(
+    runs: &[RunResult],
+    scenario: &Scenario,
+) -> BTreeMap<KillChainId, CampaignSummary> {
+    if scenario.kill_chains.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let total = runs.len() as f64;
+    let mut out = BTreeMap::new();
+
+    for (chain_id, chain) in &scenario.kill_chains {
+        let mut phase_success: BTreeMap<PhaseId, u32> = BTreeMap::new();
+        let mut phase_fail: BTreeMap<PhaseId, u32> = BTreeMap::new();
+        let mut phase_detect: BTreeMap<PhaseId, u32> = BTreeMap::new();
+        let mut phase_not_reached: BTreeMap<PhaseId, u32> = BTreeMap::new();
+        let mut phase_tick_sums: BTreeMap<PhaseId, (u64, u32)> = BTreeMap::new();
+
+        let mut detected_runs = 0u32;
+        let mut any_success_runs = 0u32;
+        let mut attacker_spend_sum = 0.0_f64;
+        let mut defender_spend_sum = 0.0_f64;
+        let mut attribution_sum = 0.0_f64;
+
+        for run in runs {
+            if let Some(report) = run.campaign_reports.get(chain_id) {
+                if report.defender_alerted {
+                    detected_runs += 1;
+                }
+                attacker_spend_sum += report.attacker_spend;
+                defender_spend_sum += report.defender_spend;
+                attribution_sum += report.attribution_confidence;
+
+                let mut any_success = false;
+                for pid in chain.phases.keys() {
+                    let outcome = report
+                        .phase_outcomes
+                        .get(pid)
+                        .cloned()
+                        .unwrap_or(PhaseOutcome::Pending);
+                    match outcome {
+                        PhaseOutcome::Succeeded { tick } => {
+                            *phase_success.entry(pid.clone()).or_insert(0) += 1;
+                            any_success = true;
+                            let entry = phase_tick_sums.entry(pid.clone()).or_insert((0, 0));
+                            entry.0 += u64::from(tick);
+                            entry.1 += 1;
+                        },
+                        PhaseOutcome::Failed { tick } => {
+                            *phase_fail.entry(pid.clone()).or_insert(0) += 1;
+                            let entry = phase_tick_sums.entry(pid.clone()).or_insert((0, 0));
+                            entry.0 += u64::from(tick);
+                            entry.1 += 1;
+                        },
+                        PhaseOutcome::Detected { tick } => {
+                            *phase_detect.entry(pid.clone()).or_insert(0) += 1;
+                            let entry = phase_tick_sums.entry(pid.clone()).or_insert((0, 0));
+                            entry.0 += u64::from(tick);
+                            entry.1 += 1;
+                        },
+                        PhaseOutcome::Pending | PhaseOutcome::Active => {
+                            *phase_not_reached.entry(pid.clone()).or_insert(0) += 1;
+                        },
+                    }
+                }
+                if any_success {
+                    any_success_runs += 1;
+                }
+            } else {
+                // Run had no report for this chain — treat all phases as not reached.
+                for pid in chain.phases.keys() {
+                    *phase_not_reached.entry(pid.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let mut phase_stats = BTreeMap::new();
+        for pid in chain.phases.keys() {
+            let s = *phase_success.get(pid).unwrap_or(&0);
+            let f = *phase_fail.get(pid).unwrap_or(&0);
+            let d = *phase_detect.get(pid).unwrap_or(&0);
+            let nr = *phase_not_reached.get(pid).unwrap_or(&0);
+            let mean_tick = phase_tick_sums.get(pid).and_then(|(sum, count)| {
+                if *count > 0 {
+                    Some(*sum as f64 / f64::from(*count))
+                } else {
+                    None
+                }
+            });
+            phase_stats.insert(
+                pid.clone(),
+                PhaseStats {
+                    phase_id: pid.clone(),
+                    success_rate: f64::from(s) / total,
+                    failure_rate: f64::from(f) / total,
+                    detection_rate: f64::from(d) / total,
+                    not_reached_rate: f64::from(nr) / total,
+                    mean_completion_tick: mean_tick,
+                },
+            );
+        }
+
+        let mean_attacker_spend = attacker_spend_sum / total;
+        let mean_defender_spend = defender_spend_sum / total;
+        let cost_asymmetry_ratio = if mean_attacker_spend > 0.0 {
+            mean_defender_spend / mean_attacker_spend
+        } else {
+            0.0
+        };
+
+        out.insert(
+            chain_id.clone(),
+            CampaignSummary {
+                chain_id: chain_id.clone(),
+                phase_stats,
+                overall_success_rate: f64::from(any_success_runs) / total,
+                detection_rate: f64::from(detected_runs) / total,
+                mean_attacker_spend,
+                mean_defender_spend,
+                cost_asymmetry_ratio,
+                mean_attribution_confidence: attribution_sum / total,
+            },
+        );
+    }
+
+    out
 }
 
 /// Compute per-region faction control probability from final states.
@@ -573,6 +719,7 @@ mod tests {
             },
             snapshots: vec![],
             event_log: vec![],
+            campaign_reports: Default::default(),
         }
     }
 
@@ -692,6 +839,9 @@ mod tests {
                 snapshot_interval: 0,
             },
             victory_conditions,
+            kill_chains: BTreeMap::new(),
+            defender_budget: None,
+            attacker_budget: None,
         }
     }
 
@@ -753,6 +903,7 @@ mod tests {
             },
             snapshots: vec![],
             event_log,
+            campaign_reports: Default::default(),
         }
     }
 

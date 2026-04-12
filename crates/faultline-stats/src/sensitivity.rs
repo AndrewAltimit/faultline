@@ -327,6 +327,9 @@ mod tests {
                 snapshot_interval: 0,
             },
             victory_conditions,
+            kill_chains: BTreeMap::new(),
+            defender_budget: None,
+            attacker_budget: None,
         }
     }
 

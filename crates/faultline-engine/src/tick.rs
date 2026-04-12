@@ -903,6 +903,16 @@ fn check_condition(
             // Peace when tension is very low and no active combat.
             state.political_climate.tension < 0.1
         },
+        VictoryType::NonKineticThreshold { metric, threshold } => {
+            use faultline_types::victory::NonKineticMetric;
+            let value = match metric {
+                NonKineticMetric::InformationDominance => state.non_kinetic.information_dominance,
+                NonKineticMetric::InstitutionalErosion => state.non_kinetic.institutional_erosion,
+                NonKineticMetric::CoercionPressure => state.non_kinetic.coercion_pressure,
+                NonKineticMetric::PoliticalCost => state.non_kinetic.political_cost,
+            };
+            value >= *threshold
+        },
         VictoryType::Custom {
             variable: _,
             threshold: _,

@@ -6,6 +6,55 @@ import { AppState } from './state.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
 
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function fmtCell(value, confidence) {
+  const v = typeof value === 'number' ? value.toFixed(2) : '?';
+  const tag = confidence === 'High' ? 'H' : confidence === 'Medium' ? 'M' : 'L';
+  return `${v} <span class="conf-${tag}">[${tag}]</span>`;
+}
+
+function fmtCostRatio(v) {
+  if (!isFinite(v) || v <= 0) return '—';
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k×`;
+  return `${v.toFixed(0)}×`;
+}
+
+function fmtMoney(v) {
+  if (v == null || !isFinite(v)) return '?';
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+  return v.toFixed(0);
+}
+
+function orderPhasesByChain(chain) {
+  if (!chain || !chain.phases) return [];
+  const seen = new Set();
+  const order = [];
+  const visit = (pid) => {
+    if (seen.has(pid) || !chain.phases[pid]) return;
+    seen.add(pid);
+    order.push(pid);
+    const branches = chain.phases[pid].branches || [];
+    for (const b of branches) visit(b.next_phase);
+  };
+  visit(chain.entry_phase);
+  // Append any phases not reachable by branches in declared order.
+  for (const pid of Object.keys(chain.phases)) {
+    if (!seen.has(pid)) order.push(pid);
+  }
+  return order;
+}
+
 export class Dashboard {
   /**
    * @param {import('./event-bus.js').EventBus} bus
@@ -296,6 +345,11 @@ export class Dashboard {
       html += '<div class="chart-container"><canvas id="chart-heatmap" height="180"></canvas></div>';
     }
 
+    // Phase 6 — campaign / feasibility / seam panels.
+    html += this._renderFeasibilityMatrix(summary);
+    html += this._renderCampaignPanels(summary, scenario);
+    html += this._renderSeamPanel(summary);
+
     this.mcResultsContainer.innerHTML = html;
 
     // Draw charts after DOM update.
@@ -314,6 +368,137 @@ export class Dashboard {
 
   _renderStat(label, value) {
     return `<div class="mc-stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+  }
+
+  // -------------------------------------------------------------------
+  // Phase 6 — campaign / feasibility / seam panels
+  // -------------------------------------------------------------------
+
+  _renderFeasibilityMatrix(summary) {
+    const rows = summary.feasibility_matrix || [];
+    if (!rows.length) return '';
+
+    let h = '<div class="chart-title" style="margin-top: 16px;">Feasibility Matrix</div>';
+    h += '<div class="feasibility-table-wrap">';
+    h += '<table class="feasibility-table"><thead><tr>';
+    h += '<th>Chain</th><th title="Average phase base success probability">Tech</th>';
+    h += '<th title="Operational complexity">Complex</th><th title="Probability defender detects">Detect</th>';
+    h += '<th title="End-to-end success rate">Success</th><th title="Damage + institutional erosion">Severity</th>';
+    h += '<th title="1 - mean attribution confidence">Attrib</th><th title="Defender $ / Attacker $">Cost ×</th>';
+    h += '</tr></thead><tbody>';
+    for (const r of rows) {
+      h += `<tr>
+        <td class="chain-name">${escapeHtml(r.chain_name)}</td>
+        <td>${fmtCell(r.technology_readiness, r.confidence?.technology_readiness)}</td>
+        <td>${fmtCell(r.operational_complexity, r.confidence?.operational_complexity)}</td>
+        <td>${fmtCell(r.detection_probability, r.confidence?.detection_probability)}</td>
+        <td>${fmtCell(r.success_probability, r.confidence?.success_probability)}</td>
+        <td>${fmtCell(r.consequence_severity, r.confidence?.consequence_severity)}</td>
+        <td>${r.attribution_difficulty.toFixed(2)}</td>
+        <td class="cost-asym">${fmtCostRatio(r.cost_asymmetry_ratio)}</td>
+      </tr>`;
+    }
+    h += '</tbody></table></div>';
+    h += '<div class="chart-subtitle">Confidence: <span class="conf-H">H</span> high · <span class="conf-M">M</span> medium · <span class="conf-L">L</span> low (MC variance)</div>';
+    return h;
+  }
+
+  _renderCampaignPanels(summary, scenario) {
+    const cs = summary.campaign_summaries || {};
+    const chainIds = Object.keys(cs);
+    if (!chainIds.length) return '';
+
+    let h = '<div class="chart-title" style="margin-top: 16px;">Kill Chain Phase Breakdown</div>';
+    for (const cid of chainIds) {
+      const c = cs[cid];
+      const chain = scenario?.kill_chains?.[cid];
+      const name = chain?.name || cid;
+      h += `<div class="campaign-panel">
+        <div class="campaign-header">
+          <div class="campaign-name">${escapeHtml(name)}</div>
+          <div class="campaign-metrics">
+            <span>Success <b>${(c.overall_success_rate * 100).toFixed(1)}%</b></span>
+            <span>Detection <b>${(c.detection_rate * 100).toFixed(1)}%</b></span>
+            <span>Attribution conf <b>${c.mean_attribution_confidence.toFixed(2)}</b></span>
+          </div>
+        </div>
+        <div class="campaign-cost-row">
+          <div><span class="label">Attacker spend</span><b>$${fmtMoney(c.mean_attacker_spend)}</b></div>
+          <div><span class="label">Defender spend</span><b>$${fmtMoney(c.mean_defender_spend)}</b></div>
+          <div class="cost-ratio"><span class="label">Asymmetry</span><b>${fmtCostRatio(c.cost_asymmetry_ratio)}</b></div>
+        </div>
+        ${this._renderPhaseFlow(c.phase_stats, chain)}
+      </div>`;
+    }
+    return h;
+  }
+
+  _renderPhaseFlow(phaseStats, chain) {
+    if (!phaseStats) return '';
+    // Order phases: use chain.entry_phase + DFS via branches if we have chain,
+    // otherwise fall back to declared key order.
+    let ordered;
+    if (chain && chain.entry_phase) {
+      ordered = orderPhasesByChain(chain);
+    } else {
+      ordered = Object.keys(phaseStats);
+    }
+    let h = '<div class="phase-flow">';
+    ordered.forEach((pid, idx) => {
+      const ps = phaseStats[pid];
+      if (!ps) return;
+      const succ = ps.success_rate;
+      const det = ps.detection_rate;
+      const nr = ps.not_reached_rate;
+      const label = chain?.phases?.[pid]?.name || pid;
+      const barHue = 120 * succ; // red → green
+      h += `<div class="phase-node">
+        <div class="phase-label" title="${escapeHtml(pid)}">${escapeHtml(label)}</div>
+        <div class="phase-bars">
+          <div class="phase-bar-fill" style="width:${(succ * 100).toFixed(0)}%;background:hsl(${barHue},70%,45%)"></div>
+        </div>
+        <div class="phase-stats">
+          <span class="stat-succ">${(succ * 100).toFixed(0)}%</span>
+          <span class="stat-det">det ${(det * 100).toFixed(0)}%</span>
+          <span class="stat-nr">nr ${(nr * 100).toFixed(0)}%</span>
+        </div>
+      </div>`;
+      if (idx < ordered.length - 1) {
+        h += '<div class="phase-arrow">→</div>';
+      }
+    });
+    h += '</div>';
+    return h;
+  }
+
+  _renderSeamPanel(summary) {
+    const seams = summary.seam_scores || {};
+    const ids = Object.keys(seams);
+    if (!ids.length) return '';
+
+    let h = '<div class="chart-title" style="margin-top: 16px;">Doctrinal Seam Analysis</div>';
+    h += '<table class="feasibility-table"><thead><tr><th>Chain</th><th>Cross-domain phases</th><th>Mean domains/phase</th><th>Seam share of successes</th></tr></thead><tbody>';
+    for (const cid of ids) {
+      const s = seams[cid];
+      h += `<tr>
+        <td class="chain-name">${escapeHtml(cid)}</td>
+        <td>${s.cross_domain_phase_count}</td>
+        <td>${s.mean_domains_per_phase.toFixed(2)}</td>
+        <td>${(s.seam_exploitation_share * 100).toFixed(1)}%</td>
+      </tr>`;
+    }
+    h += '</tbody></table>';
+
+    // Domain frequency chips.
+    for (const cid of ids) {
+      const s = seams[cid];
+      const freqs = Object.entries(s.domain_frequency || {});
+      if (!freqs.length) continue;
+      h += `<div class="chart-subtitle"><b>${escapeHtml(cid)}</b> domain frequency: `;
+      h += freqs.map(([d, n]) => `<span class="domain-chip">${escapeHtml(d)} ×${n}</span>`).join(' ');
+      h += '</div>';
+    }
+    return h;
   }
 
   // -------------------------------------------------------------------

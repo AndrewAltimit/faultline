@@ -8,6 +8,7 @@
 //! RNG seed, the output is fully deterministic.
 
 pub mod ai;
+pub mod campaign;
 pub mod combat;
 pub mod engine;
 pub mod error;
@@ -195,6 +196,9 @@ mod tests {
                 snapshot_interval: 10,
             },
             victory_conditions,
+            kill_chains: BTreeMap::new(),
+            defender_budget: None,
+            attacker_budget: None,
         }
     }
 

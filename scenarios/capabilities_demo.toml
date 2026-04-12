@@ -1,0 +1,639 @@
+# Drone Threat Capabilities Demo
+#
+# Sandbox scenario demonstrating the Drone Threat Library tech cards.
+# All capabilities are aggregate statistical effects derived from
+# publicly available open-source intelligence (IISS Military Balance,
+# congressional testimony, academic literature, and the Locust ETRA
+# v2.0 threat assessment). No classified or export-controlled
+# information is encoded.
+#
+# This scenario is intentionally abstract — its purpose is to give
+# every faction access to the full tech library so you can experiment
+# with how offensive and defensive cards interact. For realistic
+# scenarios, copy individual cards into your own scenario via the
+# Tech Cards panel in the browser simulator.
+
+[meta]
+name = "Drone Threat Capabilities Demo"
+description = """
+Two-faction sandbox wired with every tech card in the bundled Drone
+Threat Library. Use it to probe how offensive capabilities (autonomous
+swarms, rogue-AP perching, covert sensor emplacement) interact with
+defensive investments (multi-phenomenology C-UAS, HPM, WIDS fusion,
+rooftop inspection, MDM enforcement).
+"""
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["demo", "tech-cards", "drone-threat"]
+
+# -- Map --------------------------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.attacker_base]
+id = "attacker_base"
+name = "Attacker Base"
+population = 50000
+urbanization = 0.4
+initial_control = "red_cell"
+strategic_value = 0.3
+borders = ["contested_zone"]
+
+[map.regions.contested_zone]
+id = "contested_zone"
+name = "Contested Zone"
+population = 300000
+urbanization = 0.8
+strategic_value = 1.0
+borders = ["attacker_base", "defender_capital"]
+
+[map.regions.defender_capital]
+id = "defender_capital"
+name = "Defender Capital"
+population = 800000
+urbanization = 0.95
+initial_control = "blue_state"
+strategic_value = 1.0
+borders = ["contested_zone", "defender_periphery"]
+
+[map.regions.defender_periphery]
+id = "defender_periphery"
+name = "Defender Periphery"
+population = 200000
+urbanization = 0.6
+initial_control = "blue_state"
+strategic_value = 0.4
+borders = ["defender_capital"]
+
+[map.infrastructure.capital_comms]
+id = "capital_comms"
+name = "Capital Communications Hub"
+region = "defender_capital"
+infra_type = "Telecommunications"
+criticality = 0.95
+initial_status = 1.0
+
+[map.infrastructure.power_grid]
+id = "power_grid"
+name = "Capital Power Grid"
+region = "defender_capital"
+infra_type = "PowerGrid"
+criticality = 0.9
+initial_status = 1.0
+
+[[map.terrain]]
+region = "attacker_base"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.5
+
+[[map.terrain]]
+region = "contested_zone"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.1
+visibility = 0.8
+
+[[map.terrain]]
+region = "defender_capital"
+terrain_type = "Urban"
+movement_modifier = 0.7
+defense_modifier = 1.3
+visibility = 0.9
+
+[[map.terrain]]
+region = "defender_periphery"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 0.7
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red_cell]
+id = "red_cell"
+name = "Red Cell (Threat Actor)"
+description = "Opaque non-state actor with access to the full offensive tech library"
+color = "#b91c1c"
+tech_access = [
+  "autonomous_drone_swarm",
+  "micro_drone_swarm",
+  "rogue_ap_drone_mesh",
+  "covert_sensor_emplacement",
+  "pattern_of_life_analysis",
+  "ew_jamming_drones",
+  "remote_id_spoofing",
+  "coercion_proof_campaign",
+  "swarm_delivered_cyber",
+  "insurgent_info_mesh",
+]
+initial_morale = 0.8
+logistics_capacity = 40.0
+initial_resources = 800.0
+resource_rate = 8.0
+command_resilience = 0.75
+intelligence = 0.75
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.red_cell.faction_type]
+kind = "Insurgent"
+
+[factions.red_cell.forces.red_cadre]
+id = "red_cadre"
+name = "Red Operational Cadre"
+unit_type = "SpecialOperations"
+region = "attacker_base"
+strength = 300.0
+mobility = 0.4
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue_state]
+id = "blue_state"
+name = "Blue State (Defender)"
+description = "Federal defender with access to the full defensive tech library"
+color = "#1d4ed8"
+tech_access = [
+  "multi_phenom_c_uas",
+  "hpm_area_effect",
+  "adversarial_classification_ai",
+  "distributed_ir_sensor_net",
+  "wids_cuas_fusion",
+  "rooftop_inspection_program",
+  "device_verification_training",
+  "cert_pinning_mdm",
+  "satellite_backup_comms",
+]
+initial_morale = 0.8
+logistics_capacity = 120.0
+initial_resources = 2500.0
+resource_rate = 20.0
+command_resilience = 0.9
+intelligence = 0.7
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.blue_state.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue_state.forces.blue_detail]
+id = "blue_detail"
+name = "Federal Protective Detail"
+unit_type = "SpecialOperations"
+region = "defender_capital"
+strength = 500.0
+mobility = 0.3
+upkeep = 4.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology -------------------------------------------------------------
+# Parameters mirror site/js/app/tech-library.js exactly. Effects are
+# derived from the Locust ETRA v2.0 feasibility assessments.
+
+[technology]
+
+[technology.autonomous_drone_swarm]
+id = "autonomous_drone_swarm"
+name = "Autonomous Drone Swarm (50–100 platforms)"
+description = "Edge-AI coordinated micro/mini drones with onboard target recognition."
+category = "OffensiveDrone"
+cost_per_tick = 0.3
+deployment_cost = 75.0
+coverage_limit = 3
+countered_by = ["hpm_area_effect", "multi_phenom_c_uas"]
+terrain_modifiers = []
+
+[[technology.autonomous_drone_swarm.effects]]
+type = "CombatModifier"
+factor = 1.6
+
+[[technology.autonomous_drone_swarm.effects]]
+type = "AttritionModifier"
+factor = 1.3
+
+[[technology.autonomous_drone_swarm.effects]]
+type = "DetectionModifier"
+factor = 0.55
+
+[[technology.autonomous_drone_swarm.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.08
+
+[technology.micro_drone_swarm]
+id = "micro_drone_swarm"
+name = "Micro-Drone Swarm (<15g, sub-RCS)"
+description = "Insect-scale drones below the current radar detection floor."
+category = "OffensiveDrone"
+cost_per_tick = 0.1
+deployment_cost = 25.0
+coverage_limit = 2
+countered_by = ["distributed_ir_sensor_net"]
+terrain_modifiers = []
+
+[[technology.micro_drone_swarm.effects]]
+type = "DetectionModifier"
+factor = 0.15
+
+[[technology.micro_drone_swarm.effects]]
+type = "IntelGain"
+probability = 0.25
+
+[[technology.micro_drone_swarm.effects]]
+type = "CombatModifier"
+factor = 1.1
+
+[technology.rogue_ap_drone_mesh]
+id = "rogue_ap_drone_mesh"
+name = "Perched Rogue-AP Drone Mesh"
+description = "Drones perch as stationary rogue Wi-Fi access points, dormant until activated."
+category = { Custom = "CyberPhysical" }
+cost_per_tick = 0.08
+deployment_cost = 18.0
+coverage_limit = 4
+countered_by = ["wids_cuas_fusion", "cert_pinning_mdm"]
+terrain_modifiers = []
+
+[[technology.rogue_ap_drone_mesh.effects]]
+type = "IntelGain"
+probability = 0.35
+
+[[technology.rogue_ap_drone_mesh.effects]]
+type = "CommsDisruption"
+factor = 0.6
+
+[[technology.rogue_ap_drone_mesh.effects]]
+type = "DetectionModifier"
+factor = 0.2
+
+[technology.covert_sensor_emplacement]
+id = "covert_sensor_emplacement"
+name = "Drone-Delivered Covert Sensor Nodes"
+description = "Solar-sustained ESP32+LTE sensor packages with indefinite operation."
+category = "Surveillance"
+cost_per_tick = 0.02
+deployment_cost = 4.0
+coverage_limit = 10
+countered_by = ["rooftop_inspection_program", "device_verification_training"]
+terrain_modifiers = []
+
+[[technology.covert_sensor_emplacement.effects]]
+type = "IntelGain"
+probability = 0.45
+
+[[technology.covert_sensor_emplacement.effects]]
+type = "DetectionModifier"
+factor = 0.1
+
+[technology.pattern_of_life_analysis]
+id = "pattern_of_life_analysis"
+name = "Pattern-of-Life Analysis Cell"
+description = "Multi-source intelligence fusion building persistent target profiles."
+category = "Surveillance"
+cost_per_tick = 0.15
+deployment_cost = 10.0
+coverage_limit = 2
+countered_by = []
+terrain_modifiers = []
+
+[[technology.pattern_of_life_analysis.effects]]
+type = "IntelGain"
+probability = 0.5
+
+[[technology.pattern_of_life_analysis.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.03
+
+[technology.ew_jamming_drones]
+id = "ew_jamming_drones"
+name = "EW Jamming Drone Payloads"
+description = "Drone-borne RF jammers targeting government and military communications."
+category = "ElectronicWarfare"
+cost_per_tick = 0.2
+deployment_cost = 15.0
+coverage_limit = 2
+countered_by = ["satellite_backup_comms", "multi_phenom_c_uas"]
+terrain_modifiers = []
+
+[[technology.ew_jamming_drones.effects]]
+type = "CommsDisruption"
+factor = 0.75
+
+[[technology.ew_jamming_drones.effects]]
+type = "CombatModifier"
+factor = 1.2
+
+[technology.remote_id_spoofing]
+id = "remote_id_spoofing"
+name = "Remote-ID Spoofing Suite"
+description = "Fabricates Remote-ID broadcasts making hostile drones appear legitimate."
+category = "Concealment"
+cost_per_tick = 0.02
+deployment_cost = 1.5
+countered_by = ["adversarial_classification_ai"]
+terrain_modifiers = []
+
+[[technology.remote_id_spoofing.effects]]
+type = "DetectionModifier"
+factor = 0.6
+
+[technology.coercion_proof_campaign]
+id = "coercion_proof_campaign"
+name = "Asymmetric Coercion Campaign"
+description = "Phased proof-of-capability operations imposing political cost."
+category = "InformationWarfare"
+cost_per_tick = 0.1
+deployment_cost = 8.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.coercion_proof_campaign.effects]]
+type = "CivilianSentiment"
+delta = -0.15
+
+[[technology.coercion_proof_campaign.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.1
+
+[technology.swarm_delivered_cyber]
+id = "swarm_delivered_cyber"
+name = "Swarm-Delivered Cyber-Physical Exploit"
+description = "Rogue APs feeding credential harvest and organizational network access."
+category = "Cyber"
+cost_per_tick = 0.12
+deployment_cost = 20.0
+coverage_limit = 1
+countered_by = ["wids_cuas_fusion", "cert_pinning_mdm"]
+terrain_modifiers = []
+
+[[technology.swarm_delivered_cyber.effects]]
+type = "IntelGain"
+probability = 0.4
+
+[[technology.swarm_delivered_cyber.effects]]
+type = "CommsDisruption"
+factor = 0.5
+
+[[technology.swarm_delivered_cyber.effects]]
+type = "CivilianSentiment"
+delta = -0.05
+
+[technology.insurgent_info_mesh]
+id = "insurgent_info_mesh"
+name = "Insurgent Information Mesh"
+description = "Real-time drone-footage broadcast network for revolutionary movements."
+category = "InformationWarfare"
+cost_per_tick = 0.1
+deployment_cost = 6.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.insurgent_info_mesh.effects]]
+type = "CivilianSentiment"
+delta = 0.2
+
+[[technology.insurgent_info_mesh.effects]]
+type = "MoraleEffect"
+target = "Own"
+delta = 0.08
+
+[technology.multi_phenom_c_uas]
+id = "multi_phenom_c_uas"
+name = "Multi-Phenomenology C-UAS"
+description = "Radar + electro-optical + acoustic + passive-RF fusion."
+category = "CounterDrone"
+cost_per_tick = 0.5
+deployment_cost = 300.0
+coverage_limit = 1
+countered_by = ["micro_drone_swarm"]
+terrain_modifiers = []
+
+[[technology.multi_phenom_c_uas.effects]]
+type = "DetectionModifier"
+factor = 1.8
+
+[[technology.multi_phenom_c_uas.effects]]
+type = "CombatModifier"
+factor = 0.7
+
+[technology.hpm_area_effect]
+id = "hpm_area_effect"
+name = "HPM Area-Effect Counter-Swarm"
+description = "High-Power Microwave area-effect weapon (Epirus Leonidas class)."
+category = "CounterDrone"
+cost_per_tick = 1.0
+deployment_cost = 600.0
+coverage_limit = 1
+countered_by = ["micro_drone_swarm"]
+terrain_modifiers = []
+
+[[technology.hpm_area_effect.effects]]
+type = "AreaDenial"
+strength = 0.8
+
+[[technology.hpm_area_effect.effects]]
+type = "CounterTech"
+target = "autonomous_drone_swarm"
+reduction = 0.6
+
+[technology.adversarial_classification_ai]
+id = "adversarial_classification_ai"
+name = "Adversarial-Robust Classification AI"
+description = "Behavioral drone classifier resistant to adversarial optimization."
+category = "CounterDrone"
+cost_per_tick = 0.3
+deployment_cost = 150.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.adversarial_classification_ai.effects]]
+type = "DetectionModifier"
+factor = 1.3
+
+[[technology.adversarial_classification_ai.effects]]
+type = "CounterTech"
+target = "remote_id_spoofing"
+reduction = 0.5
+
+[technology.distributed_ir_sensor_net]
+id = "distributed_ir_sensor_net"
+name = "Distributed IR / Lidar Micro-Drone Net"
+description = "IR + lidar inner-perimeter array closing the micro-drone detection gap."
+category = "CounterDrone"
+cost_per_tick = 0.15
+deployment_cost = 120.0
+coverage_limit = 1
+countered_by = []
+terrain_modifiers = []
+
+[[technology.distributed_ir_sensor_net.effects]]
+type = "CounterTech"
+target = "micro_drone_swarm"
+reduction = 0.7
+
+[[technology.distributed_ir_sensor_net.effects]]
+type = "DetectionModifier"
+factor = 1.2
+
+[technology.wids_cuas_fusion]
+id = "wids_cuas_fusion"
+name = "WIDS + C-UAS Fusion Platform"
+description = "Correlates airspace detection with wireless intrusion monitoring."
+category = "Cyber"
+cost_per_tick = 0.1
+deployment_cost = 40.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.wids_cuas_fusion.effects]]
+type = "CounterTech"
+target = "rogue_ap_drone_mesh"
+reduction = 0.55
+
+[[technology.wids_cuas_fusion.effects]]
+type = "CounterTech"
+target = "swarm_delivered_cyber"
+reduction = 0.45
+
+[[technology.wids_cuas_fusion.effects]]
+type = "DetectionModifier"
+factor = 1.15
+
+[technology.rooftop_inspection_program]
+id = "rooftop_inspection_program"
+name = "Rooftop & Exterior Inspection Program"
+description = "Quarterly inspection + drone change-detection survey."
+category = { Custom = "Procedural" }
+cost_per_tick = 0.04
+deployment_cost = 3.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.rooftop_inspection_program.effects]]
+type = "CounterTech"
+target = "covert_sensor_emplacement"
+reduction = 0.6
+
+[technology.device_verification_training]
+id = "device_verification_training"
+name = "Exterior Device Verification Training"
+description = "Procedural counter to physical social-engineered sensor packages."
+category = { Custom = "Procedural" }
+cost_per_tick = 0.01
+deployment_cost = 0.8
+countered_by = []
+terrain_modifiers = []
+
+[[technology.device_verification_training.effects]]
+type = "CounterTech"
+target = "covert_sensor_emplacement"
+reduction = 0.3
+
+[technology.cert_pinning_mdm]
+id = "cert_pinning_mdm"
+name = "Enforced MDM + Certificate Pinning"
+description = "Organization-wide mobile device management and certificate pinning."
+category = "Cyber"
+cost_per_tick = 0.06
+deployment_cost = 15.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.cert_pinning_mdm.effects]]
+type = "CounterTech"
+target = "rogue_ap_drone_mesh"
+reduction = 0.4
+
+[[technology.cert_pinning_mdm.effects]]
+type = "CounterTech"
+target = "swarm_delivered_cyber"
+reduction = 0.3
+
+[technology.satellite_backup_comms]
+id = "satellite_backup_comms"
+name = "Satellite & Optical Backup Comms"
+description = "Iridium PTT + Starlink mesh + optical free-space links."
+category = "Communications"
+cost_per_tick = 0.08
+deployment_cost = 20.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.satellite_backup_comms.effects]]
+type = "InfraProtection"
+factor = 0.7
+
+[[technology.satellite_backup_comms.effects]]
+type = "CounterTech"
+target = "ew_jamming_drones"
+reduction = 0.65
+
+[[technology.satellite_backup_comms.effects]]
+type = "CommsDisruption"
+factor = -0.5
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.5
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.7
+disinformation_susceptibility = 0.55
+state_control = 0.25
+social_media_penetration = 0.9
+internet_availability = 0.95
+
+# -- Events (empty) --------------------------------------------------------
+
+[events]
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 200
+monte_carlo_runs = 300
+fog_of_war = true
+snapshot_interval = 20
+seed = 101
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.12 }
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.blue_holds]
+id = "blue_holds"
+name = "Blue holds capital"
+faction = "blue_state"
+
+[victory_conditions.blue_holds.condition]
+type = "HoldRegions"
+regions = ["defender_capital"]
+duration = 200
+
+[victory_conditions.red_coerces]
+id = "red_coerces"
+name = "Red achieves coercion threshold"
+faction = "red_cell"
+
+[victory_conditions.red_coerces.condition]
+type = "StrategicControl"
+threshold = 0.5
