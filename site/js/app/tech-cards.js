@@ -3,7 +3,13 @@
  * injects cards into the TOML editor scenario.
  */
 import { AppState } from './state.js';
-import { TECH_LIBRARY, groupedCards, insertCardIntoToml } from './tech-library.js';
+import {
+  TECH_LIBRARY,
+  DOMAINS,
+  groupedCards,
+  domainCounts,
+  insertCardIntoToml,
+} from './tech-library.js';
 
 export class TechCardsPanel {
   /**
@@ -14,9 +20,14 @@ export class TechCardsPanel {
     this.container = document.getElementById('tech-cards-container');
     this.editor = document.getElementById('toml-editor');
 
+    /** Currently selected domain id, or null for "All". */
+    this.activeDomain = null;
+    /** Current search query string. */
+    this.searchQuery = '';
+    /** Per-domain collapse state. */
+    this.collapsed = { offensive: false, defensive: false };
+
     bus.on('scenario:loaded', () => this._render());
-    // Trigger an initial render so the panel shows content even before
-    // a scenario is loaded.
     this._render();
   }
 
@@ -26,24 +37,96 @@ export class TechCardsPanel {
     const factionIds = scenario ? Object.keys(scenario.factions || {}) : [];
     const existingIds = scenario ? Object.keys(scenario.technology || {}) : [];
 
-    const { offensive, defensive } = groupedCards();
+    const counts = domainCounts();
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    const { offensive, defensive } = groupedCards({
+      domain: this.activeDomain,
+      search: this.searchQuery,
+    });
+
+    const visibleCount = offensive.length + defensive.length;
+    const activeMeta = this.activeDomain
+      ? DOMAINS.find((d) => d.id === this.activeDomain)
+      : null;
 
     let html = '';
     html += `<div class="tech-panel-header">
-      <div class="tech-panel-title">Drone Threat Library</div>
+      <div class="tech-panel-title">Threat Capability Library</div>
       <div class="tech-panel-subtitle">
-        ETRA-derived tech cards. Each card encodes a capability from the
-        Locust ETRA assessment as a bundle of statistical effects you
-        can grant to any faction.
+        ${total} cards across ${DOMAINS.length} threat domains. Each card encodes an
+        ETRA-derived capability as statistical effects you can grant to
+        any faction. ${activeMeta ? escapeHtml(activeMeta.description) : 'Showing all domains.'}
       </div>
     </div>`;
 
-    html += this._renderGroup('Offensive capabilities', offensive, factionIds, existingIds);
-    html += this._renderGroup('Defensive capabilities', defensive, factionIds, existingIds);
+    // Domain tab strip.
+    html += '<div class="tech-domain-tabs">';
+    html += this._renderDomainTab(null, 'All', total);
+    for (const d of DOMAINS) {
+      html += this._renderDomainTab(d.id, d.label, counts[d.id] || 0);
+    }
+    html += '</div>';
+
+    // Search box.
+    html += `<div class="tech-search-row">
+      <input type="search" class="tech-search" placeholder="Search cards by name, id, or description…"
+             value="${escapeAttr(this.searchQuery)}">
+      <span class="tech-search-count">${visibleCount} visible</span>
+    </div>`;
+
+    if (visibleCount === 0) {
+      html += '<div class="empty-state" style="padding: 16px 0;"><span style="font-size: 0.75rem;">No cards match the current filter.</span></div>';
+    } else {
+      html += this._renderGroup(
+        'offensive',
+        `Offensive (${offensive.length})`,
+        offensive,
+        factionIds,
+        existingIds,
+      );
+      html += this._renderGroup(
+        'defensive',
+        `Defensive (${defensive.length})`,
+        defensive,
+        factionIds,
+        existingIds,
+      );
+    }
 
     this.container.innerHTML = html;
 
-    // Wire up buttons after DOM update.
+    // Wire up tab clicks.
+    this.container.querySelectorAll('.tech-domain-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const d = tab.dataset.domain || null;
+        this.activeDomain = d === '' ? null : d;
+        this._render();
+      });
+    });
+    // Search input.
+    const searchEl = this.container.querySelector('.tech-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', (e) => {
+        this.searchQuery = e.target.value || '';
+        // Re-render but keep focus on the search box.
+        this._render();
+        const again = this.container.querySelector('.tech-search');
+        if (again) {
+          again.focus();
+          again.setSelectionRange(again.value.length, again.value.length);
+        }
+      });
+    }
+    // Group collapse toggles.
+    this.container.querySelectorAll('.tech-group-header').forEach((hdr) => {
+      hdr.addEventListener('click', () => {
+        const key = hdr.dataset.group;
+        this.collapsed[key] = !this.collapsed[key];
+        this._render();
+      });
+    });
+    // Add-card buttons.
     this.container.querySelectorAll('.tech-card-add').forEach((btn) => {
       btn.addEventListener('click', () => {
         const cardId = btn.dataset.card;
@@ -56,9 +139,22 @@ export class TechCardsPanel {
     });
   }
 
-  _renderGroup(title, cards, factionIds, existingIds) {
+  _renderDomainTab(id, label, count) {
+    const active = (id || null) === this.activeDomain;
+    return `<button class="tech-domain-tab ${active ? 'active' : ''}" data-domain="${escapeAttr(id || '')}">
+      ${escapeHtml(label)} <span class="tab-count">${count}</span>
+    </button>`;
+  }
+
+  _renderGroup(key, title, cards, factionIds, existingIds) {
     if (!cards.length) return '';
-    let html = `<div class="tech-group-title">${title}</div>`;
+    const collapsed = this.collapsed[key];
+    const chevron = collapsed ? '▸' : '▾';
+    let html = `<div class="tech-group-header" data-group="${escapeAttr(key)}">
+      <span class="tech-group-chevron">${chevron}</span>
+      <span class="tech-group-title">${escapeHtml(title)}</span>
+    </div>`;
+    if (collapsed) return html;
     for (const card of cards) {
       const present = existingIds.includes(card.id);
       const factionOptions = factionIds.length
@@ -86,12 +182,13 @@ export class TechCardsPanel {
           <div class="tech-card-rationale">${escapeHtml(card.rationale)}</div>
           <div class="tech-card-effects">${this._renderEffects(card.effects)}</div>
           ${
-            card.countered_by.length
-              ? `<div class="tech-card-counter">Countered by: ${card.countered_by
+            (card.countered_by || []).length
+              ? `<div class="tech-card-counter">Countered by: ${(card.countered_by || [])
                   .map((c) => `<code>${escapeHtml(c)}</code>`)
                   .join(', ')}</div>`
               : ''
           }
+          ${card.domain ? `<div class="tech-card-domain-tag">${escapeHtml(card.domain)}</div>` : ''}
           <div class="tech-card-actions">
             <select class="tech-card-faction" data-card="${escapeAttr(card.id)}"
                     ${factionIds.length ? '' : 'disabled'}>
