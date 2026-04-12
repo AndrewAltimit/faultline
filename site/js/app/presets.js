@@ -34,4 +34,9 @@ export const PRESETS = [
     path: 'scenarios/capabilities_demo.toml',
     description: 'Sandbox scenario exercising every tech card in the bundled Drone Threat Library.',
   },
+  {
+    name: 'Compound Kill Chains — Defensive Planning Wargame',
+    path: 'scenarios/compound_kill_chains.toml',
+    description: 'Research simulation of three concurrent archetypal red-team campaigns (intelligence-led pressure, non-lethal capability demonstration, cyber-physical convergence) against a notional integrated defender. Exercises the Phase 6 multi-phase campaign schema and cost-asymmetry analysis.',
+  },
 ];
