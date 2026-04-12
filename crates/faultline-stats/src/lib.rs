@@ -227,10 +227,10 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // Event firing probabilities across all runs.
     let event_probabilities = compute_event_probabilities(runs);
 
-    // Campaign / kill chain aggregation (Phase 6.1).
+    // Campaign / kill chain aggregation.
     let campaign_summaries = compute_campaign_summaries(runs, scenario);
 
-    // Phase 6.5 feasibility matrix + 6.4 seam scores.
+    // Feasibility matrix + doctrinal seam scores.
     let feasibility_matrix =
         analysis::compute_feasibility_matrix(runs, scenario, &campaign_summaries);
     let seam_scores = analysis::compute_seam_scores(runs, scenario);
@@ -846,7 +846,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 3 metric tests
+    // Metric distribution tests
     // -----------------------------------------------------------------------
 
     use faultline_types::ids::{EventId, InfraId};

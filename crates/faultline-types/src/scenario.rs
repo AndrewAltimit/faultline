@@ -23,14 +23,14 @@ pub struct Scenario {
     pub events: BTreeMap<EventId, EventDefinition>,
     pub simulation: SimulationConfig,
     pub victory_conditions: BTreeMap<VictoryId, VictoryCondition>,
-    /// Multi-phase kill chains (Phase 6.1). Optional — pre-Phase-6
-    /// scenarios omit this field entirely.
+    /// Multi-phase kill chains. Optional — scenarios without
+    /// campaign analysis omit this field entirely.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub kill_chains: BTreeMap<KillChainId, KillChain>,
-    /// Defender budget cap in dollars (Phase 6.2). `None` = unlimited.
+    /// Defender budget cap in dollars. `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub defender_budget: Option<f64>,
-    /// Attacker budget cap in dollars (Phase 6.2). `None` = unlimited.
+    /// Attacker budget cap in dollars. `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attacker_budget: Option<f64>,
 }

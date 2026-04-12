@@ -1,6 +1,6 @@
 # Compound Kill Chain Scenario — Research Simulation
 #
-# Defensive-planning wargame. Exercises the Phase 6.1 `[kill_chains]`
+# Defensive-planning wargame. Exercises the `[kill_chains]`
 # schema with three concurrent multi-phase campaigns modeled against a
 # notional integrated federal security posture. The scenario is a tool
 # for red-teaming C-UAS / cyber / physical-security integration gaps —
@@ -37,14 +37,14 @@
 # defender's ability to map simulation outputs onto real posture
 # decisions; the scenario is descriptive, not prescriptive.
 
-# Budget caps (Phase 6.2) — top-level scenario fields. Must appear before
+# Budget caps — top-level scenario fields. Must appear before
 # the first section header so TOML does not attach them to [meta].
 attacker_budget = 250_000.0
 defender_budget = 50_000_000.0
 
 [meta]
 name = "Compound Kill Chains — Defensive Planning Wargame"
-description = "Research simulation of three concurrent archetypal adversary campaigns (Alpha / Bravo / Charlie) against a notional integrated federal security posture. Exercises the Phase 6.1 multi-phase campaign schema to quantify doctrinal seams between counter-UAS, cyber, and physical security — a defensive-planning tool, not an operational playbook."
+description = "Research simulation of three concurrent archetypal adversary campaigns (Alpha / Bravo / Charlie) against a notional integrated federal security posture. Exercises the multi-phase campaign schema to quantify doctrinal seams between counter-UAS, cyber, and physical security — a defensive-planning tool, not an operational playbook."
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["kill-chain", "compound", "phase-6", "red-team", "defensive-planning", "c-uas"]
@@ -395,7 +395,7 @@ internet_availability = 0.97
 [events]
 
 # ============================================================================
-# Kill Chains — compound multi-phase campaigns (Phase 6.1 schema)
+# Kill Chains — compound multi-phase campaigns
 # ============================================================================
 
 # (Budgets declared at scenario top-level above.)
@@ -839,7 +839,7 @@ faction = "insider_cell"
 # Analytical end-state: the red-team campaigns accumulated enough
 # CoercionPressure to model a defender political-resilience failure.
 # CoercionPressure is the engine's generic non-kinetic pressure metric
-# (Phase 6.6) and does not imply any real-world action.
+# and does not imply any real-world action.
 [victory_conditions.pressure_threshold_reached.condition]
 type = "NonKineticThreshold"
 metric = "CoercionPressure"

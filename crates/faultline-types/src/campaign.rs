@@ -1,4 +1,4 @@
-//! Multi-phase campaign / kill chain modeling (Phase 6.1 — 6.4).
+//! Multi-phase campaign / kill chain modeling.
 //!
 //! Real-world threat campaigns are not single kinetic engagements — they
 //! are ordered sequences of phases (reconnaissance → emplacement →
@@ -73,10 +73,10 @@ pub struct CampaignPhase {
     /// attributable (clear forensics), `1.0` = completely opaque.
     #[serde(default = "default_attribution")]
     pub attribution_difficulty: f64,
-    /// Dollar-denominated cost annotations (Phase 6.2).
+    /// Dollar-denominated cost annotations.
     #[serde(default)]
     pub cost: PhaseCost,
-    /// Defensive domains whose gaps this phase targets (Phase 6.4).
+    /// Defensive domains whose gaps this phase targets.
     #[serde(default)]
     pub targets_domains: Vec<DefensiveDomain>,
     /// Effects applied to the world state on successful completion.
@@ -92,7 +92,7 @@ fn default_attribution() -> f64 {
 }
 
 // ---------------------------------------------------------------------------
-// Cost annotation (Phase 6.2)
+// Cost annotation
 // ---------------------------------------------------------------------------
 
 /// Dollar-denominated costs associated with a phase.
@@ -140,7 +140,7 @@ pub enum PhaseOutput {
         faction: FactionId,
         delta: f64,
     },
-    /// Non-kinetic outputs (Phase 6.6).
+    /// Non-kinetic outputs.
     InformationDominance {
         delta: f64,
     },
@@ -191,12 +191,12 @@ pub enum BranchCondition {
 }
 
 // ---------------------------------------------------------------------------
-// Defensive domains (Phase 6.4)
+// Defensive domains
 // ---------------------------------------------------------------------------
 
 /// Categories of defensive discipline. The "seam" between two or more
 /// of these — where no single organizational owner is responsible — is
-/// the attack surface Phase 6.4 aims to score.
+/// the attack surface the seam-scoring model aims to quantify.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DefensiveDomain {
     PhysicalSecurity,

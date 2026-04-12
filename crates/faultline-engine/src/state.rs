@@ -30,14 +30,14 @@ pub struct SimulationState {
     pub events_fired_this_tick: Vec<EventId>,
     /// Periodic state snapshots for analysis.
     pub snapshots: Vec<StateSnapshot>,
-    /// Aggregated non-kinetic metrics (Phase 6.6). Summed across all
+    /// Aggregated non-kinetic metrics. Summed across all
     /// in-flight kill chains so scenario victory conditions can check
     /// them uniformly.
     #[serde(default)]
     pub non_kinetic: NonKineticMetrics,
 }
 
-/// Non-kinetic outcome metrics (Phase 6.6).
+/// Non-kinetic outcome metrics.
 ///
 /// Each field lives in `[0, 1]` and represents cumulative pressure or
 /// damage along a dimension that is not directly measured by combat

@@ -345,7 +345,7 @@ export class Dashboard {
       html += '<div class="chart-container"><canvas id="chart-heatmap" height="180"></canvas></div>';
     }
 
-    // Phase 6 — campaign / feasibility / seam panels.
+    // Campaign / feasibility / seam panels.
     html += this._renderFeasibilityMatrix(summary);
     html += this._renderCampaignPanels(summary, scenario);
     html += this._renderSeamPanel(summary);
@@ -371,7 +371,7 @@ export class Dashboard {
   }
 
   // -------------------------------------------------------------------
-  // Phase 6 — campaign / feasibility / seam panels
+  // Campaign / feasibility / seam panels
   // -------------------------------------------------------------------
 
   _renderFeasibilityMatrix(summary) {

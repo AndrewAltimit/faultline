@@ -1,5 +1,4 @@
-//! Phase 6.4 / 6.5 analysis: doctrinal seam scoring and feasibility
-//! matrix output.
+//! Doctrinal seam scoring and feasibility matrix output.
 //!
 //! These operate purely over `RunResult.campaign_reports` and the
 //! scenario configuration — they do not re-run the engine.

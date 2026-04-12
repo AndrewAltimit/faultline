@@ -43,7 +43,7 @@ defender_budget = 2_000_000_000.0
 
 [meta]
 name = "European Energy Infrastructure Sabotage — Defensive Wargame"
-description = "Research simulation of a multi-phase covert campaign against European cross-border energy infrastructure. Exercises the Phase 6.1 kill chain schema to quantify the cost-asymmetry ratio and detection window between plausible attacker tradecraft and the NATO / EU defender posture required to close the gap."
+description = "Research simulation of a multi-phase covert campaign against European cross-border energy infrastructure. Exercises the kill chain schema to quantify the cost-asymmetry ratio and detection window between plausible attacker tradecraft and the NATO / EU defender posture required to close the gap."
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["europe", "nato", "energy", "kill-chain", "phase-6", "defensive-planning", "subsea"]
@@ -472,7 +472,7 @@ attacker = "sabotage_cell"
 target = "nato_cip"
 entry_phase = "energy_target_survey"
 
-# -- Phase 1: target survey -------------------------------------------------
+# -- Target survey ----------------------------------------------------------
 
 [kill_chains.energy_sabotage.phases.energy_target_survey]
 id = "energy_target_survey"
@@ -503,7 +503,7 @@ next_phase = "energy_offshore_staging"
 condition = { type = "OnDetection" }
 next_phase = "energy_abort"
 
-# -- Phase 2: offshore staging ----------------------------------------------
+# -- Offshore staging -------------------------------------------------------
 
 [kill_chains.energy_sabotage.phases.energy_offshore_staging]
 id = "energy_offshore_staging"
@@ -535,7 +535,7 @@ next_phase = "energy_subsea_emplacement"
 condition = { type = "OnDetection" }
 next_phase = "energy_abort"
 
-# -- Phase 3: subsea emplacement --------------------------------------------
+# -- Subsea emplacement -----------------------------------------------------
 
 [kill_chains.energy_sabotage.phases.energy_subsea_emplacement]
 id = "energy_subsea_emplacement"
@@ -572,7 +572,7 @@ next_phase = "energy_disruption"
 condition = { type = "OnDetection" }
 next_phase = "energy_abort"
 
-# -- Phase 4: terminal — coordinated disruption event -----------------------
+# -- Terminal — coordinated disruption event --------------------------------
 
 [kill_chains.energy_sabotage.phases.energy_disruption]
 id = "energy_disruption"
