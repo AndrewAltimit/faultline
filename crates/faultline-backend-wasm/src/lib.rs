@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::MonteCarloRunner;
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{EventRecord, MonteCarloConfig};
+use faultline_types::stats::MonteCarloConfig;
 
 // ---------------------------------------------------------------------------
 // Initialization
@@ -126,12 +126,12 @@ pub fn run_monte_carlo(
 /// A persistent simulation engine for step-by-step execution.
 ///
 /// Wraps the core `Engine` so the browser can advance tick-by-tick
-/// without re-parsing and re-initializing each time.
+/// without re-parsing and re-initializing each time. The scenario is
+/// owned by the inner `Engine` (accessible via `engine.scenario()`)
+/// and not duplicated here.
 #[wasm_bindgen]
 pub struct WasmEngine {
     engine: Engine,
-    scenario: Scenario,
-    event_log: Vec<EventRecord>,
 }
 
 #[wasm_bindgen]
@@ -144,20 +144,20 @@ impl WasmEngine {
 
         let actual_seed = seed.unwrap_or(42);
 
-        let engine = Engine::with_seed(scenario.clone(), actual_seed)
+        let engine = Engine::with_seed(scenario, actual_seed)
             .map_err(|e| JsValue::from_str(&format!("engine init error: {e}")))?;
 
-        Ok(WasmEngine {
-            engine,
-            scenario,
-            event_log: Vec::new(),
-        })
+        Ok(WasmEngine { engine })
     }
 
     /// Advance the simulation by `n` ticks.
     ///
     /// Returns an array of per-tick results. Stops early if a victory
     /// condition is met or `max_ticks` is reached.
+    ///
+    /// Each `TickResult` includes the events that fired during that tick
+    /// (`events_fired` field). The JS frontend is responsible for
+    /// accumulating these into a session-level event log if needed.
     pub fn tick_n(&mut self, n: u32) -> Result<JsValue, JsValue> {
         let mut tick_results = Vec::new();
 
@@ -170,16 +170,6 @@ impl WasmEngine {
                 .engine
                 .tick()
                 .map_err(|e| JsValue::from_str(&format!("tick error: {e}")))?;
-
-            // Accumulate event log entries.
-            let current_tick = self.engine.current_tick();
-            let state = self.engine.state();
-            for eid in &state.events_fired_this_tick {
-                self.event_log.push(EventRecord {
-                    tick: current_tick,
-                    event_id: eid.clone(),
-                });
-            }
 
             tick_results.push(result);
         }
@@ -197,13 +187,7 @@ impl WasmEngine {
 
     /// Get the parsed scenario as JSON.
     pub fn get_scenario(&self) -> Result<JsValue, JsValue> {
-        serde_wasm_bindgen::to_value(&self.scenario)
-            .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
-    }
-
-    /// Get the accumulated event log.
-    pub fn get_event_log(&self) -> Result<JsValue, JsValue> {
-        serde_wasm_bindgen::to_value(&self.event_log)
+        serde_wasm_bindgen::to_value(self.engine.scenario())
             .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
     }
 
@@ -230,6 +214,7 @@ impl WasmEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use faultline_types::stats::EventRecord;
 
     const TUTORIAL_TOML: &str = include_str!("../../../scenarios/tutorial_symmetric.toml");
 

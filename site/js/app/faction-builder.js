@@ -281,11 +281,15 @@ export class FactionBuilder {
   _onRegionClick(regionId) {
     // If a faction is selected, set it as initial_control for the clicked region.
     if (this.selectedFactionId && AppState.scenario) {
-      // Update scenario data.
       const region = AppState.scenario.map.regions[regionId];
       if (region) {
         region.initial_control = this.selectedFactionId;
-        this.bus.emit('builder:changed', this.factions);
+        // Emit a region-control event with the actual change details,
+        // not the unrelated factions array.
+        this.bus.emit('map:region-control-changed', {
+          regionId,
+          factionId: this.selectedFactionId,
+        });
       }
     }
   }
