@@ -10,6 +10,7 @@ import { Editor } from './editor.js';
 import { Dashboard } from './dashboard.js';
 import { FactionBuilder } from './faction-builder.js';
 import { mapsToObjects } from './wasm-util.js';
+import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -90,18 +91,25 @@ async function bootstrap() {
       }
     });
 
-    // Load default preset on startup.
-    try {
-      const resp = await fetch('scenarios/tutorial_symmetric.toml');
-      if (resp.ok) {
-        const toml = await resp.text();
-        editor.setText(toml);
-        // Auto-select in dropdown.
-        const select = document.getElementById('preset-select');
-        if (select) select.value = 'scenarios/tutorial_symmetric.toml';
+    // If a scenario was shared via URL hash, prefer it over the default
+    // preset. Otherwise fall back to the tutorial scenario.
+    const sharedToml = await readScenarioFromHash();
+    if (sharedToml) {
+      editor.setText(sharedToml);
+      clearScenarioHash();
+    } else {
+      try {
+        const resp = await fetch('scenarios/tutorial_symmetric.toml');
+        if (resp.ok) {
+          const toml = await resp.text();
+          editor.setText(toml);
+          // Auto-select in dropdown.
+          const select = document.getElementById('preset-select');
+          if (select) select.value = 'scenarios/tutorial_symmetric.toml';
+        }
+      } catch {
+        // Ignore — user can load manually.
       }
-    } catch {
-      // Ignore — user can load manually.
     }
   }
 

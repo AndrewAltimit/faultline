@@ -6,7 +6,7 @@
 use wasm_bindgen::prelude::*;
 
 use faultline_engine::{Engine, validate_scenario};
-use faultline_stats::MonteCarloRunner;
+use faultline_stats::{MonteCarloRunner, sensitivity::run_sensitivity};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::MonteCarloConfig;
 
@@ -96,11 +96,16 @@ pub fn run_single(toml_str: &str, seed: Option<u64>) -> Result<JsValue, JsValue>
 ///
 /// Returns a [`MonteCarloResult`] as JSON (includes all individual
 /// `RunResult`s plus `MonteCarloSummary`).
+///
+/// `collect_snapshots` (default `false`) controls whether per-tick
+/// snapshots are retained on every run. The browser regional-control
+/// heatmap needs them; the win-probability bars do not.
 #[wasm_bindgen]
 pub fn run_monte_carlo(
     toml_str: &str,
     num_runs: u32,
     seed: Option<u64>,
+    collect_snapshots: Option<bool>,
 ) -> Result<JsValue, JsValue> {
     let scenario: Scenario = toml::from_str(toml_str)
         .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
@@ -108,12 +113,49 @@ pub fn run_monte_carlo(
     let config = MonteCarloConfig {
         num_runs,
         seed,
-        collect_snapshots: false,
+        collect_snapshots: collect_snapshots.unwrap_or(false),
         parallel: false,
     };
 
     let result = MonteCarloRunner::run(&config, &scenario)
         .map_err(|e| JsValue::from_str(&format!("Monte Carlo error: {e}")))?;
+
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// Sensitivity analysis (stateless)
+// ---------------------------------------------------------------------------
+
+/// Run a one-parameter sensitivity sweep, executing a Monte Carlo
+/// batch at each step in `[low, high]`.
+///
+/// Returns a [`SensitivityResult`] as JSON. The `param` argument uses
+/// the same dotted-path syntax as the `--sensitivity-param` CLI flag
+/// (e.g. `political_climate.tension`).
+#[wasm_bindgen]
+pub fn run_sensitivity_wasm(
+    toml_str: &str,
+    param: &str,
+    low: f64,
+    high: f64,
+    steps: u32,
+    runs_per_step: u32,
+    seed: Option<u64>,
+) -> Result<JsValue, JsValue> {
+    let scenario: Scenario = toml::from_str(toml_str)
+        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+
+    let config = MonteCarloConfig {
+        num_runs: runs_per_step,
+        seed,
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let result = run_sensitivity(&scenario, &config, param, low, high, steps)
+        .map_err(|e| JsValue::from_str(&format!("sensitivity error: {e}")))?;
 
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))

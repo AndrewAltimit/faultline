@@ -4,6 +4,7 @@
 import { AppState } from './state.js';
 import { PRESETS } from './presets.js';
 import { mapsToObjects } from './wasm-util.js';
+import { buildShareUrl } from './sharing.js';
 
 export class Editor {
   /**
@@ -21,6 +22,7 @@ export class Editor {
     this.btnLoad = document.getElementById('btn-load');
     this.btnImport = document.getElementById('btn-import');
     this.btnExport = document.getElementById('btn-export');
+    this.btnShare = document.getElementById('btn-share');
     this.fileInput = document.getElementById('file-import');
     this.validationMsg = document.getElementById('validation-msg');
 
@@ -43,7 +45,30 @@ export class Editor {
     this.btnLoad.addEventListener('click', () => this._loadAndRun());
     this.btnImport.addEventListener('click', () => this.fileInput.click());
     this.btnExport.addEventListener('click', () => this._export());
+    if (this.btnShare) this.btnShare.addEventListener('click', () => this._share());
     this.fileInput.addEventListener('change', (e) => this._import(e));
+  }
+
+  async _share() {
+    const toml = this.textarea.value.trim();
+    if (!toml) {
+      this._showError('No TOML content to share');
+      return;
+    }
+    try {
+      const url = await buildShareUrl(toml);
+      try {
+        await navigator.clipboard.writeText(url);
+        this._showSuccess(`Share URL copied to clipboard (${url.length} chars)`);
+      } catch {
+        // Clipboard may be blocked (e.g. insecure context). Fall back to
+        // updating the address bar so the user can copy manually.
+        history.replaceState(null, '', new URL(url).hash);
+        this._showSuccess('Share URL placed in the address bar — copy from there');
+      }
+    } catch (e) {
+      this._showError(`Share failed: ${e}`);
+    }
   }
 
   /**
