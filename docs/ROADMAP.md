@@ -1,6 +1,6 @@
 # Faultline Roadmap
 
-Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing.
+Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — compound kill chains and accurate regional maps landed.
 
 ---
 
@@ -153,13 +153,14 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing.
 **Goal:** Comprehensive library of ETRA-grade scenarios covering major threat archetypes.
 
 - [x] Threat capability library (129 cards across 6 domains) — `site/js/app/tech-library.js` bundles ETRA-derived tech cards spanning drone swarms (Locust ETRA), WMD proliferation (ETRA-2026-WMD-001), espionage operations (ETRA-2026-ESP-001), political targeting (ETRA-2026-PTR-001), financial integrity (ETRA-2025-FIN-001), and institutional erosion (ETRA-2026-IC-001). Tech Cards panel has domain tabs, search, collapsible offensive/defensive groups, and per-faction injection into the live TOML editor. `scenarios/capabilities_demo.toml` exercises the drone subset.
+- [x] Accurate world/regional maps — `tools/build-maps/build.mjs` regenerates `site/js/app/generated-regions.js` from `datasets/geo-countries` (CC0) via Ramer–Douglas–Peucker simplification. `map-library.js` now ships Europe, East Asia, Middle East, and a new 42-region `world` map alongside the hand-authored US macro-regions. `detectMap()` picks the best-covering map by ratio so smaller regional scenarios aren't swallowed by the global map.
+- [x] Compound kill chains (ETRA Appendix D: Alpha, Bravo, Charlie) — `scenarios/compound_kill_chains.toml` exercises the Phase 6.1 `[kill_chains]` TOML schema with three concurrent chains (intelligence-led coercion, proof-of-capability demonstration, cyber-physical convergence). Produces feasibility matrix, cost asymmetry ratios (77× – 1907×), detection accumulation, and attribution confidence in `report.md`.
 - [ ] Drone-assisted coup facilitation (ETRA Scenario 2)
 - [ ] Revolutionary infrastructure seizure with drone ISR (ETRA Scenario 3)
 - [ ] Asymmetric coercion campaign — proof-of-capability escalation (ETRA Scenario 4)
 - [ ] Persistent covert surveillance network (ETRA Scenario 5)
 - [ ] Cyber-physical network exploitation via drone-delivered rogue APs (ETRA Scenario 6)
 - [ ] Persistent covert sensor emplacement with solar-sustained nodes (ETRA Scenario 7)
-- [ ] Compound kill chains (ETRA Appendix D: Alpha, Bravo, Charlie)
 - [ ] Taiwan Strait crisis — multi-domain great power competition
 - [ ] European energy infrastructure sabotage
 - [ ] Arctic sovereignty disputes with drone swarm force projection

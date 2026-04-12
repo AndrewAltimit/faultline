@@ -34,4 +34,9 @@ export const PRESETS = [
     path: 'scenarios/capabilities_demo.toml',
     description: 'Sandbox scenario exercising every tech card in the bundled Drone Threat Library.',
   },
+  {
+    name: 'Compound Kill Chains — ETRA Appendix D',
+    path: 'scenarios/compound_kill_chains.toml',
+    description: 'Three concurrent ETRA Appendix D kill chains (Alpha/Bravo/Charlie). Exercises the Phase 6 multi-phase campaign schema, cost asymmetry, and attribution scoring.',
+  },
 ];

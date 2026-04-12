@@ -1,0 +1,822 @@
+# Compound Kill Chains — ETRA Appendix D (Alpha / Bravo / Charlie)
+#
+# Exercises the Phase 6.1 `[kill_chains]` TOML schema with three
+# concurrent multi-phase campaigns targeting the US federal security
+# apparatus. Each chain models a distinct ETRA Appendix D profile:
+#
+#   - Kill Chain Alpha: Intelligence-led coercion — sensor emplacement,
+#     wireless exploitation, credential harvest, coercive disclosure.
+#     Attribution: opaque. Cost asymmetry: ~10,000x.
+#
+#   - Kill Chain Bravo: Escalatory proof-of-capability — inert swarm
+#     penetration of a public perimeter with drop-and-leaflet messaging.
+#     Attribution: partial. Cost asymmetry: ~1,000x.
+#
+#   - Kill Chain Charlie: Cyber-physical convergence — drone-delivered
+#     rogue-AP mesh backing a ransomware-style compromise of critical
+#     infrastructure during a simultaneous physical demonstration.
+#     Attribution: moderate. Cost asymmetry: ~5,000x.
+#
+# All phases, durations, detection probabilities, and costs are derived
+# from open-source ETRA framework analysis and CRS / GAO reporting on
+# C-UAS gaps, CISA incident retrospectives, and published Natural Earth /
+# IISS order-of-battle data. No classified or CUI material.
+#
+# References:
+# - ETRA "Autonomous Drone Swarms as Instruments of Political
+#   Destabilization" (2026), Appendix D
+# - GAO-23-105912 "Counter-Unmanned Aircraft Systems: DHS and DOJ Should
+#   Establish Baseline Plans for Protecting Covered Events"
+# - CISA Insights "Protecting Against the Threat of Unmanned Aircraft
+#   Systems" (2020)
+# - RAND RR-3023-DHS "Small Unmanned Aerial System Adversary Capabilities"
+
+# Budget caps (Phase 6.2) — top-level scenario fields. Must appear before
+# the first section header so TOML does not attach them to [meta].
+attacker_budget = 250_000.0
+defender_budget = 50_000_000.0
+
+[meta]
+name = "Compound Kill Chains — ETRA Appendix D"
+description = "Three concurrent ETRA Appendix D kill chains (Alpha / Bravo / Charlie) against the US federal security apparatus. Exercises the Phase 6.1 multi-phase campaign schema, cost asymmetry tracking, detection accumulation, and attribution scoring."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["kill-chain", "compound", "phase-6", "etra", "domestic", "coercion"]
+
+# ============================================================================
+# Map — DC Metro operational theater
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 3
+height = 2
+
+[map.regions.capital_core]
+id = "capital_core"
+name = "Capital Core (DC)"
+population = 700_000
+urbanization = 0.98
+initial_control = "federal_security"
+strategic_value = 10.0
+borders = ["northern_virginia", "maryland_suburbs"]
+
+[map.regions.northern_virginia]
+id = "northern_virginia"
+name = "Northern Virginia"
+population = 3_100_000
+urbanization = 0.85
+initial_control = "federal_security"
+strategic_value = 8.0
+borders = ["capital_core", "maryland_suburbs", "outer_suburbs"]
+
+[map.regions.maryland_suburbs]
+id = "maryland_suburbs"
+name = "Maryland Suburbs"
+population = 2_800_000
+urbanization = 0.80
+initial_control = "federal_security"
+strategic_value = 7.0
+borders = ["capital_core", "northern_virginia", "outer_suburbs"]
+
+[map.regions.outer_suburbs]
+id = "outer_suburbs"
+name = "Outer Suburbs"
+population = 4_500_000
+urbanization = 0.65
+initial_control = "federal_security"
+strategic_value = 3.0
+borders = ["northern_virginia", "maryland_suburbs", "cyber_domain"]
+
+[map.regions.cyber_domain]
+id = "cyber_domain"
+name = "Cyber / Information Domain"
+population = 0
+urbanization = 1.0
+initial_control = "federal_security"
+strategic_value = 9.0
+borders = ["outer_suburbs", "international_arena"]
+
+[map.regions.international_arena]
+id = "international_arena"
+name = "International Arena"
+population = 0
+urbanization = 0.5
+initial_control = "insider_cell"
+strategic_value = 2.0
+borders = ["cyber_domain"]
+
+[map.infrastructure.executive_comms]
+id = "executive_comms"
+name = "Executive Branch Communications"
+region = "capital_core"
+infra_type = "Telecommunications"
+criticality = 0.95
+initial_status = 1.0
+
+[map.infrastructure.ic_networks]
+id = "ic_networks"
+name = "Intelligence Community Networks"
+region = "northern_virginia"
+infra_type = "Internet"
+criticality = 0.90
+initial_status = 1.0
+
+[map.infrastructure.grid_substation]
+id = "grid_substation"
+name = "DC Area Grid Substation"
+region = "maryland_suburbs"
+infra_type = "PowerGrid"
+criticality = 0.88
+initial_status = 1.0
+
+[[map.terrain]]
+region = "capital_core"
+terrain_type = "Urban"
+movement_modifier = 0.5
+defense_modifier = 1.8
+visibility = 0.9
+
+[[map.terrain]]
+region = "northern_virginia"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "maryland_suburbs"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.2
+visibility = 0.65
+
+[[map.terrain]]
+region = "outer_suburbs"
+terrain_type = "Urban"
+movement_modifier = 1.2
+defense_modifier = 0.6
+visibility = 0.3
+
+[[map.terrain]]
+region = "cyber_domain"
+terrain_type = "Urban"
+movement_modifier = 1.5
+defense_modifier = 0.8
+visibility = 0.4
+
+[[map.terrain]]
+region = "international_arena"
+terrain_type = "Desert"
+movement_modifier = 1.0
+defense_modifier = 0.3
+visibility = 0.1
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.federal_security]
+id = "federal_security"
+name = "Federal Security Apparatus"
+description = "Combined USSS, FBI, CISA, Cyber Command, and C-UAS elements. High absolute capability but doctrinally siloed across physical, cyber, and counter-UAS — the seam ETRA Appendix D exploits."
+color = "#1a5276"
+tech_access = ["cuas_radar", "executive_protection"]
+initial_morale = 0.80
+logistics_capacity = 800.0
+initial_resources = 10000.0
+resource_rate = 100.0
+command_resilience = 0.7
+intelligence = 0.75
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.federal_security.faction_type]
+kind = "Government"
+
+[factions.federal_security.faction_type.institutions.usss]
+id = "usss"
+name = "US Secret Service"
+institution_type = "LawEnforcement"
+loyalty = 0.90
+effectiveness = 0.85
+personnel = 7000
+fracture_threshold = 0.3
+
+[factions.federal_security.faction_type.institutions.fbi_ct]
+id = "fbi_ct"
+name = "FBI Counter-Terrorism"
+institution_type = "LawEnforcement"
+loyalty = 0.85
+effectiveness = 0.75
+personnel = 35000
+fracture_threshold = 0.35
+
+[factions.federal_security.faction_type.institutions.cisa]
+id = "cisa"
+name = "CISA"
+institution_type = "Intelligence"
+loyalty = 0.80
+effectiveness = 0.60
+personnel = 3000
+fracture_threshold = 0.40
+
+[factions.federal_security.forces.protective_detail]
+id = "protective_detail"
+name = "Executive Protection Detail"
+unit_type = "SpecialOperations"
+region = "capital_core"
+strength = 200.0
+mobility = 0.9
+upkeep = 15.0
+morale_modifier = 0.1
+capabilities = []
+
+[factions.federal_security.forces.cuas_teams]
+id = "cuas_teams"
+name = "C-UAS Response Teams"
+unit_type = "SpecialOperations"
+region = "capital_core"
+strength = 80.0
+mobility = 0.5
+upkeep = 20.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.federal_security.forces.cyber_defense]
+id = "cyber_defense"
+name = "Cyber Defense Operations"
+unit_type = "CyberUnit"
+region = "northern_virginia"
+strength = 120.0
+mobility = 0.1
+upkeep = 12.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.insider_cell]
+id = "insider_cell"
+name = "Disaffected Insider Cell"
+description = "15-person cell of former mil/intel professionals with institutional knowledge of defensive systems. ETRA Profile A."
+color = "#c0392b"
+tech_access = ["autonomous_swarm", "covert_sensors"]
+initial_morale = 0.90
+logistics_capacity = 50.0
+initial_resources = 150.0
+resource_rate = 2.0
+command_resilience = 0.4
+intelligence = 0.65
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.insider_cell.faction_type]
+kind = "Insurgent"
+
+[factions.insider_cell.forces.ops_cell]
+id = "ops_cell"
+name = "Operations Cell"
+unit_type = "SpecialOperations"
+region = "outer_suburbs"
+strength = 15.0
+mobility = 1.5
+upkeep = 0.5
+morale_modifier = 0.1
+capabilities = []
+
+[factions.insider_cell.forces.drone_ops]
+id = "drone_ops"
+name = "Drone Operations Element"
+unit_type = "DroneSwarm"
+region = "outer_suburbs"
+strength = 25.0
+mobility = 2.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology — minimal set to satisfy referential integrity
+# ============================================================================
+
+[technology]
+
+[technology.cuas_radar]
+id = "cuas_radar"
+name = "Counter-UAS Radar Network"
+description = "Multi-phenomenology C-UAS detection. Effective against >0.01 m² RCS; micro-drones below threshold."
+category = "Surveillance"
+cost_per_tick = 8.0
+deployment_cost = 50.0
+countered_by = ["autonomous_swarm"]
+coverage_limit = 2
+terrain_modifiers = []
+
+[[technology.cuas_radar.effects]]
+type = "DetectionModifier"
+factor = 1.6
+
+[technology.executive_protection]
+id = "executive_protection"
+name = "Executive Protection Doctrine"
+description = "USSS protective methodology."
+category = "CounterDrone"
+cost_per_tick = 10.0
+deployment_cost = 30.0
+countered_by = []
+coverage_limit = 1
+terrain_modifiers = []
+
+[[technology.executive_protection.effects]]
+type = "CombatModifier"
+factor = 1.5
+
+[technology.autonomous_swarm]
+id = "autonomous_swarm"
+name = "Autonomous Drone Swarm"
+description = "RF-silent edge-AI coordinated drones."
+category = "OffensiveDrone"
+cost_per_tick = 3.0
+deployment_cost = 50.0
+countered_by = ["cuas_radar"]
+coverage_limit = 3
+terrain_modifiers = []
+
+[[technology.autonomous_swarm.effects]]
+type = "CombatModifier"
+factor = 1.4
+
+[[technology.autonomous_swarm.effects]]
+type = "DetectionModifier"
+factor = 0.4
+
+[technology.covert_sensors]
+id = "covert_sensors"
+name = "Solar-Powered Covert Sensors"
+description = "ESP32-CAM + LTE modem + flexible solar. <$30/unit, indefinite operation."
+category = "Surveillance"
+cost_per_tick = 0.1
+deployment_cost = 0.5
+countered_by = []
+coverage_limit = 8
+terrain_modifiers = []
+
+[[technology.covert_sensors.effects]]
+type = "DetectionModifier"
+factor = 0.2
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.55
+institutional_trust = 0.45
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.85
+disinformation_susceptibility = 0.65
+state_control = 0.15
+social_media_penetration = 0.90
+internet_availability = 0.97
+
+# ============================================================================
+# Events — minimal, the analytical signal comes from [kill_chains]
+# ============================================================================
+
+[events]
+
+# ============================================================================
+# Kill Chains — ETRA Appendix D compound campaign
+# ============================================================================
+
+# (Budgets declared at scenario top-level above.)
+
+# -- Kill Chain Alpha — Intelligence-led coercion ---------------------------
+
+[kill_chains.alpha]
+id = "alpha"
+name = "Kill Chain Alpha — Intelligence-Led Coercion"
+description = "Covert sensor emplacement → wireless exploitation → credential harvest → coercive disclosure. Optimized for low detection and opaque attribution."
+attacker = "insider_cell"
+target = "federal_security"
+entry_phase = "alpha_sensor_emplacement"
+
+[kill_chains.alpha.phases.alpha_sensor_emplacement]
+id = "alpha_sensor_emplacement"
+name = "Covert Sensor Emplacement"
+description = "10 ESP32-CAM solar-powered nodes emplaced on rooftops and exterior walls near principal residences. Utility-branded enclosures. Drone-delivered during 0200-0430 window."
+base_success_probability = 0.90
+min_duration = 5
+max_duration = 10
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.95
+targets_domains = ["PhysicalSecurity", "SignalsIntelligence"]
+
+[kill_chains.alpha.phases.alpha_sensor_emplacement.cost]
+attacker_dollars = 500.0
+defender_dollars = 4_000_000.0   # Rooftop inspection program scale-up
+attacker_resources = 0.5
+
+[[kill_chains.alpha.phases.alpha_sensor_emplacement.outputs]]
+type = "IntelligenceGain"
+amount = 0.15
+
+[[kill_chains.alpha.phases.alpha_sensor_emplacement.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "alpha_pattern_of_life"
+
+[[kill_chains.alpha.phases.alpha_sensor_emplacement.branches]]
+condition = { type = "OnDetection" }
+next_phase = "alpha_abort"
+
+[kill_chains.alpha.phases.alpha_pattern_of_life]
+id = "alpha_pattern_of_life"
+name = "Pattern-of-Life Intelligence"
+description = "30 days of passive sensor collection yielding full pattern-of-life: arrival/departure windows, vehicle IDs, detail rotations, visitor lists."
+prerequisites = ["alpha_sensor_emplacement"]
+base_success_probability = 0.95
+min_duration = 20
+max_duration = 30
+detection_probability_per_tick = 0.005
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.95
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.alpha.phases.alpha_pattern_of_life.cost]
+attacker_dollars = 200.0
+defender_dollars = 1_500_000.0
+attacker_resources = 0.2
+
+[[kill_chains.alpha.phases.alpha_pattern_of_life.outputs]]
+type = "IntelligenceGain"
+amount = 0.25
+
+[[kill_chains.alpha.phases.alpha_pattern_of_life.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "alpha_wireless_harvest"
+
+[[kill_chains.alpha.phases.alpha_pattern_of_life.branches]]
+condition = { type = "OnDetection" }
+next_phase = "alpha_abort"
+
+[kill_chains.alpha.phases.alpha_wireless_harvest]
+id = "alpha_wireless_harvest"
+name = "Wireless Credential Harvest"
+description = "Rogue AP drones deployed to 10 staff-frequented off-site locations. Human-triggered activation; captive portal credential harvesting and TLS interception."
+prerequisites = ["alpha_pattern_of_life"]
+base_success_probability = 0.70
+min_duration = 25
+max_duration = 35
+detection_probability_per_tick = 0.015
+prerequisite_success_boost = 0.15
+attribution_difficulty = 0.90
+targets_domains = ["NetworkSecurity", "InsiderThreat"]
+
+[kill_chains.alpha.phases.alpha_wireless_harvest.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 15_000_000.0  # Staff personal-device ecosystem defense
+attacker_resources = 10.0
+
+[[kill_chains.alpha.phases.alpha_wireless_harvest.outputs]]
+type = "IntelligenceGain"
+amount = 0.30
+
+[[kill_chains.alpha.phases.alpha_wireless_harvest.outputs]]
+type = "InstitutionalErosion"
+delta = 0.05
+
+[[kill_chains.alpha.phases.alpha_wireless_harvest.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "alpha_coercive_disclosure"
+
+[[kill_chains.alpha.phases.alpha_wireless_harvest.branches]]
+condition = { type = "OnDetection" }
+next_phase = "alpha_abort"
+
+[kill_chains.alpha.phases.alpha_coercive_disclosure]
+id = "alpha_coercive_disclosure"
+name = "Coercive Disclosure"
+description = "Publish timestamped surveillance proving persistent undetected access. Demands accompany release. Political crisis."
+prerequisites = ["alpha_wireless_harvest"]
+base_success_probability = 0.80
+min_duration = 3
+max_duration = 7
+detection_probability_per_tick = 0.0       # Public by design
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.75
+targets_domains = ["ExecutiveProtection", "NetworkSecurity"]
+
+[kill_chains.alpha.phases.alpha_coercive_disclosure.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 12_000_000.0
+attacker_resources = 2.0
+
+[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+type = "CoercionPressure"
+delta = 0.45
+
+[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+type = "InstitutionalErosion"
+delta = 0.20
+
+[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+type = "TensionDelta"
+delta = 0.15
+
+[kill_chains.alpha.phases.alpha_abort]
+id = "alpha_abort"
+name = "Chain Aborted — Defender Alerted"
+description = "Terminal phase on detection. Attacker burns infrastructure and withdraws to avoid attribution."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.95
+targets_domains = []
+
+[kill_chains.alpha.phases.alpha_abort.cost]
+attacker_dollars = 1_000.0
+defender_dollars = 500_000.0
+attacker_resources = 1.0
+
+# -- Kill Chain Bravo — Escalatory Proof-of-Capability ----------------------
+
+[kill_chains.bravo]
+id = "bravo"
+name = "Kill Chain Bravo — Proof-of-Capability Demonstration"
+description = "Inert autonomous swarm penetrates a public security perimeter and drops leaflets. Visible, deniable, and designed to shatter the defender's capability narrative."
+attacker = "insider_cell"
+target = "federal_security"
+entry_phase = "bravo_swarm_assembly"
+
+[kill_chains.bravo.phases.bravo_swarm_assembly]
+id = "bravo_swarm_assembly"
+name = "Autonomous Swarm Assembly & Test"
+description = "Assemble 20-drone swarm with onboard edge AI and mesh coordination. Low-altitude flight testing at remote site."
+base_success_probability = 0.85
+min_duration = 10
+max_duration = 20
+detection_probability_per_tick = 0.008
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.70
+targets_domains = ["CounterUAS"]
+
+[kill_chains.bravo.phases.bravo_swarm_assembly.cost]
+attacker_dollars = 25_000.0
+defender_dollars = 0.0
+attacker_resources = 20.0
+
+[[kill_chains.bravo.phases.bravo_swarm_assembly.outputs]]
+type = "IntelligenceGain"
+amount = 0.10
+
+[[kill_chains.bravo.phases.bravo_swarm_assembly.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "bravo_launch_window"
+
+[[kill_chains.bravo.phases.bravo_swarm_assembly.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bravo_abort"
+
+[kill_chains.bravo.phases.bravo_launch_window]
+id = "bravo_launch_window"
+name = "Launch Window Selection"
+description = "Identify public event with permissive airspace posture. Pre-stage launch vehicles near perimeter."
+prerequisites = ["bravo_swarm_assembly"]
+base_success_probability = 0.90
+min_duration = 3
+max_duration = 8
+detection_probability_per_tick = 0.010
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.80
+targets_domains = ["CounterUAS", "ExecutiveProtection"]
+
+[kill_chains.bravo.phases.bravo_launch_window.cost]
+attacker_dollars = 3_000.0
+defender_dollars = 2_000_000.0
+attacker_resources = 2.0
+
+[[kill_chains.bravo.phases.bravo_launch_window.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "bravo_penetration"
+
+[[kill_chains.bravo.phases.bravo_launch_window.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bravo_abort"
+
+[kill_chains.bravo.phases.bravo_penetration]
+id = "bravo_penetration"
+name = "Perimeter Penetration & Leaflet Drop"
+description = "20-drone swarm autonomously breaches security perimeter, broadcasts light pattern, drops leaflets. Inert. Media-saturated. Defensive posture shattered."
+prerequisites = ["bravo_launch_window"]
+base_success_probability = 0.65
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.85       # Public event — detection is near-certain
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.55
+targets_domains = ["CounterUAS", "ExecutiveProtection", "CivilianEmergency"]
+
+[kill_chains.bravo.phases.bravo_penetration.cost]
+attacker_dollars = 0.0
+defender_dollars = 30_000_000.0  # Emergency C-UAS expansion
+attacker_resources = 0.0
+
+[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+type = "CoercionPressure"
+delta = 0.35
+
+[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+type = "InstitutionalErosion"
+delta = 0.25
+
+[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+type = "TensionDelta"
+delta = 0.20
+
+[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+type = "MoraleDelta"
+faction = "federal_security"
+delta = -0.25
+
+[kill_chains.bravo.phases.bravo_abort]
+id = "bravo_abort"
+name = "Chain Aborted"
+description = "Terminal abort phase."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.80
+targets_domains = []
+
+# -- Kill Chain Charlie — Cyber-Physical Convergence ------------------------
+
+[kill_chains.charlie]
+id = "charlie"
+name = "Kill Chain Charlie — Cyber-Physical Convergence"
+description = "Drone-delivered rogue-AP mesh backs a ransomware-style compromise of a regional power grid substation during a simultaneous inert physical demonstration. Exploits the seam between C-UAS, cyber, and critical-infrastructure defense."
+attacker = "insider_cell"
+target = "federal_security"
+entry_phase = "charlie_network_recon"
+
+[kill_chains.charlie.phases.charlie_network_recon]
+id = "charlie_network_recon"
+name = "Utility Network Reconnaissance"
+description = "Passive OSINT enumeration of ICS/SCADA vendors, VPN endpoints, and remote-access posture at the target substation."
+base_success_probability = 0.90
+min_duration = 5
+max_duration = 12
+detection_probability_per_tick = 0.005
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.90
+targets_domains = ["NetworkSecurity", "SupplyChainSecurity"]
+
+[kill_chains.charlie.phases.charlie_network_recon.cost]
+attacker_dollars = 500.0
+defender_dollars = 2_000_000.0
+attacker_resources = 0.5
+
+[[kill_chains.charlie.phases.charlie_network_recon.outputs]]
+type = "IntelligenceGain"
+amount = 0.15
+
+[[kill_chains.charlie.phases.charlie_network_recon.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "charlie_rogue_ap_mesh"
+
+[[kill_chains.charlie.phases.charlie_network_recon.branches]]
+condition = { type = "OnDetection" }
+next_phase = "charlie_abort"
+
+[kill_chains.charlie.phases.charlie_rogue_ap_mesh]
+id = "charlie_rogue_ap_mesh"
+name = "Drone-Delivered Rogue-AP Mesh"
+description = "Drones perch rogue APs near the substation control room and vendor field-office. Mesh relays captured credentials to attacker infrastructure."
+prerequisites = ["charlie_network_recon"]
+base_success_probability = 0.75
+min_duration = 8
+max_duration = 15
+detection_probability_per_tick = 0.012
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.80
+targets_domains = ["NetworkSecurity", "CounterUAS", "PhysicalSecurity"]
+
+[kill_chains.charlie.phases.charlie_rogue_ap_mesh.cost]
+attacker_dollars = 15_000.0
+defender_dollars = 20_000_000.0
+attacker_resources = 8.0
+
+[[kill_chains.charlie.phases.charlie_rogue_ap_mesh.outputs]]
+type = "IntelligenceGain"
+amount = 0.25
+
+[[kill_chains.charlie.phases.charlie_rogue_ap_mesh.outputs]]
+type = "InfraDamage"
+region = "maryland_suburbs"
+factor = 0.05
+
+[[kill_chains.charlie.phases.charlie_rogue_ap_mesh.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "charlie_ics_exploit"
+
+[[kill_chains.charlie.phases.charlie_rogue_ap_mesh.branches]]
+condition = { type = "OnDetection" }
+next_phase = "charlie_abort"
+
+[kill_chains.charlie.phases.charlie_ics_exploit]
+id = "charlie_ics_exploit"
+name = "ICS/SCADA Exploit Deployment"
+description = "Deploy ransomware-style wiper against substation control systems during a pre-arranged window. Simultaneous inert drone demonstration over the capital draws defensive attention."
+prerequisites = ["charlie_rogue_ap_mesh"]
+base_success_probability = 0.55
+min_duration = 1
+max_duration = 3
+detection_probability_per_tick = 0.30
+prerequisite_success_boost = 0.15
+attribution_difficulty = 0.60
+targets_domains = ["NetworkSecurity", "CivilianEmergency", "SupplyChainSecurity"]
+
+[kill_chains.charlie.phases.charlie_ics_exploit.cost]
+attacker_dollars = 30_000.0
+defender_dollars = 75_000_000.0
+attacker_resources = 15.0
+
+[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+type = "InfraDamage"
+region = "maryland_suburbs"
+factor = 0.45
+
+[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+type = "CoercionPressure"
+delta = 0.40
+
+[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+type = "InstitutionalErosion"
+delta = 0.15
+
+[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+type = "TensionDelta"
+delta = 0.25
+
+[[kill_chains.charlie.phases.charlie_ics_exploit.branches]]
+condition = { type = "OnDetection" }
+next_phase = "charlie_abort"
+
+[kill_chains.charlie.phases.charlie_abort]
+id = "charlie_abort"
+name = "Chain Aborted"
+description = "Terminal abort phase."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.85
+targets_domains = []
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 180
+monte_carlo_runs = 500
+seed = 20260412
+fog_of_war = true
+snapshot_interval = 15
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+[victory_conditions.posture_restored]
+id = "posture_restored"
+name = "Security Posture Maintained"
+faction = "federal_security"
+
+[victory_conditions.posture_restored.condition]
+type = "StrategicControl"
+threshold = 0.90
+
+[victory_conditions.coercion_achieved]
+id = "coercion_achieved"
+name = "Coercion Threshold Reached"
+faction = "insider_cell"
+
+[victory_conditions.coercion_achieved.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.60
