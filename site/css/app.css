@@ -710,3 +710,236 @@ input[type="color"]::-webkit-color-swatch {
     z-index: 50;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Phase 6 — feasibility / kill chain / seam panels                    */
+/* ------------------------------------------------------------------ */
+
+.feasibility-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0 4px 0;
+}
+.feasibility-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  font-family: "JetBrains Mono", monospace;
+}
+.feasibility-table th,
+.feasibility-table td {
+  padding: 6px 8px;
+  text-align: right;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+  white-space: nowrap;
+}
+.feasibility-table th {
+  color: #a1a1aa;
+  font-weight: 500;
+  text-align: right;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.feasibility-table th:first-child,
+.feasibility-table td.chain-name {
+  text-align: left;
+}
+.feasibility-table td.chain-name {
+  color: #e4e4e7;
+  font-weight: 500;
+}
+.feasibility-table td.cost-asym {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.conf-H { color: #4ade80; font-weight: 600; }
+.conf-M { color: #facc15; font-weight: 600; }
+.conf-L { color: #f87171; font-weight: 600; }
+
+.chart-subtitle {
+  font-size: 0.7rem;
+  color: #a1a1aa;
+  margin: 4px 0 8px 0;
+  line-height: 1.5;
+}
+
+.campaign-panel {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(24, 24, 27, 0.7);
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  border-radius: 6px;
+}
+.campaign-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.campaign-name {
+  font-size: 0.8125rem;
+  color: #e4e4e7;
+  font-weight: 600;
+}
+.campaign-metrics {
+  font-size: 0.7rem;
+  color: #a1a1aa;
+  display: flex;
+  gap: 12px;
+}
+.campaign-metrics b {
+  color: #e4e4e7;
+  font-family: "JetBrains Mono", monospace;
+}
+.campaign-cost-row {
+  display: flex;
+  gap: 16px;
+  font-size: 0.7rem;
+  color: #a1a1aa;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.campaign-cost-row .label {
+  display: block;
+  text-transform: uppercase;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: #71717a;
+}
+.campaign-cost-row b {
+  color: #e4e4e7;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+}
+.campaign-cost-row .cost-ratio b {
+  color: #f87171;
+}
+
+.phase-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 0 0;
+}
+.phase-node {
+  min-width: 120px;
+  padding: 6px 8px;
+  background: rgba(39, 39, 42, 0.7);
+  border: 1px solid rgba(63, 63, 70, 0.8);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.phase-label {
+  font-size: 0.7rem;
+  color: #e4e4e7;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.phase-bars {
+  height: 6px;
+  background: rgba(24, 24, 27, 0.8);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.phase-bar-fill {
+  height: 100%;
+  transition: width 0.2s;
+}
+.phase-stats {
+  font-size: 0.625rem;
+  font-family: "JetBrains Mono", monospace;
+  color: #a1a1aa;
+  display: flex;
+  gap: 6px;
+}
+.phase-stats .stat-succ { color: #4ade80; }
+.phase-stats .stat-det { color: #facc15; }
+.phase-stats .stat-nr { color: #71717a; }
+.phase-arrow {
+  display: flex;
+  align-items: center;
+  color: #71717a;
+  font-size: 1rem;
+}
+
+.domain-chip {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(63, 63, 70, 0.5);
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-family: "JetBrains Mono", monospace;
+  color: #e4e4e7;
+  margin: 2px 2px 2px 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Interactive tutorial overlay                                        */
+/* ------------------------------------------------------------------ */
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+.tutorial-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.tutorial-bubble {
+  position: absolute;
+  max-width: 360px;
+  padding: 16px 18px;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  color: #e4e4e7;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.tutorial-step-count {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #71717a;
+  margin-bottom: 6px;
+}
+.tutorial-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin-bottom: 8px;
+}
+.tutorial-body {
+  margin-bottom: 14px;
+}
+.tutorial-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tutorial-skip {
+  margin-right: auto;
+  color: #a1a1aa;
+}
+.tutorial-target-highlight {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+  position: relative;
+  z-index: 1001;
+}
+.btn-tutorial {
+  margin-left: 8px;
+}

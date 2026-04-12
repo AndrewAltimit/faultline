@@ -11,6 +11,7 @@ import { Dashboard } from './dashboard.js';
 import { FactionBuilder } from './faction-builder.js';
 import { mapsToObjects } from './wasm-util.js';
 import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
+import { Tutorial } from './tutorial.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -46,6 +47,17 @@ async function bootstrap() {
   // Initialize event bus and modules.
   const bus = new EventBus();
   const map = new MapRenderer(document.getElementById('map-canvas'), bus);
+
+  // Wire up the tutorial button.
+  const tutorial = new Tutorial();
+  const btnTutorial = document.getElementById('btn-tutorial');
+  if (btnTutorial) {
+    btnTutorial.addEventListener('click', () => tutorial.start());
+  }
+  // Auto-show on first visit (suppressed if the user already saw it).
+  if (Tutorial.shouldAutoShow()) {
+    setTimeout(() => tutorial.start(), 800);
+  }
 
   // Only initialize WASM-dependent modules if WASM is available.
   let controls, editor, dashboard, builder;
