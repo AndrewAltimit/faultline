@@ -447,4 +447,144 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Phase 4: Engine getter and snapshot tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn engine_max_ticks_returns_scenario_value() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        assert_eq!(engine.max_ticks(), 100, "max_ticks should match scenario");
+    }
+
+    #[test]
+    fn engine_scenario_returns_reference() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        assert_eq!(engine.scenario().meta.name, "Test");
+        assert_eq!(engine.scenario().simulation.max_ticks, 100);
+        assert_eq!(engine.scenario().factions.len(), 1);
+    }
+
+    #[test]
+    fn engine_is_finished_false_at_start() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        assert!(
+            !engine.is_finished(),
+            "engine should not be finished at tick 0"
+        );
+    }
+
+    #[test]
+    fn engine_is_finished_true_at_max_ticks() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+        engine.run().expect("run should succeed");
+        assert!(
+            engine.is_finished(),
+            "engine should be finished after run completes"
+        );
+    }
+
+    #[test]
+    fn engine_is_finished_transitions_during_ticking() {
+        let mut scenario = minimal_scenario();
+        scenario.simulation.max_ticks = 5;
+        let mut engine = Engine::new(scenario).expect("engine creation");
+
+        for i in 1..=5 {
+            assert!(
+                !engine.is_finished(),
+                "should not be finished before tick {i}"
+            );
+            engine.tick().expect("tick should succeed");
+        }
+        assert!(
+            engine.is_finished(),
+            "should be finished after reaching max_ticks"
+        );
+    }
+
+    #[test]
+    fn engine_snapshot_at_tick_zero() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        let snap = engine.snapshot();
+
+        assert_eq!(snap.tick, 0, "snapshot tick should be 0 at start");
+        assert!(
+            !snap.faction_states.is_empty(),
+            "snapshot should have faction states"
+        );
+        assert!(
+            !snap.region_control.is_empty(),
+            "snapshot should have region control"
+        );
+        assert!(
+            snap.events_fired_this_tick.is_empty(),
+            "no events should have fired at tick 0"
+        );
+    }
+
+    #[test]
+    fn engine_snapshot_advances_with_ticks() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+
+        engine.tick().expect("tick 1");
+        let snap1 = engine.snapshot();
+        assert_eq!(snap1.tick, 1, "snapshot should reflect tick 1");
+
+        engine.tick().expect("tick 2");
+        let snap2 = engine.snapshot();
+        assert_eq!(snap2.tick, 2, "snapshot should reflect tick 2");
+    }
+
+    #[test]
+    fn engine_snapshot_contains_correct_faction_data() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        let snap = engine.snapshot();
+
+        let fid = FactionId::from("gov");
+        let faction_state = snap
+            .faction_states
+            .get(&fid)
+            .expect("should have gov faction in snapshot");
+
+        assert_eq!(faction_state.faction_id, fid);
+        assert!((faction_state.morale - 0.8).abs() < f64::EPSILON);
+        assert!((faction_state.resources - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn engine_snapshot_matches_take_snapshot_in_run_result() {
+        let scenario = minimal_scenario();
+        let mut engine = Engine::new(scenario).expect("engine creation");
+
+        // Advance a few ticks manually.
+        for _ in 0..5 {
+            engine.tick().expect("tick should succeed");
+        }
+
+        // Snapshot via public method should match internal state.
+        let snap = engine.snapshot();
+        assert_eq!(snap.tick, 5);
+        assert_eq!(snap.tick, engine.current_tick());
+    }
+
+    #[test]
+    fn engine_snapshot_region_control_matches_initial() {
+        let scenario = minimal_scenario();
+        let engine = Engine::new(scenario).expect("engine creation");
+        let snap = engine.snapshot();
+
+        let rid = RegionId::from("capital");
+        let fid = FactionId::from("gov");
+        let control = snap.region_control.get(&rid).expect("should have capital");
+        assert_eq!(control, &Some(fid), "capital should be controlled by gov");
+    }
 }

@@ -1,0 +1,1189 @@
+# Autonomous Drone Swarm Destabilization Scenario
+#
+# Models a multi-phase covert destabilization campaign using autonomous
+# drone swarms against US government institutions. Based on the Emerging
+# Threat Risk Assessment (ETRA) framework analyzing how non-state actors
+# can leverage commercially-derived drone technology to undermine political
+# stability through compound kill chains.
+#
+# This scenario models Kill Chain Alpha from the ETRA: an intelligence-led
+# campaign progressing through sensor emplacement, wireless exploitation,
+# credential harvesting, persistent surveillance, and culminating in either
+# a coercion campaign or executive decapitation attempt.
+#
+# References:
+# - ETRA: "Autonomous Drone Swarms as Instruments of Political Destabilization" (2026)
+# - RAND RR-3023-DHS: "Small Unmanned Aerial System Adversary Capabilities" (2020)
+# - IISS Military Balance 2025: C-UAS system capabilities and deployment data
+# - CISA: Counter-UAS gap assessments and interagency coordination reports
+# - Kallenborn, Z. (2021): "Are Drone Swarms Weapons of Mass Destruction?" Parameters
+# - Scharre, P. (2018): "Army of None" — autonomous weapons proliferation analysis
+# - DarkHotel APT campaign analysis (Kaspersky, 2014) — strategic logic of off-site exploitation
+# - Ukraine conflict OSINT (2022-present): commercial drone weaponization techniques
+
+[meta]
+name = "Drone Swarm Destabilization Campaign"
+description = "Multi-phase autonomous drone swarm campaign against US government institutions. Models compound kill chain from covert sensor emplacement through credential exploitation to coercion or kinetic action."
+author = "faultline-ai"
+version = "0.1.0"
+tags = ["drone-swarm", "asymmetric", "cyber-physical", "kill-chain", "domestic", "180-day"]
+
+# ============================================================================
+# Map: Washington DC Metro Area — operational theater
+# ============================================================================
+#
+# The scenario focuses on the DC metro area as the primary operational
+# theater, with secondary operational reach into surrounding regions.
+# Regions represent operational domains rather than pure geography.
+
+[map]
+
+[map.source]
+type = "Grid"
+width = 4
+height = 2
+
+# The Capital Core — seat of federal power, highest security concentration.
+# Executive offices, congressional buildings, Supreme Court, agency HQs.
+# Population: government workforce + residents within security perimeters.
+[map.regions.capital_core]
+id = "capital_core"
+name = "Capital Core (DC)"
+population = 700_000
+urbanization = 0.98
+initial_control = "federal_security"
+strategic_value = 10.0
+borders = ["northern_virginia", "maryland_suburbs", "federal_facilities"]
+
+# Northern Virginia — defense/intel community concentration.
+# Pentagon, CIA (Langley), NRO, DISA, defense contractors.
+# Where senior officials live and commute from.
+[map.regions.northern_virginia]
+id = "northern_virginia"
+name = "Northern Virginia"
+population = 3_100_000
+urbanization = 0.85
+initial_control = "federal_security"
+strategic_value = 8.0
+borders = ["capital_core", "maryland_suburbs", "outer_suburbs"]
+
+# Maryland suburbs — NSA (Fort Meade), NIH, FDA, staffers/analysts.
+# Dense with mid-level government employees — the target ecosystem.
+[map.regions.maryland_suburbs]
+id = "maryland_suburbs"
+name = "Maryland Suburbs"
+population = 2_800_000
+urbanization = 0.80
+initial_control = "federal_security"
+strategic_value = 7.0
+borders = ["capital_core", "northern_virginia", "outer_suburbs"]
+
+# Federal facilities — dispersed secure installations.
+# Military bases, data centers, continuity-of-government sites.
+[map.regions.federal_facilities]
+id = "federal_facilities"
+name = "Dispersed Federal Facilities"
+population = 500_000
+urbanization = 0.60
+initial_control = "federal_security"
+strategic_value = 6.0
+borders = ["capital_core", "outer_suburbs"]
+
+# Outer suburbs — sprawl belt, lower security posture.
+# Staff-frequented restaurants, gyms, daycare, transit hubs.
+# Primary exploitation zone for Scenario 6 (wireless attacks).
+[map.regions.outer_suburbs]
+id = "outer_suburbs"
+name = "Outer Suburbs / Exurbs"
+population = 4_500_000
+urbanization = 0.65
+initial_control = "federal_security"
+strategic_value = 3.0
+borders = ["northern_virginia", "maryland_suburbs", "federal_facilities", "cyber_domain"]
+
+# Cyber domain — abstract region representing network infrastructure.
+# Control here represents information dominance.
+[map.regions.cyber_domain]
+id = "cyber_domain"
+name = "Cyber / Information Domain"
+population = 0
+urbanization = 1.0
+strategic_value = 9.0
+borders = ["outer_suburbs", "media_landscape"]
+
+# Media landscape — abstract region representing narrative control.
+# Who controls the story controls the political outcome.
+[map.regions.media_landscape]
+id = "media_landscape"
+name = "Media / Public Narrative"
+population = 330_000_000
+urbanization = 0.83
+strategic_value = 8.0
+borders = ["cyber_domain", "international_arena"]
+
+# International arena — foreign state sponsor's operational space.
+# Resources flow from here; attribution points back here.
+[map.regions.international_arena]
+id = "international_arena"
+name = "International Arena"
+population = 0
+urbanization = 0.5
+initial_control = "threat_actor"
+strategic_value = 2.0
+borders = ["media_landscape"]
+
+# -- Infrastructure ----------------------------------------------------------
+
+[map.infrastructure.executive_comms]
+id = "executive_comms"
+name = "Executive Branch Communications"
+region = "capital_core"
+infra_type = "Telecommunications"
+criticality = 0.95
+initial_status = 1.0
+repairable = 14
+
+[map.infrastructure.ic_networks]
+id = "ic_networks"
+name = "Intelligence Community Networks"
+region = "northern_virginia"
+infra_type = "Internet"
+criticality = 0.90
+initial_status = 1.0
+repairable = 30
+
+[map.infrastructure.cuas_sensors]
+id = "cuas_sensors"
+name = "Counter-UAS Sensor Network"
+region = "capital_core"
+infra_type = "Telecommunications"
+criticality = 0.85
+initial_status = 1.0
+repairable = 21
+
+[map.infrastructure.staff_wireless]
+id = "staff_wireless"
+name = "Staff Personal Device Ecosystem"
+region = "outer_suburbs"
+infra_type = "Internet"
+criticality = 0.70
+initial_status = 1.0
+repairable = 7
+
+[map.infrastructure.public_trust]
+id = "public_trust"
+name = "Public Institutional Trust"
+region = "media_landscape"
+infra_type = "GovernmentBuilding"
+criticality = 0.80
+initial_status = 0.65
+repairable = 180
+
+# -- Terrain -----------------------------------------------------------------
+# Terrain modifiers represent the operational environment's effect on
+# detection, movement, and defense — not physical geography.
+
+[[map.terrain]]
+region = "capital_core"
+terrain_type = "Urban"
+movement_modifier = 0.5       # Hardened security slows attacker movement
+defense_modifier = 1.8         # Layered security provides strong defense
+visibility = 0.9               # Dense surveillance coverage
+
+[[map.terrain]]
+region = "northern_virginia"
+terrain_type = "Suburban"
+movement_modifier = 0.8
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "maryland_suburbs"
+terrain_type = "Suburban"
+movement_modifier = 0.8
+defense_modifier = 1.2
+visibility = 0.65
+
+[[map.terrain]]
+region = "federal_facilities"
+terrain_type = "Urban"
+movement_modifier = 0.6
+defense_modifier = 1.6
+visibility = 0.85
+
+[[map.terrain]]
+region = "outer_suburbs"
+terrain_type = "Suburban"
+movement_modifier = 1.2        # Easy to operate freely
+defense_modifier = 0.6          # Minimal security posture
+visibility = 0.3                # Low surveillance = hard to detect
+
+[[map.terrain]]
+region = "cyber_domain"
+terrain_type = "Urban"
+movement_modifier = 1.5        # Cyber movement is fast
+defense_modifier = 0.8
+visibility = 0.4                # Hard to see in the noise
+
+[[map.terrain]]
+region = "media_landscape"
+terrain_type = "Rural"
+movement_modifier = 1.5
+defense_modifier = 0.5          # Narrative space is hard to defend
+visibility = 0.2                # Attribution is difficult
+
+[[map.terrain]]
+region = "international_arena"
+terrain_type = "Desert"
+movement_modifier = 1.0
+defense_modifier = 0.3
+visibility = 0.1                # Near-impossible attribution
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+# --- Federal Security Apparatus ---
+# Combined executive protection, C-UAS, cyber defense, and counter-intelligence.
+# High capability but siloed — the doctrinal seam problem.
+
+[factions.federal_security]
+id = "federal_security"
+name = "Federal Security Apparatus"
+description = "Combined USSS, FBI, CISA, Cyber Command, and C-UAS elements. High capability but organizationally fragmented across physical security, cyber, and counter-UAS — the doctrinal seam the attacker exploits."
+color = "#1a5276"
+tech_access = ["cuas_radar", "rf_detection", "executive_protection", "wids_capability"]
+initial_morale = 0.80
+logistics_capacity = 800.0
+initial_resources = 10000.0
+resource_rate = 100.0
+command_resilience = 0.7
+intelligence = 0.75
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.federal_security.faction_type]
+kind = "Government"
+
+[factions.federal_security.faction_type.institutions.usss]
+id = "usss"
+name = "US Secret Service"
+institution_type = "LawEnforcement"
+loyalty = 0.90
+effectiveness = 0.85
+personnel = 7000
+fracture_threshold = 0.3
+
+[factions.federal_security.faction_type.institutions.fbi_ct]
+id = "fbi_ct"
+name = "FBI Counter-Terrorism"
+institution_type = "LawEnforcement"
+loyalty = 0.85
+effectiveness = 0.75
+personnel = 35000
+fracture_threshold = 0.35
+
+[factions.federal_security.faction_type.institutions.cisa]
+id = "cisa"
+name = "CISA"
+institution_type = "Intelligence"
+loyalty = 0.80
+effectiveness = 0.60
+personnel = 3000
+fracture_threshold = 0.40
+
+[factions.federal_security.forces.executive_protection]
+id = "executive_protection"
+name = "Executive Protection Detail"
+unit_type = "SpecialOperations"
+region = "capital_core"
+strength = 200.0
+mobility = 0.9
+upkeep = 15.0
+morale_modifier = 0.15
+
+[[factions.federal_security.forces.executive_protection.capabilities]]
+type = "Recon"
+range = 1.0
+detection = 0.85
+
+[factions.federal_security.forces.cuas_teams]
+id = "cuas_teams"
+name = "C-UAS Response Teams"
+unit_type = "ElectronicWarfare"
+region = "capital_core"
+strength = 80.0
+mobility = 0.5
+upkeep = 20.0
+morale_modifier = 0.0
+
+[[factions.federal_security.forces.cuas_teams.capabilities]]
+type = "EW"
+jamming_range = 2.0
+effectiveness = 0.7
+
+[factions.federal_security.forces.cyber_defense]
+id = "cyber_defense"
+name = "Cyber Defense Operations"
+unit_type = "CyberUnit"
+region = "northern_virginia"
+strength = 120.0
+mobility = 0.1
+upkeep = 12.0
+morale_modifier = 0.0
+
+[[factions.federal_security.forces.cyber_defense.capabilities]]
+type = "Cyber"
+attack = 0.5
+defense = 0.85
+
+[factions.federal_security.forces.field_offices]
+id = "field_offices"
+name = "FBI Field Office Network"
+unit_type = "LawEnforcement"
+region = "maryland_suburbs"
+strength = 150.0
+mobility = 1.0
+upkeep = 8.0
+morale_modifier = 0.05
+
+[[factions.federal_security.forces.field_offices.capabilities]]
+type = "Recon"
+range = 2.0
+detection = 0.6
+
+# --- Threat Actor: Disaffected Insider Network (Profile A) ---
+# 15-person cell with former mil/intel backgrounds.
+# High OPSEC, moderate resources, ideological motivation.
+# Operates covertly — initial strength represents capability, not manpower.
+
+[factions.threat_actor]
+id = "threat_actor"
+name = "Disaffected Insider Cell"
+description = "15-person cell of former military/intelligence professionals. Profile A from ETRA. Ideological motivation (constitutional grievance), high operational skill, institutional knowledge of defensive systems. $150K budget from personal savings and crypto."
+color = "#c0392b"
+tech_access = ["autonomous_swarm", "rogue_ap_platform", "covert_sensors", "edge_ai_targeting"]
+initial_morale = 0.90
+logistics_capacity = 50.0
+initial_resources = 150.0        # $150K budget — each resource unit = $1K
+resource_rate = 2.0              # Slow trickle from crypto and sympathizers
+command_resilience = 0.4
+intelligence = 0.65              # Former insiders have institutional knowledge
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.threat_actor.faction_type]
+kind = "Insurgent"
+
+# Covert reconnaissance element — maps patterns of life, emplaces sensors.
+[factions.threat_actor.forces.recon_cell]
+id = "recon_cell"
+name = "Reconnaissance Cell"
+unit_type = "SpecialOperations"
+region = "outer_suburbs"
+strength = 15.0
+mobility = 1.5
+upkeep = 0.5
+morale_modifier = 0.1
+
+[[factions.threat_actor.forces.recon_cell.capabilities]]
+type = "Recon"
+range = 3.0
+detection = 0.4
+
+[[factions.threat_actor.forces.recon_cell.capabilities]]
+type = "Sabotage"
+effectiveness = 0.3
+
+# Cyber exploitation element — runs rogue AP campaign, credential harvesting.
+[factions.threat_actor.forces.cyber_cell]
+id = "cyber_cell"
+name = "Cyber Exploitation Cell"
+unit_type = "CyberUnit"
+region = "outer_suburbs"
+strength = 20.0
+mobility = 0.3
+upkeep = 1.0
+morale_modifier = 0.0
+
+[[factions.threat_actor.forces.cyber_cell.capabilities]]
+type = "Cyber"
+attack = 0.75
+defense = 0.4
+
+# Drone operations element — assembles, tests, and deploys the swarm.
+[factions.threat_actor.forces.drone_ops]
+id = "drone_ops"
+name = "Drone Operations Element"
+unit_type = "DroneSwarm"
+region = "outer_suburbs"
+strength = 30.0
+mobility = 2.0
+upkeep = 2.0
+morale_modifier = 0.05
+
+[[factions.threat_actor.forces.drone_ops.capabilities]]
+type = "EW"
+jamming_range = 1.0
+effectiveness = 0.5
+
+# --- Foreign State Sponsor (Profile B backing) ---
+# Provides intelligence, zero-day exploits, and deniable funding.
+# Operates entirely through proxies and cyber channels.
+
+[factions.foreign_sponsor]
+id = "foreign_sponsor"
+name = "Foreign State Sponsor"
+description = "Adversarial nation-state providing intelligence, cyber tools, and deniable funding to the threat actor via cut-outs. Seeks to demonstrate US government vulnerability without direct attribution. Based on documented nation-state proxy models."
+color = "#8e44ad"
+tech_access = ["zero_day_exploits", "sigint_feed"]
+initial_morale = 0.95
+logistics_capacity = 500.0
+initial_resources = 5000.0
+resource_rate = 50.0
+command_resilience = 0.9
+intelligence = 0.9
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.foreign_sponsor.faction_type]
+kind = "Foreign"
+is_proxy = true
+
+[factions.foreign_sponsor.forces.cyber_unit]
+id = "sponsor_cyber"
+name = "State Cyber Operations"
+unit_type = "CyberUnit"
+region = "international_arena"
+strength = 100.0
+mobility = 0.1
+upkeep = 5.0
+morale_modifier = 0.0
+
+[[factions.foreign_sponsor.forces.cyber_unit.capabilities]]
+type = "Cyber"
+attack = 0.9
+defense = 0.7
+
+[[factions.foreign_sponsor.forces.cyber_unit.capabilities]]
+type = "InfoOps"
+reach = 5.0
+persuasion = 0.6
+
+[factions.foreign_sponsor.forces.info_warfare]
+id = "sponsor_info"
+name = "Information Warfare Division"
+unit_type = "SpecialOperations"
+region = "international_arena"
+strength = 50.0
+mobility = 0.1
+upkeep = 3.0
+morale_modifier = 0.0
+
+[[factions.foreign_sponsor.forces.info_warfare.capabilities]]
+type = "InfoOps"
+reach = 6.0
+persuasion = 0.7
+
+# ============================================================================
+# Technology Cards
+# ============================================================================
+
+# --- Defensive Technologies ---
+
+[technology.cuas_radar]
+id = "cuas_radar"
+name = "Counter-UAS Radar Network"
+description = "Multi-phenomenology C-UAS detection: Echodyne EchoGuard 3D radar, FLIR Ranger HDC EO/IR, Squarehead DISCOVAIR acoustics. Detection floor ~0.01m² RCS (200mm+ drones). Micro-drones below detection threshold. ~$5M per protected venue."
+category = "Surveillance"
+cost_per_tick = 8.0
+deployment_cost = 50.0
+countered_by = ["autonomous_swarm"]  # RF-silent autonomous ops evade RF detection
+coverage_limit = 2
+
+[[technology.cuas_radar.effects]]
+type = "DetectionModifier"
+factor = 1.6
+
+[[technology.cuas_radar.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.3
+
+[[technology.cuas_radar.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 0.7
+
+[technology.rf_detection]
+id = "rf_detection"
+name = "RF Detection & Geolocation"
+description = "DroneShield RfPatrol, Dedrone RF-300. Detects drone control links and telemetry. Ineffective against autonomous RF-silent drones — the central assumption failure in current C-UAS doctrine."
+category = "Surveillance"
+cost_per_tick = 3.0
+deployment_cost = 15.0
+countered_by = ["autonomous_swarm"]  # RF-silent ops produce no signal
+coverage_limit = 3
+
+[[technology.rf_detection.effects]]
+type = "DetectionModifier"
+factor = 1.3
+
+[[technology.rf_detection.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 0.8  # RF noise floor is high in urban areas
+
+[technology.executive_protection]
+id = "executive_protection"
+name = "Executive Protection Doctrine"
+description = "USSS protective methodology — advance work, threat assessment, secure perimeters, motorcade security. Highly effective against conventional threats. Does not address autonomous micro-drone swarms or cyber-physical exploitation at staff-frequented locations."
+category = "CounterDrone"
+cost_per_tick = 10.0
+deployment_cost = 30.0
+countered_by = ["edge_ai_targeting"]  # Autonomous targeting defeats pattern-based protection
+coverage_limit = 1
+
+[[technology.executive_protection.effects]]
+type = "CombatModifier"
+factor = 1.5
+
+[[technology.executive_protection.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.4
+
+[technology.wids_capability]
+id = "wids_capability"
+name = "Wireless Intrusion Detection"
+description = "Enterprise WIDS monitoring for rogue APs within facility perimeters. Does not cover off-site locations where staff eat lunch, exercise, or socialize — the primary exploitation zone."
+category = "Cyber"
+cost_per_tick = 2.0
+deployment_cost = 8.0
+countered_by = ["rogue_ap_platform"]  # Operates outside monitored perimeter
+coverage_limit = 2
+
+[[technology.wids_capability.effects]]
+type = "DetectionModifier"
+factor = 1.2
+
+[[technology.wids_capability.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.3
+
+[[technology.wids_capability.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 0.4  # Off-site locations are unmonitored
+
+# --- Offensive Technologies ---
+
+[technology.autonomous_swarm]
+id = "autonomous_swarm"
+name = "Autonomous Drone Swarm"
+description = "50-drone swarm with onboard edge AI (Hailo-8 NPU), ChaCha8-seeded coordination, mesh networking (802.11s), and multi-modal target identification. Operates RF-silent during mission execution — no control link to jam or detect. ~$50K total for 50 units. TRL 7-8 by 2028."
+category = "OffensiveDrone"
+cost_per_tick = 3.0
+deployment_cost = 50.0
+countered_by = ["cuas_radar"]  # Can be detected by radar if above micro-drone threshold
+coverage_limit = 3
+
+[[technology.autonomous_swarm.effects]]
+type = "CombatModifier"
+factor = 1.4
+
+[[technology.autonomous_swarm.effects]]
+type = "DetectionModifier"
+factor = 0.4  # Hard to detect — RF-silent, autonomous
+
+[[technology.autonomous_swarm.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.2
+
+[[technology.autonomous_swarm.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 1.4
+
+[technology.rogue_ap_platform]
+id = "rogue_ap_platform"
+name = "Swarm-Delivered Rogue AP Platform"
+description = "Drone-delivered rogue access points using RPi Zero 2W + Wi-Fi adapter (<200g). Perch-and-operate model defeats physical sweeps. Human-triggered activation eliminates autonomous detection. Exploits the doctrinal seam between C-UAS (looks up), physical security (looks inside), and cyber (looks at packets). TRL 8-9 today."
+category = "Cyber"
+cost_per_tick = 1.0
+deployment_cost = 5.0
+countered_by = ["wids_capability"]  # Partially — only within monitored perimeter
+coverage_limit = 5
+
+[[technology.rogue_ap_platform.effects]]
+type = "CombatModifier"
+factor = 1.2
+
+[[technology.rogue_ap_platform.effects]]
+type = "DetectionModifier"
+factor = 0.3  # Very hard to detect — operates at off-site locations
+
+[[technology.rogue_ap_platform.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 1.5  # Optimized for staff lunch spots and gyms
+
+[[technology.rogue_ap_platform.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 0.8  # Higher chance of WIDS detection
+
+[technology.covert_sensors]
+id = "covert_sensors"
+name = "Solar-Powered Covert Sensor Nodes"
+description = "ESP32-CAM + LTE Cat-M1 modem + flexible solar + LiPo battery. 25-50g, <$30/unit, indefinite solar-sustained operation. Physically social-engineered enclosures mimicking utility equipment with aged labels and branded stickers. TRL 9 — all commodity components, no integration challenge."
+category = "Surveillance"
+cost_per_tick = 0.1    # Almost free to operate once emplaced
+deployment_cost = 0.5  # $500 per 10-node network
+countered_by = []      # No deployed countermeasure exists
+coverage_limit = 8
+
+[[technology.covert_sensors.effects]]
+type = "DetectionModifier"
+factor = 0.2  # Near-undetectable
+
+[[technology.covert_sensors.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.5  # Dense buildings = many emplacement surfaces
+
+[[technology.covert_sensors.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 1.3
+
+[technology.edge_ai_targeting]
+id = "edge_ai_targeting"
+name = "Edge AI Autonomous Targeting"
+description = "Onboard NPU (Hailo-8, $50) running real-time object detection + facial recognition + gait analysis. Autonomous target identification without operator link — the drone decides. No RF emission during targeting phase. TRL 7-8 by 2028."
+category = "OffensiveDrone"
+cost_per_tick = 2.0
+deployment_cost = 10.0
+countered_by = []  # No deployed adversarial ML countermeasure exists
+coverage_limit = 3
+
+[[technology.edge_ai_targeting.effects]]
+type = "CombatModifier"
+factor = 1.3
+
+[[technology.edge_ai_targeting.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.2
+
+[technology.zero_day_exploits]
+id = "zero_day_exploits"
+name = "State-Developed Zero-Day Exploits"
+description = "Nation-state cyber capabilities provided to proxy via cut-outs. Includes mobile device exploits, VPN vulnerabilities, and authentication bypass tools. The payload that makes Scenario 6 credential harvesting into full organizational access."
+category = "Cyber"
+cost_per_tick = 5.0
+deployment_cost = 100.0
+countered_by = ["wids_capability"]
+coverage_limit = 2
+
+[[technology.zero_day_exploits.effects]]
+type = "CombatModifier"
+factor = 1.25
+
+[[technology.zero_day_exploits.terrain_modifiers]]
+terrain = "Urban"
+effectiveness = 1.3
+
+[technology.sigint_feed]
+id = "sigint_feed"
+name = "State SIGINT Intelligence Feed"
+description = "Satellite imagery, communications intercepts, and diplomatic intelligence provided by state sponsor. Gives threat actor knowledge of target schedules and security posture not available from OSINT alone."
+category = "Surveillance"
+cost_per_tick = 3.0
+deployment_cost = 20.0
+countered_by = ["executive_protection"]
+coverage_limit = 4
+
+[[technology.sigint_feed.effects]]
+type = "DetectionModifier"
+factor = 1.5
+
+[[technology.sigint_feed.terrain_modifiers]]
+terrain = "Suburban"
+effectiveness = 1.2
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.55                # Elevated baseline — polarized environment
+institutional_trust = 0.45    # Pre-existing erosion per Pew/Gallup data
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.85          # Highly fragmented media ecosystem
+disinformation_susceptibility = 0.65
+state_control = 0.15          # Low government control of narrative
+social_media_penetration = 0.90
+internet_availability = 0.97
+
+# -- Population Segments ---
+
+[[political_climate.population_segments]]
+id = "security_community"
+name = "National Security Community"
+fraction = 0.02
+concentrated_in = ["northern_virginia", "capital_core"]
+activation_threshold = 0.60
+volatility = 0.3
+activated = false
+
+[[political_climate.population_segments.sympathies]]
+faction = "federal_security"
+sympathy = 0.7
+
+[[political_climate.population_segments.activation_actions]]
+action = "Intelligence"
+target_faction = "federal_security"
+quality = 0.7
+
+[[political_climate.population_segments]]
+id = "tech_community"
+name = "Tech / Infosec Community"
+fraction = 0.03
+concentrated_in = ["northern_virginia", "maryland_suburbs"]
+activation_threshold = 0.65
+volatility = 0.4
+activated = false
+
+[[political_climate.population_segments.sympathies]]
+faction = "federal_security"
+sympathy = 0.3
+
+[[political_climate.population_segments.sympathies]]
+faction = "threat_actor"
+sympathy = 0.15
+
+[[political_climate.population_segments.activation_actions]]
+action = "Intelligence"
+target_faction = "federal_security"
+quality = 0.5
+
+[[political_climate.population_segments]]
+id = "general_public"
+name = "General Public"
+fraction = 0.85
+concentrated_in = ["outer_suburbs", "media_landscape"]
+activation_threshold = 0.80
+volatility = 0.2
+activated = false
+
+[[political_climate.population_segments.sympathies]]
+faction = "federal_security"
+sympathy = 0.5
+
+[[political_climate.population_segments.activation_actions]]
+action = "Protest"
+intensity = 0.4
+
+[[political_climate.population_segments.activation_actions]]
+action = "Flee"
+rate = 0.01
+
+[[political_climate.population_segments]]
+id = "sympathizers"
+name = "Ideological Sympathizers"
+fraction = 0.05
+concentrated_in = ["outer_suburbs"]
+activation_threshold = 0.55
+volatility = 0.6
+activated = false
+
+[[political_climate.population_segments.sympathies]]
+faction = "threat_actor"
+sympathy = 0.5
+
+[[political_climate.population_segments.activation_actions]]
+action = "MaterialSupport"
+target_faction = "threat_actor"
+rate = 3.0
+
+# ============================================================================
+# Events — Kill Chain Phases
+# ============================================================================
+
+# --- Phase 1: Covert Sensor Emplacement (Scenario 7) ---
+# T+0 to T+30: Plant solar-powered sensor nodes on target buildings.
+# Cost: ~$500. Detection risk: Very low. Always succeeds in current defensive posture.
+
+[events.sensor_emplacement]
+id = "sensor_emplacement"
+name = "Covert Sensor Nodes Emplaced"
+description = "Threat actor delivers 10 solar-powered ESP32-CAM sensor packages to rooftops and exterior walls of buildings surrounding principal's residence, office, and key venues. Ground-level nodes use utility-branded enclosures. Drone-delivered rooftop nodes emplaced during 0200-0430 window. Total cost: $300. Detection probability: <5%."
+probability = 0.95
+repeatable = false
+earliest_tick = 7
+chain = "pattern_of_life_acquired"
+
+[[events.sensor_emplacement.conditions]]
+condition = "TickAtLeast"
+tick = 7
+
+[[events.sensor_emplacement.effects]]
+effect = "MoraleShift"
+faction = "threat_actor"
+delta = 0.05
+
+[[events.sensor_emplacement.effects]]
+effect = "ResourceChange"
+faction = "threat_actor"
+delta = -0.5  # $500 in hardware
+
+[[events.sensor_emplacement.effects]]
+effect = "Narrative"
+text = "10 covert sensor nodes emplaced on buildings surrounding target facilities. Solar-sustained, transmitting via anonymous LTE. No physical evidence at target locations."
+
+# --- Phase 1b: Pattern of Life Acquired ---
+# T+30 to T+60: Sensors collect 30 days of continuous surveillance.
+
+[events.pattern_of_life_acquired]
+id = "pattern_of_life_acquired"
+name = "Pattern of Life Intelligence Acquired"
+description = "30 days of continuous sensor collection yields complete pattern-of-life map: arrival/departure times, vehicle IDs, security detail composition, shift rotations, visitor patterns, delivery schedules. All acquired passively — zero operational footprint."
+probability = 1.0
+repeatable = false
+
+[[events.pattern_of_life_acquired.conditions]]
+condition = "EventFired"
+event = "sensor_emplacement"
+fired = true
+
+[[events.pattern_of_life_acquired.conditions]]
+condition = "TickAtLeast"
+tick = 37
+
+[[events.pattern_of_life_acquired.effects]]
+effect = "MoraleShift"
+faction = "threat_actor"
+delta = 0.05
+
+[[events.pattern_of_life_acquired.effects]]
+effect = "DamageInfra"
+infra = "staff_wireless"
+damage = 0.1  # Staff device ecosystem is being mapped
+
+[[events.pattern_of_life_acquired.effects]]
+effect = "Narrative"
+text = "Complete pattern-of-life intelligence on 50+ staff members acquired via covert sensors. Security shift rotations, vehicle IDs, and unpublished schedules documented."
+
+# --- Phase 2: Wireless Exploitation Campaign (Scenario 6) ---
+# T+45 to T+90: Deploy rogue APs at staff-frequented off-site locations.
+
+[events.wireless_recon_complete]
+id = "wireless_recon_complete"
+name = "Wireless Environment Mapped"
+description = "Passive RF surveys of staff-frequented restaurants, gyms, and coffee shops complete. Wi-Fi probe requests cataloged for 50+ target devices — revealing auto-connect SSIDs, preferred networks, and device identifiers."
+probability = 0.90
+repeatable = false
+chain = "credential_harvest"
+
+[[events.wireless_recon_complete.conditions]]
+condition = "EventFired"
+event = "pattern_of_life_acquired"
+fired = true
+
+[[events.wireless_recon_complete.conditions]]
+condition = "TickAtLeast"
+tick = 50
+
+[[events.wireless_recon_complete.effects]]
+effect = "MoraleShift"
+faction = "threat_actor"
+delta = 0.05
+
+[[events.wireless_recon_complete.effects]]
+effect = "ResourceChange"
+faction = "threat_actor"
+delta = -2.0  # $2K for RF survey equipment
+
+[[events.wireless_recon_complete.effects]]
+effect = "Narrative"
+text = "Passive wireless reconnaissance complete. 50+ staff devices profiled. Auto-connect SSIDs identified for rogue AP deployment."
+
+# --- Phase 2b: Credential Harvest ---
+
+[events.credential_harvest]
+id = "credential_harvest"
+name = "Organizational Credentials Harvested"
+description = "Rogue AP drones deployed to 10 staff-frequented locations. Human spotters trigger activation on confirmed staff presence. Captive portal credential harvesting and TLS interception capture organizational SSO credentials, VPN configs, and email access from personal devices. 60-80% capture rate over 4 weeks."
+probability = 0.75
+repeatable = false
+chain = "network_access_achieved"
+
+[[events.credential_harvest.conditions]]
+condition = "EventFired"
+event = "wireless_recon_complete"
+fired = true
+
+[[events.credential_harvest.effects]]
+effect = "DamageInfra"
+infra = "staff_wireless"
+damage = 0.3  # Staff device ecosystem is compromised
+
+[[events.credential_harvest.effects]]
+effect = "DamageInfra"
+infra = "ic_networks"
+damage = 0.1  # Early network access via reused credentials
+
+[[events.credential_harvest.effects]]
+effect = "ResourceChange"
+faction = "threat_actor"
+delta = -10.0  # $10K for rogue AP hardware and spotter expenses
+
+[[events.credential_harvest.effects]]
+effect = "MoraleShift"
+faction = "threat_actor"
+delta = 0.05
+
+[[events.credential_harvest.effects]]
+effect = "Narrative"
+text = "Organizational credentials captured from 15+ staff personal devices at off-site locations. SSO tokens, VPN configs, and email access acquired via rogue AP captive portals."
+
+# --- Phase 3: Network Penetration ---
+
+[events.network_access_achieved]
+id = "network_access_achieved"
+name = "Organizational Network Access Achieved"
+description = "Harvested credentials provide lateral movement into organizational networks. Compromised accounts used for internal reconnaissance — security protocols, unpublished schedules, C-UAS deployment maps, and protective detail communications accessed."
+probability = 0.60
+repeatable = false
+
+[[events.network_access_achieved.conditions]]
+condition = "EventFired"
+event = "credential_harvest"
+fired = true
+
+[[events.network_access_achieved.effects]]
+effect = "DamageInfra"
+infra = "executive_comms"
+damage = 0.2
+
+[[events.network_access_achieved.effects]]
+effect = "DamageInfra"
+infra = "ic_networks"
+damage = 0.2
+
+[[events.network_access_achieved.effects]]
+effect = "DamageInfra"
+infra = "cuas_sensors"
+damage = 0.15  # C-UAS sensor placement data exfiltrated
+
+[[events.network_access_achieved.effects]]
+effect = "LoyaltyShift"
+institution = "cisa"
+delta = -0.1  # CISA credibility damaged by breach
+
+[[events.network_access_achieved.effects]]
+effect = "MoraleShift"
+faction = "federal_security"
+delta = -0.1
+
+[[events.network_access_achieved.effects]]
+effect = "MoraleShift"
+faction = "threat_actor"
+delta = 0.10
+
+[[events.network_access_achieved.effects]]
+effect = "Narrative"
+text = "Full organizational network access achieved. C-UAS deployment maps, protective detail schedules, and internal security protocols exfiltrated. Defender is transparent to attacker."
+
+# --- Phase 4: Decision Point — Coercion or Kinetic ---
+# The threat actor now has complete intelligence. Two paths diverge.
+
+[events.coercion_proof_published]
+id = "coercion_proof_published"
+name = "Proof of Capability Published"
+description = "Threat actor publishes timestamped surveillance imagery showing principal's daily routine, security gaps, and compromised communications. Demonstrates persistent undetected access. Policy demands accompany the release."
+probability = 0.70
+repeatable = false
+
+[[events.coercion_proof_published.conditions]]
+condition = "EventFired"
+event = "network_access_achieved"
+fired = true
+
+[[events.coercion_proof_published.conditions]]
+condition = "TickAtLeast"
+tick = 120
+
+[[events.coercion_proof_published.effects]]
+effect = "DamageInfra"
+infra = "public_trust"
+damage = 0.25
+
+[[events.coercion_proof_published.effects]]
+effect = "MoraleShift"
+faction = "federal_security"
+delta = -0.20
+
+[[events.coercion_proof_published.effects]]
+effect = "LoyaltyShift"
+institution = "usss"
+delta = -0.15
+
+[[events.coercion_proof_published.effects]]
+effect = "LoyaltyShift"
+institution = "fbi_ct"
+delta = -0.10
+
+[[events.coercion_proof_published.effects]]
+effect = "Narrative"
+text = "COERCION PHASE: Threat actor publishes proof of persistent undetected surveillance — daily routines, security gap analysis, intercepted communications. Political crisis erupts."
+
+# --- Escalation Events ---
+
+[events.security_perimeter_breach]
+id = "security_perimeter_breach"
+name = "Drone Swarm Perimeter Breach Demonstration"
+description = "Autonomous swarm of 20 drones penetrates outer security perimeter at a public event. Drones broadcast visible light patterns and drop leaflets: 'We were inside. Next time will be different.' No hostile action taken — but the breach is public and undeniable."
+probability = 0.50
+repeatable = false
+
+[[events.security_perimeter_breach.conditions]]
+condition = "EventFired"
+event = "coercion_proof_published"
+fired = true
+
+[[events.security_perimeter_breach.conditions]]
+condition = "TickAtLeast"
+tick = 140
+
+[[events.security_perimeter_breach.effects]]
+effect = "DamageInfra"
+infra = "public_trust"
+damage = 0.30
+
+[[events.security_perimeter_breach.effects]]
+effect = "DamageInfra"
+infra = "cuas_sensors"
+damage = 0.20
+
+[[events.security_perimeter_breach.effects]]
+effect = "MoraleShift"
+faction = "federal_security"
+delta = -0.25
+
+[[events.security_perimeter_breach.effects]]
+effect = "LoyaltyShift"
+institution = "usss"
+delta = -0.20
+
+[[events.security_perimeter_breach.effects]]
+effect = "ResourceChange"
+faction = "threat_actor"
+delta = -25.0  # $25K for the swarm hardware — expended
+
+[[events.security_perimeter_breach.effects]]
+effect = "Narrative"
+text = "ESCALATION: 20-drone autonomous swarm breaches presidential security perimeter at public event. No casualties. Leaflets dropped: 'We were inside.' National security crisis."
+
+# --- Foreign Sponsor Amplification ---
+
+[events.foreign_amplification]
+id = "foreign_amplification"
+name = "Foreign Information Amplification"
+description = "State sponsor amplifies the security breach across social media, state-backed outlets, and bot networks. Frames the breach as evidence of US government weakness and institutional failure. Attribution is deniable."
+probability = 0.80
+repeatable = true
+
+[[events.foreign_amplification.conditions]]
+condition = "EventFired"
+event = "coercion_proof_published"
+fired = true
+
+[[events.foreign_amplification.effects]]
+effect = "DamageInfra"
+infra = "public_trust"
+damage = 0.05
+
+[[events.foreign_amplification.effects]]
+effect = "MoraleShift"
+faction = "federal_security"
+delta = -0.03
+
+[[events.foreign_amplification.effects]]
+effect = "MoraleShift"
+faction = "foreign_sponsor"
+delta = 0.02
+
+[[events.foreign_amplification.effects]]
+effect = "Narrative"
+text = "Foreign state media amplifies security breach narrative. Institutional trust eroding under coordinated information campaign."
+
+# --- Defensive Response Events ---
+
+[events.emergency_cuas_deployment]
+id = "emergency_cuas_deployment"
+name = "Emergency C-UAS Expansion"
+description = "Following the breach, federal security rushes HPM and expanded radar deployment. Cost: $50M+. Timeline: 3-6 months for full capability. Closes the swarm gap but at enormous cost — and does not address the cyber-physical seam."
+probability = 0.90
+repeatable = false
+
+[[events.emergency_cuas_deployment.conditions]]
+condition = "EventFired"
+event = "security_perimeter_breach"
+fired = true
+
+[[events.emergency_cuas_deployment.effects]]
+effect = "MoraleShift"
+faction = "federal_security"
+delta = 0.10
+
+[[events.emergency_cuas_deployment.effects]]
+effect = "ResourceChange"
+faction = "federal_security"
+delta = -5000.0  # Massive emergency spending
+
+[[events.emergency_cuas_deployment.effects]]
+effect = "Narrative"
+text = "Emergency C-UAS expansion ordered. $50M in HPM and radar systems. Closes airspace gap but cyber-physical seam remains open."
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 180
+monte_carlo_runs = 1000
+seed = 20260411
+fog_of_war = true
+snapshot_interval = 10
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+[victory_conditions.security_restored]
+id = "security_restored"
+name = "Security Posture Restored"
+faction = "federal_security"
+
+[victory_conditions.security_restored.condition]
+type = "StrategicControl"
+threshold = 0.90
+
+[victory_conditions.coercion_success]
+id = "coercion_success"
+name = "Coercion Campaign Succeeds"
+faction = "threat_actor"
+
+[victory_conditions.coercion_success.condition]
+type = "StrategicControl"
+threshold = 0.35
+
+[victory_conditions.destabilization_achieved]
+id = "destabilization_achieved"
+name = "Destabilization Achieved"
+faction = "foreign_sponsor"
+
+[victory_conditions.destabilization_achieved.condition]
+type = "Custom"
+variable = "tension"
+threshold = 0.90
+above = true

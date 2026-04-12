@@ -22,7 +22,7 @@ use crate::combat::{self, CombatParams};
 use crate::state::SimulationState;
 
 /// Result of a single tick execution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TickResult {
     pub tick: u32,
     pub events_fired: Vec<String>,

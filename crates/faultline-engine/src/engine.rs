@@ -26,6 +26,7 @@ pub struct Engine {
     rng: ChaCha8Rng,
     map: GameMap,
     event_evaluator: EventEvaluator,
+    outcome_reached: bool,
 }
 
 impl Engine {
@@ -66,6 +67,7 @@ impl Engine {
             rng,
             map,
             event_evaluator,
+            outcome_reached: false,
         })
     }
 
@@ -115,6 +117,9 @@ impl Engine {
 
         // Phase 8: Victory check.
         let outcome = tick::victory_check(&self.state, &self.scenario);
+        if outcome.is_some() {
+            self.outcome_reached = true;
+        }
 
         Ok(TickResult {
             tick: current_tick,
@@ -184,6 +189,26 @@ impl Engine {
     /// Return the current tick number.
     pub fn current_tick(&self) -> u32 {
         self.state.tick
+    }
+
+    /// Return the maximum tick count from the scenario.
+    pub fn max_ticks(&self) -> u32 {
+        self.scenario.simulation.max_ticks
+    }
+
+    /// Read-only access to the scenario.
+    pub fn scenario(&self) -> &Scenario {
+        &self.scenario
+    }
+
+    /// Take a snapshot of the current simulation state.
+    pub fn snapshot(&self) -> StateSnapshot {
+        take_snapshot(&self.state)
+    }
+
+    /// Check whether the simulation has finished (victory or max ticks).
+    pub fn is_finished(&self) -> bool {
+        self.outcome_reached || self.state.tick >= self.scenario.simulation.max_ticks
     }
 }
 
