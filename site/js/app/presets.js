@@ -25,13 +25,13 @@ export const PRESETS = [
     description: 'Multi-phase autonomous drone swarm campaign — kill chain from sensor emplacement through coercion.',
   },
   {
-    name: 'ETRA 1 — Drone Swarm Decapitation',
-    path: 'scenarios/etra_01_drone_decapitation.toml',
-    description: 'Six-phase kill chain targeting a principal during an off-site appearance. ~115× cost asymmetry.',
-  },
-  {
     name: 'Europe — Eastern Flank',
     path: 'scenarios/europe_eastern_flank.toml',
-    description: 'NATO vs Russia with Ukraine as pivot. Includes covert infrastructure kill chain. Uses bundled Europe map.',
+    description: 'NATO vs Russia with Ukraine as pivot. Demonstrates the bundled Europe map and drone-swarm tech cards.',
+  },
+  {
+    name: 'Drone Threat Capabilities Demo',
+    path: 'scenarios/capabilities_demo.toml',
+    description: 'Sandbox scenario exercising every tech card in the bundled Drone Threat Library.',
   },
 ];

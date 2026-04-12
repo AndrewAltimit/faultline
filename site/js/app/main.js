@@ -12,6 +12,7 @@ import { FactionBuilder } from './faction-builder.js';
 import { mapsToObjects } from './wasm-util.js';
 import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
 import { Tutorial } from './tutorial.js';
+import { TechCardsPanel } from './tech-cards.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -60,12 +61,13 @@ async function bootstrap() {
   }
 
   // Only initialize WASM-dependent modules if WASM is available.
-  let controls, editor, dashboard, builder;
+  let controls, editor, dashboard, builder, techCards;
   if (wasm) {
     controls = new SimControls(bus);
     editor = new Editor(bus, wasm);
     dashboard = new Dashboard(bus, wasm);
     builder = new FactionBuilder(bus);
+    techCards = new TechCardsPanel(bus);
 
     // Wire event subscriptions.
 

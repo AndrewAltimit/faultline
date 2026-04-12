@@ -152,7 +152,7 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing.
 
 **Goal:** Comprehensive library of ETRA-grade scenarios covering major threat archetypes.
 
-- [x] Autonomous drone swarm executive decapitation (ETRA Scenario 1) — `scenarios/etra_01_drone_decapitation.toml`; six-phase kill chain producing ~115× cost asymmetry at default parameters
+- [x] Drone threat capability library — `site/js/app/tech-library.js` bundles ~17 ETRA-derived tech cards (offensive swarms, covert sensors, rogue-AP perching, EW jamming, multi-phenomenology C-UAS, HPM, WIDS fusion, rooftop inspection, MDM, satellite backup). Cards are injectable into any scenario via the browser's Tech Cards panel, with per-faction `tech_access` grant. `scenarios/capabilities_demo.toml` exercises the full library.
 - [ ] Drone-assisted coup facilitation (ETRA Scenario 2)
 - [ ] Revolutionary infrastructure seizure with drone ISR (ETRA Scenario 3)
 - [ ] Asymmetric coercion campaign — proof-of-capability escalation (ETRA Scenario 4)
