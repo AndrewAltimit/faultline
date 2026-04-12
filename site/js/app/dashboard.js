@@ -408,7 +408,11 @@ export class Dashboard {
   _esc(str) {
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    // Also escape double-quotes so the output is safe in HTML attribute
+    // contexts (matches faction-builder.js _esc). Current callers all use
+    // it in text-node positions, but this is defense-in-depth if future
+    // callers interpolate into `value="..."` or similar.
+    return div.innerHTML.replace(/"/g, '&quot;');
   }
 
   /** Sanitize a color value for safe use in inline styles. */
