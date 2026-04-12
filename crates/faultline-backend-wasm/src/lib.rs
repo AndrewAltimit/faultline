@@ -576,4 +576,260 @@ mod tests {
             "should have 8 regions in regional_control"
         );
     }
+
+    // -- Phase 5: collect_snapshots underlying logic --------------------
+
+    #[test]
+    fn monte_carlo_with_collect_snapshots_populates_snapshots() {
+        // The browser's regional-control heatmap depends on every run
+        // carrying its per-tick snapshots. The wasm export passes this
+        // flag through to MonteCarloConfig — verify the runner actually
+        // honors it and produces non-empty snapshot arrays.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 4,
+            seed: Some(7),
+            collect_snapshots: true,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC should succeed");
+
+        assert_eq!(result.runs.len(), 4);
+        for run in &result.runs {
+            assert!(
+                !run.snapshots.is_empty(),
+                "run {} should carry at least one snapshot when collect_snapshots=true",
+                run.run_index
+            );
+            // Snapshot ticks must be strictly monotonic and within bounds.
+            let mut prev = 0u32;
+            for snap in &run.snapshots {
+                assert!(snap.tick >= prev, "snapshot ticks must be non-decreasing");
+                assert!(
+                    snap.tick <= run.final_tick,
+                    "snapshot tick exceeds final tick"
+                );
+                prev = snap.tick;
+            }
+        }
+    }
+
+    #[test]
+    fn monte_carlo_without_collect_snapshots_skips_snapshots() {
+        // Inverse of the above: confirm the cheap path stays cheap and
+        // doesn't accidentally retain snapshots when the flag is off.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 4,
+            seed: Some(7),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC should succeed");
+
+        for run in &result.runs {
+            assert!(
+                run.snapshots.is_empty(),
+                "snapshots should be empty when collect_snapshots=false (run {})",
+                run.run_index
+            );
+            // The final_state contract still holds even without snapshots.
+            assert!(
+                run.final_state.tick > 0,
+                "final_state must always be populated"
+            );
+        }
+    }
+
+    #[test]
+    fn collect_snapshots_flag_does_not_change_outcome() {
+        // Snapshots are observation, not state — toggling the flag must
+        // produce bit-identical Monte Carlo summaries given the same
+        // seed. This guards against any future optimization that might
+        // mutate engine state in the snapshot path.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let base_cfg = MonteCarloConfig {
+            num_runs: 8,
+            seed: Some(123),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        let snap_cfg = MonteCarloConfig {
+            collect_snapshots: true,
+            ..base_cfg.clone()
+        };
+
+        let r_no = MonteCarloRunner::run(&base_cfg, &scenario).expect("baseline MC");
+        let r_yes = MonteCarloRunner::run(&snap_cfg, &scenario).expect("snapshot MC");
+
+        assert_eq!(r_no.summary.total_runs, r_yes.summary.total_runs);
+        assert!(
+            (r_no.summary.average_duration - r_yes.summary.average_duration).abs() < f64::EPSILON,
+            "average_duration must be invariant under collect_snapshots"
+        );
+        for (fid, rate) in &r_no.summary.win_rates {
+            let other = r_yes
+                .summary
+                .win_rates
+                .get(fid)
+                .expect("faction should appear in both");
+            assert!(
+                (rate - other).abs() < f64::EPSILON,
+                "win_rate for {fid} differs across collect_snapshots toggle"
+            );
+        }
+    }
+
+    // -- Phase 5: sensitivity analysis underlying logic ------------------
+
+    #[test]
+    fn sensitivity_sweep_through_wasm_path() {
+        // Mirrors what run_sensitivity_wasm does after parsing TOML.
+        // We exercise the same call path so the JS export's contract is
+        // verified end-to-end (minus the JsValue conversion).
+        use faultline_stats::sensitivity::run_sensitivity;
+
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 3,
+            seed: Some(99),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = run_sensitivity(&scenario, &config, "political_climate.tension", 0.1, 0.9, 5)
+            .expect("sensitivity sweep should succeed");
+
+        assert_eq!(result.parameter, "political_climate.tension");
+        assert_eq!(result.varied_values.len(), 5);
+        assert_eq!(result.outcomes.len(), 5);
+        // Endpoints exact, interior values evenly spaced.
+        assert!((result.varied_values[0] - 0.1).abs() < 1e-9);
+        assert!((result.varied_values[4] - 0.9).abs() < 1e-9);
+        for w in result.varied_values.windows(2) {
+            assert!(w[1] >= w[0], "swept values must be non-decreasing");
+        }
+        // Each step ran the requested batch size.
+        for outcome in &result.outcomes {
+            assert_eq!(outcome.total_runs, 3);
+        }
+        // Baseline should reflect the scenario's actual value (0.3).
+        assert!((result.baseline_value - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sensitivity_invalid_parameter_returns_error() {
+        // The wasm export surfaces stats errors as JsValue strings —
+        // verify the underlying call rejects bogus parameter paths.
+        use faultline_stats::sensitivity::run_sensitivity;
+
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(1),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        assert!(
+            run_sensitivity(&scenario, &config, "not.a.real.path", 0.0, 1.0, 3).is_err(),
+            "unknown parameter path must be rejected"
+        );
+    }
+
+    #[test]
+    fn sensitivity_sweep_actually_perturbs_state() {
+        // The tornado chart is meaningless if the sweep silently
+        // produces identical outcomes — that would mean either the
+        // parameter setter is a no-op or the scenario is insensitive
+        // to it. We sweep `political_climate.tension` across [0.0,
+        // 1.0] on the asymmetric scenario (which has tension-gated
+        // events and population segments) and assert that *some*
+        // observable summary field varies across steps.
+        use faultline_stats::sensitivity::run_sensitivity;
+
+        let toml_str = include_str!("../../../scenarios/tutorial_asymmetric.toml");
+        let scenario = load_toml(toml_str);
+
+        let config = MonteCarloConfig {
+            num_runs: 6,
+            seed: Some(2024),
+            collect_snapshots: false,
+            parallel: false,
+        };
+
+        let result = run_sensitivity(&scenario, &config, "political_climate.tension", 0.0, 1.0, 5)
+            .expect("tension sweep should succeed");
+
+        // Pull a flat tuple of comparable fields out of each summary
+        // and check that at least one component differs across the
+        // sweep. We compare: avg duration, every faction win rate,
+        // every event probability, and the final-tension distribution
+        // mean.
+        fn fingerprint(s: &faultline_types::stats::MonteCarloSummary) -> Vec<f64> {
+            let mut v = vec![s.average_duration];
+            for r in s.win_rates.values() {
+                v.push(*r);
+            }
+            for p in s.event_probabilities.values() {
+                v.push(*p);
+            }
+            if let Some(t) = s
+                .metric_distributions
+                .get(&faultline_types::stats::MetricType::FinalTension)
+            {
+                v.push(t.mean);
+            }
+            v
+        }
+
+        let baseline = fingerprint(&result.outcomes[0]);
+        let any_different = result.outcomes.iter().skip(1).any(|o| {
+            let fp = fingerprint(o);
+            fp.len() != baseline.len()
+                || fp
+                    .iter()
+                    .zip(baseline.iter())
+                    .any(|(a, b)| (a - b).abs() > 1e-9)
+        });
+        assert!(
+            any_different,
+            "sweeping tension across [0.0, 1.0] should change at least one summary fingerprint field"
+        );
+    }
+
+    #[test]
+    fn snapshot_region_control_shape_matches_heatmap_aggregator() {
+        // The browser heatmap aggregator iterates run.snapshots and
+        // expects each snapshot to expose region_control as a map of
+        // RegionId -> Option<FactionId>. Lock that contract here so the
+        // JS code's assumptions stay aligned with the Rust types.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let config = MonteCarloConfig {
+            num_runs: 2,
+            seed: Some(11),
+            collect_snapshots: true,
+            parallel: false,
+        };
+
+        let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+        let region_ids: std::collections::BTreeSet<_> =
+            scenario.map.regions.keys().cloned().collect();
+
+        for run in &result.runs {
+            for snap in &run.snapshots {
+                // Every region in the scenario must appear in every
+                // snapshot's region_control map.
+                for rid in &region_ids {
+                    assert!(
+                        snap.region_control.contains_key(rid),
+                        "snapshot at tick {} missing region_control entry for {rid}",
+                        snap.tick
+                    );
+                }
+            }
+        }
+    }
 }

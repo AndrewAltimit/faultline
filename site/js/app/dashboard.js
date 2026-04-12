@@ -4,6 +4,7 @@
  */
 import { AppState } from './state.js';
 import { mapsToObjects } from './wasm-util.js';
+import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
 
 export class Dashboard {
   /**
@@ -289,7 +290,7 @@ export class Dashboard {
     }
 
     // Time-sliced regional control heatmap (requires snapshots).
-    const heatmap = this._buildRegionalHeatmap();
+    const heatmap = buildRegionalHeatmap(AppState.mcResult?.runs);
     if (heatmap) {
       html += '<div class="chart-title" style="margin-top: 16px;">Regional Control Over Time</div>';
       html += '<div class="chart-container"><canvas id="chart-heatmap" height="180"></canvas></div>';
@@ -310,76 +311,6 @@ export class Dashboard {
     });
   }
 
-  /**
-   * Aggregate per-tick regional control across all MC runs.
-   *
-   * Returns `{ ticks, regions, dominant }` where:
-   *   - `ticks` is the sorted list of snapshot ticks
-   *   - `regions` is the sorted list of region ids
-   *   - `dominant[regionId][tickIdx] = { faction, prob }` is the
-   *     plurality faction at that tick and the share of runs holding it
-   *
-   * Returns `null` if snapshots aren't available (e.g. older runs).
-   */
-  _buildRegionalHeatmap() {
-    const runs = AppState.mcResult?.runs;
-    if (!runs || runs.length === 0) return null;
-    const haveSnapshots = runs.some((r) => Array.isArray(r.snapshots) && r.snapshots.length > 0);
-    if (!haveSnapshots) return null;
-
-    // Discover the union of snapshot ticks and region ids.
-    const tickSet = new Set();
-    const regionSet = new Set();
-    for (const run of runs) {
-      for (const snap of run.snapshots || []) {
-        tickSet.add(snap.tick);
-        if (snap.region_control) {
-          for (const rid of Object.keys(snap.region_control)) regionSet.add(rid);
-        }
-      }
-    }
-    if (tickSet.size === 0 || regionSet.size === 0) return null;
-
-    const ticks = Array.from(tickSet).sort((a, b) => a - b);
-    const regions = Array.from(regionSet).sort();
-    const tickIndex = new Map(ticks.map((t, i) => [t, i]));
-
-    // counts[regionId][tickIdx][factionId] = number of runs
-    const counts = {};
-    for (const rid of regions) {
-      counts[rid] = ticks.map(() => ({}));
-    }
-
-    for (const run of runs) {
-      for (const snap of run.snapshots || []) {
-        const ti = tickIndex.get(snap.tick);
-        if (ti === undefined) continue;
-        for (const [rid, faction] of Object.entries(snap.region_control || {})) {
-          if (!counts[rid]) continue;
-          const fid = faction == null ? '__neutral__' : faction;
-          counts[rid][ti][fid] = (counts[rid][ti][fid] || 0) + 1;
-        }
-      }
-    }
-
-    const totalRuns = runs.length;
-    const dominant = {};
-    for (const rid of regions) {
-      dominant[rid] = counts[rid].map((tickCounts) => {
-        let bestFaction = null;
-        let bestCount = 0;
-        for (const [fid, n] of Object.entries(tickCounts)) {
-          if (n > bestCount) {
-            bestCount = n;
-            bestFaction = fid;
-          }
-        }
-        return { faction: bestFaction, prob: bestCount / totalRuns };
-      });
-    }
-
-    return { ticks, regions, dominant };
-  }
 
   _renderStat(label, value) {
     return `<div class="mc-stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
@@ -748,24 +679,7 @@ export class Dashboard {
     const w = rect.width;
     const padding = { top: 8, right: 30, bottom: 22, left: 110 };
 
-    // Collect per-faction win-rate ranges across the sweep.
-    const factions = new Set();
-    for (const summary of result.outcomes) {
-      for (const fid of Object.keys(summary.win_rates || {})) factions.add(fid);
-    }
-    const ranges = [];
-    for (const fid of factions) {
-      let min = Infinity;
-      let max = -Infinity;
-      for (const summary of result.outcomes) {
-        const r = summary.win_rates?.[fid] ?? 0;
-        if (r < min) min = r;
-        if (r > max) max = r;
-      }
-      if (min === Infinity) continue;
-      ranges.push({ fid, min, max, range: max - min });
-    }
-    ranges.sort((a, b) => b.range - a.range);
+    const ranges = buildTornadoRanges(result);
 
     if (ranges.length === 0) {
       ctx.font = '400 11px Inter, system-ui, sans-serif';
