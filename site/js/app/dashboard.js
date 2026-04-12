@@ -4,6 +4,7 @@
  */
 import { AppState } from './state.js';
 import { mapsToObjects } from './wasm-util.js';
+import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
 
 export class Dashboard {
   /**
@@ -21,6 +22,20 @@ export class Dashboard {
     this.mcRunsInput = document.getElementById('mc-runs');
 
     this.btnMcRun.addEventListener('click', () => this._runMonteCarlo());
+    this._mcWorker = null;
+    this._mcRequestId = 0;
+
+    // Sensitivity sweep controls.
+    this.sensParam = document.getElementById('sens-param');
+    this.sensLow = document.getElementById('sens-low');
+    this.sensHigh = document.getElementById('sens-high');
+    this.sensSteps = document.getElementById('sens-steps');
+    this.sensRuns = document.getElementById('sens-runs');
+    this.btnSensRun = document.getElementById('btn-sens-run');
+    this.sensResultsContainer = document.getElementById('sens-results');
+    if (this.btnSensRun) {
+      this.btnSensRun.addEventListener('click', () => this._runSensitivity());
+    }
 
     bus.on('sim:tick', (snapshot) => this._onTick(snapshot));
     bus.on('sim:snapshot', (snapshot) => this._onSnapshot(snapshot));
@@ -31,6 +46,7 @@ export class Dashboard {
 
   _onScenarioLoaded() {
     this.btnMcRun.disabled = false;
+    if (this.btnSensRun) this.btnSensRun.disabled = false;
     this._onReset();
   }
 
@@ -156,21 +172,89 @@ export class Dashboard {
     this.btnMcRun.disabled = true;
     this.btnMcRun.innerHTML = '<span class="spinner"></span> Running...';
 
-    // Use setTimeout to let the UI update before blocking.
-    setTimeout(() => {
-      try {
-        const result = mapsToObjects(this.wasm.run_monte_carlo(AppState.toml, numRuns));
+    this._runMonteCarloInWorker(numRuns)
+      .then((result) => {
         AppState.mcResult = result;
         this._renderMcResults(result.summary);
         this.bus.emit('mc:complete', result);
-      } catch (e) {
+      })
+      .catch((e) => {
         this.mcResultsContainer.innerHTML =
           `<div class="validation-msg error">${this._esc(String(e))}</div>`;
-      } finally {
+      })
+      .finally(() => {
         this.btnMcRun.disabled = false;
         this.btnMcRun.textContent = 'Run MC';
+      });
+  }
+
+  /**
+   * Run a Monte Carlo batch in a dedicated web worker.
+   *
+   * Falls back to a synchronous in-thread call if the browser doesn't
+   * support module workers. The worker is created lazily and reused
+   * across runs so the WASM module isn't re-instantiated each time.
+   */
+  _runMonteCarloInWorker(numRuns) {
+    if (typeof Worker === 'undefined') {
+      // No worker support — run synchronously after a UI yield.
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          try {
+            resolve(
+              mapsToObjects(
+                this.wasm.run_monte_carlo(AppState.toml, numRuns, undefined, true),
+              ),
+            );
+          } catch (e) {
+            reject(e);
+          }
+        }, 50);
+      });
+    }
+
+    if (!this._mcWorker) {
+      try {
+        this._mcWorker = new Worker(new URL('./mc-worker.js', import.meta.url), {
+          type: 'module',
+        });
+      } catch (e) {
+        console.warn('Failed to create MC worker, falling back to main thread:', e);
+        this._mcWorker = null;
+        return new Promise((resolve, reject) => {
+          setTimeout(() => {
+            try {
+              resolve(
+                mapsToObjects(
+                  this.wasm.run_monte_carlo(AppState.toml, numRuns, undefined, true),
+                ),
+              );
+            } catch (err) {
+              reject(err);
+            }
+          }, 50);
+        });
       }
-    }, 50);
+    }
+
+    const id = ++this._mcRequestId;
+    return new Promise((resolve, reject) => {
+      const onMessage = (ev) => {
+        const msg = ev.data || {};
+        if (msg.id !== id) return;
+        this._mcWorker.removeEventListener('message', onMessage);
+        if (msg.type === 'result') resolve(msg.result);
+        else reject(new Error(msg.error || 'Monte Carlo worker failed'));
+      };
+      this._mcWorker.addEventListener('message', onMessage);
+      this._mcWorker.postMessage({
+        id,
+        type: 'run',
+        toml: AppState.toml,
+        runs: numRuns,
+        collectSnapshots: true,
+      });
+    });
   }
 
   _renderMcResults(summary) {
@@ -201,8 +285,15 @@ export class Dashboard {
 
     // Regional control.
     if (summary.regional_control && Object.keys(summary.regional_control).length > 0) {
-      html += '<div class="chart-title" style="margin-top: 16px;">Regional Control</div>';
+      html += '<div class="chart-title" style="margin-top: 16px;">Regional Control (final)</div>';
       html += '<div class="chart-container"><canvas id="chart-regional" height="150"></canvas></div>';
+    }
+
+    // Time-sliced regional control heatmap (requires snapshots).
+    const heatmap = buildRegionalHeatmap(AppState.mcResult?.runs);
+    if (heatmap) {
+      html += '<div class="chart-title" style="margin-top: 16px;">Regional Control Over Time</div>';
+      html += '<div class="chart-container"><canvas id="chart-heatmap" height="180"></canvas></div>';
     }
 
     this.mcResultsContainer.innerHTML = html;
@@ -214,8 +305,12 @@ export class Dashboard {
       if (summary.regional_control) {
         this._drawRegionalChart(summary, scenario);
       }
+      if (heatmap) {
+        this._drawRegionalHeatmap(heatmap, scenario);
+      }
     });
   }
+
 
   _renderStat(label, value) {
     return `<div class="mc-stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
@@ -403,6 +498,273 @@ export class Dashboard {
         offsetX += segW;
       }
     });
+  }
+
+  /**
+   * Draw the time-sliced regional control heatmap.
+   *
+   * Each row is a region, each column is a snapshot tick. The cell is
+   * filled with the dominant (plurality) faction's color, alpha-scaled
+   * by the share of runs holding that region at that tick.
+   */
+  _drawRegionalHeatmap(heatmap, scenario) {
+    const canvas = document.getElementById('chart-heatmap');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const h = 180;
+    canvas.width = rect.width * dpr;
+    canvas.height = h * dpr;
+    canvas.style.height = `${h}px`;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const padding = { top: 8, right: 8, bottom: 22, left: 100 };
+    const { ticks, regions, dominant } = heatmap;
+
+    if (ticks.length === 0 || regions.length === 0) return;
+
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+    const rowH = Math.max(8, Math.floor(chartH / regions.length));
+    const colW = chartW / ticks.length;
+
+    // Background.
+    ctx.fillStyle = 'rgba(39, 39, 42, 0.4)';
+    ctx.fillRect(padding.left, padding.top, chartW, rowH * regions.length);
+
+    regions.forEach((rid, rowIdx) => {
+      const y = padding.top + rowIdx * rowH;
+
+      // Region label.
+      ctx.save();
+      ctx.font = '400 10px Inter, system-ui, sans-serif';
+      ctx.fillStyle = '#a1a1aa';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      const regionName = scenario?.map?.regions?.[rid]?.name || rid;
+      ctx.fillText(regionName, padding.left - 6, y + rowH / 2, padding.left - 12);
+      ctx.restore();
+
+      dominant[rid].forEach((cell, colIdx) => {
+        const x = padding.left + colIdx * colW;
+        if (!cell.faction) return;
+        const baseColor =
+          cell.faction === '__neutral__'
+            ? '#52525b'
+            : this._safeColor(scenario?.factions?.[cell.faction]?.color);
+        ctx.fillStyle = this._withAlpha(baseColor, Math.max(0.15, cell.prob));
+        ctx.fillRect(x, y, Math.ceil(colW), rowH - 1);
+      });
+    });
+
+    // X axis ticks (first / middle / last).
+    ctx.save();
+    ctx.font = '400 9px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#71717a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const labelY = padding.top + rowH * regions.length + 4;
+    const positions = [0, Math.floor(ticks.length / 2), ticks.length - 1];
+    for (const i of positions) {
+      const x = padding.left + (i + 0.5) * colW;
+      ctx.fillText(`T${ticks[i]}`, x, labelY);
+    }
+    ctx.restore();
+  }
+
+  // -------------------------------------------------------------------
+  // Sensitivity Analysis
+  // -------------------------------------------------------------------
+
+  _runSensitivity() {
+    if (!AppState.toml) return;
+    const param = this.sensParam.value;
+    const low = parseFloat(this.sensLow.value);
+    const high = parseFloat(this.sensHigh.value);
+    const steps = parseInt(this.sensSteps.value, 10);
+    const runs = parseInt(this.sensRuns.value, 10);
+
+    if (!Number.isFinite(low) || !Number.isFinite(high) || low > high) {
+      this.sensResultsContainer.innerHTML =
+        '<div class="validation-msg error">Low must be ≤ high</div>';
+      return;
+    }
+    if (!Number.isInteger(steps) || steps < 2) {
+      this.sensResultsContainer.innerHTML =
+        '<div class="validation-msg error">Steps must be ≥ 2</div>';
+      return;
+    }
+
+    this.btnSensRun.disabled = true;
+    this.btnSensRun.innerHTML = '<span class="spinner"></span> Running...';
+    this.sensResultsContainer.innerHTML =
+      '<div style="font-size: 0.8125rem; color: var(--text-muted); padding: 8px 0;">Running sweep...</div>';
+
+    // Yield to UI before the (still synchronous) WASM call. Sensitivity
+    // is many small MC batches, but each batch lives on the main thread
+    // for now — the worker plumbing for this lives in run_monte_carlo.
+    setTimeout(() => {
+      try {
+        const raw = this.wasm.run_sensitivity_wasm(
+          AppState.toml,
+          param,
+          low,
+          high,
+          steps,
+          runs,
+          undefined,
+        );
+        const result = mapsToObjects(raw);
+        AppState.sensResult = result;
+        this._renderSensitivityResults(result);
+      } catch (e) {
+        this.sensResultsContainer.innerHTML =
+          `<div class="validation-msg error">${this._esc(String(e))}</div>`;
+      } finally {
+        this.btnSensRun.disabled = false;
+        this.btnSensRun.textContent = 'Run Sweep';
+      }
+    }, 50);
+  }
+
+  _renderSensitivityResults(result) {
+    const scenario = AppState.scenario;
+    const { parameter, baseline_value, varied_values, outcomes } = result;
+
+    let html = '';
+    html += `<div class="chart-title" style="margin-top: 8px;">Tornado: ${this._esc(parameter)}</div>`;
+    html += `<div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">baseline = ${baseline_value.toFixed(3)}</div>`;
+    html += '<div class="chart-container"><canvas id="chart-tornado" height="180"></canvas></div>';
+
+    // Per-step duration table.
+    html += '<div class="chart-title" style="margin-top: 12px;">Per-Step Avg Duration</div>';
+    html += '<div class="mc-summary-stats">';
+    for (let i = 0; i < varied_values.length; i++) {
+      const val = varied_values[i];
+      const dur = outcomes[i]?.average_duration ?? 0;
+      html += this._renderStat(val.toFixed(3), dur.toFixed(1));
+    }
+    html += '</div>';
+
+    this.sensResultsContainer.innerHTML = html;
+
+    requestAnimationFrame(() => this._drawTornadoChart(result, scenario));
+  }
+
+  /**
+   * Draw a tornado chart of per-faction win-probability swings across
+   * the parameter sweep.
+   *
+   * For each faction we plot the [min, max] win-rate range observed
+   * across the sweep, anchored at the midpoint. Wider bars = more
+   * sensitive to the parameter. Bars are sorted by descending range so
+   * the most sensitive factions appear at the top, matching the
+   * conventional tornado chart layout.
+   */
+  _drawTornadoChart(result, scenario) {
+    const canvas = document.getElementById('chart-tornado');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const h = 180;
+    canvas.width = rect.width * dpr;
+    canvas.height = h * dpr;
+    canvas.style.height = `${h}px`;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const padding = { top: 8, right: 30, bottom: 22, left: 110 };
+
+    const ranges = buildTornadoRanges(result);
+
+    if (ranges.length === 0) {
+      ctx.font = '400 11px Inter, system-ui, sans-serif';
+      ctx.fillStyle = '#71717a';
+      ctx.fillText('No win-rate variation observed.', padding.left, h / 2);
+      return;
+    }
+
+    // X axis: 0..1 win rate. Center reference line at the median win
+    // rate across all (faction, step) pairs to anchor the tornado.
+    const allRates = [];
+    for (const r of ranges) {
+      allRates.push(r.min, r.max);
+    }
+    allRates.sort((a, b) => a - b);
+    const center = allRates[Math.floor(allRates.length / 2)];
+
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+    const rowH = Math.max(14, Math.floor(chartH / ranges.length) - 4);
+    const xScale = (rate) => padding.left + rate * chartW;
+
+    // Center axis.
+    ctx.strokeStyle = 'rgba(161, 161, 170, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(xScale(center), padding.top);
+    ctx.lineTo(xScale(center), padding.top + chartH);
+    ctx.stroke();
+
+    ranges.forEach((r, i) => {
+      const y = padding.top + i * (rowH + 4);
+      const color = this._safeColor(scenario?.factions?.[r.fid]?.color);
+      const name = scenario?.factions?.[r.fid]?.name || r.fid;
+
+      // Faction label.
+      ctx.save();
+      ctx.font = '500 11px Inter, system-ui, sans-serif';
+      ctx.fillStyle = '#e4e4e7';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name, padding.left - 8, y + rowH / 2, padding.left - 16);
+      ctx.restore();
+
+      // Range bar.
+      const x0 = xScale(r.min);
+      const x1 = xScale(r.max);
+      ctx.fillStyle = this._withAlpha(color, 0.75);
+      ctx.fillRect(x0, y, Math.max(2, x1 - x0), rowH);
+
+      // Numeric range label.
+      ctx.save();
+      ctx.font = '400 9px "JetBrains Mono", monospace';
+      ctx.fillStyle = '#a1a1aa';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        `${(r.min * 100).toFixed(0)}–${(r.max * 100).toFixed(0)}%`,
+        x1 + 4,
+        y + rowH / 2,
+      );
+      ctx.restore();
+    });
+
+    // X axis labels (0%, center%, 100%).
+    ctx.save();
+    ctx.font = '400 9px "JetBrains Mono", monospace';
+    ctx.fillStyle = '#71717a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const labelY = padding.top + chartH + 4;
+    ctx.fillText('0%', xScale(0), labelY);
+    ctx.fillText(`${(center * 100).toFixed(0)}%`, xScale(center), labelY);
+    ctx.fillText('100%', xScale(1), labelY);
+    ctx.restore();
+  }
+
+  /** Convert a `#rrggbb` color to `rgba(r,g,b,a)` for alpha blending. */
+  _withAlpha(hex, alpha) {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+    if (!m) return hex;
+    const r = parseInt(m[1], 16);
+    const g = parseInt(m[2], 16);
+    const b = parseInt(m[3], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
   }
 
   _esc(str) {

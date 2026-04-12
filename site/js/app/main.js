@@ -10,6 +10,7 @@ import { Editor } from './editor.js';
 import { Dashboard } from './dashboard.js';
 import { FactionBuilder } from './faction-builder.js';
 import { mapsToObjects } from './wasm-util.js';
+import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -90,18 +91,30 @@ async function bootstrap() {
       }
     });
 
-    // Load default preset on startup.
-    try {
-      const resp = await fetch('scenarios/tutorial_symmetric.toml');
-      if (resp.ok) {
-        const toml = await resp.text();
-        editor.setText(toml);
-        // Auto-select in dropdown.
-        const select = document.getElementById('preset-select');
-        if (select) select.value = 'scenarios/tutorial_symmetric.toml';
+    // If a scenario was shared via URL hash, prefer it over the default
+    // preset. Otherwise fall back to the US institutional fracture
+    // scenario. In both cases we auto-trigger Load & Run so the user
+    // sees a populated map immediately and can still pick a different
+    // scenario from the preset dropdown afterward.
+    const sharedToml = await readScenarioFromHash();
+    if (sharedToml) {
+      editor.setText(sharedToml);
+      clearScenarioHash();
+      editor.loadAndRun();
+    } else {
+      try {
+        const defaultPath = 'scenarios/us_institutional_fracture.toml';
+        const resp = await fetch(defaultPath);
+        if (resp.ok) {
+          const toml = await resp.text();
+          editor.setText(toml);
+          const select = document.getElementById('preset-select');
+          if (select) select.value = defaultPath;
+          editor.loadAndRun();
+        }
+      } catch {
+        // Ignore — user can load manually.
       }
-    } catch {
-      // Ignore — user can load manually.
     }
   }
 

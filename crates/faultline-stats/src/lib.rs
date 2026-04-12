@@ -84,6 +84,9 @@ impl MonteCarloRunner {
 
             result.run_index = i;
             result.seed = seed;
+            if !config.collect_snapshots {
+                result.snapshots.clear();
+            }
             runs.push(result);
         }
 

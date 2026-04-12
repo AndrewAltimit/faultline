@@ -82,15 +82,15 @@ Current state: Phases 1-4 complete.
 
 **Goal:** Production-quality UX, scenario library, documentation.
 
-- [ ] Monte Carlo execution in WASM via web workers
-- [ ] Scenario sharing (URL-encoded configs or gist integration)
+- [x] Monte Carlo execution in WASM via web workers — `site/js/app/mc-worker.js` runs MC off the UI thread; dashboard speaks a request/response protocol with run-id correlation, with main-thread fallback if `Worker` is unavailable
+- [x] Scenario sharing (URL-encoded configs) — gzip + base64url encoded TOML in `#scenario=…` hash; share button copies URL to clipboard, bootstrap auto-loads on page open
 - [ ] Interactive tutorial scenario (guided walkthrough)
-- [ ] Comprehensive `scenario_schema.md` documentation
+- [x] Comprehensive `scenario_schema.md` documentation — full schema reference at `docs/scenario_schema.md` covering meta, map, factions, tech, events, politics, simulation, victory
 - [ ] Map editor (define custom geographies in browser)
 - [ ] Additional built-in maps (individual US states, abstract grids)
 - [ ] Performance optimization (SIMD where available, memory pooling)
-- [ ] Sensitivity tornado chart in browser UI
-- [ ] Regional control heatmap at configurable time slices
+- [x] Sensitivity tornado chart in browser UI — `run_sensitivity_wasm` WASM export plus dashboard sweep controls; chart shows per-faction win-rate ranges sorted by sensitivity
+- [x] Regional control heatmap at configurable time slices — MC worker now collects snapshots; dashboard aggregates plurality control per snapshot tick into a faction-colored, alpha-scaled heatmap
 
 ---
 
