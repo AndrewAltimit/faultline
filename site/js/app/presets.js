@@ -39,4 +39,14 @@ export const PRESETS = [
     path: 'scenarios/compound_kill_chains.toml',
     description: 'Research simulation of three concurrent archetypal red-team campaigns (intelligence-led pressure, non-lethal capability demonstration, cyber-physical convergence) against a notional integrated defender. Exercises the Phase 6 multi-phase campaign schema and cost-asymmetry analysis.',
   },
+  {
+    name: 'Persistent Covert Surveillance Network — Defensive Wargame',
+    path: 'scenarios/persistent_covert_surveillance.toml',
+    description: 'Long-dwell commodity-component surveillance campaign against a notional federal protective posture. Quantifies the detection window, attribution confidence, and cost-asymmetry ratio between an ESP32-class sensor footprint and the inspection / remediation program required to close the gap.',
+  },
+  {
+    name: 'European Energy Infrastructure Sabotage — Defensive Wargame',
+    path: 'scenarios/europe_energy_sabotage.toml',
+    description: 'Multi-phase covert campaign against European cross-border energy corridors. Exercises the Phase 6.1 kill chain schema to quantify cost-asymmetry, detection window, and attribution confidence for NATO / EU critical infrastructure protection planning.',
+  },
 ];

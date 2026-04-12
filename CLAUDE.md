@@ -112,4 +112,8 @@ Agent commit authors: `AI Review Agent`, `AI Pipeline Agent`, `AI Agent Bot`.
 
 ## Known Advisory Exemptions
 
-No advisories are currently exempted. `cargo deny check` passes clean.
+One advisory is currently exempted in `deny.toml`:
+
+- `RUSTSEC-2026-0097` — rand 0.8 unsound only when a custom logger calls `rand::rng()` and `ThreadRng` reseeds inside that logger. Faultline uses `tracing` (not `log`) and never calls rand from a logging context. Upgrading to rand 0.9+ requires coordinated updates across `rand_chacha`, `rand_distr`, `statrs`, and `nalgebra` and is planned for a future release.
+
+`cargo deny check` otherwise passes clean.
