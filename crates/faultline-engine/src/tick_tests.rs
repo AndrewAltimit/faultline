@@ -605,7 +605,7 @@ fn update_region_control_assigns_to_strongest() {
 }
 
 // -----------------------------------------------------------------------
-// Phase 4: TickResult serialization round-trip tests
+// TickResult serialization round-trip tests
 // -----------------------------------------------------------------------
 
 #[test]

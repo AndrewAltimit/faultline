@@ -1,5 +1,5 @@
 /**
- * Phase 5 end-to-end coverage:
+ * Polish-features end-to-end coverage:
  *   - Scenario sharing via #scenario= URL hash (encode/auto-load).
  *   - Monte Carlo runs in a web worker (UI stays responsive,
  *     time-sliced regional control heatmap renders).
@@ -50,7 +50,7 @@ async function waitForWasmReady(page) {
   );
 }
 
-test.describe('Phase 5 — Polish features', () => {
+test.describe('Polish features', () => {
 
   // -------------------------------------------------------------------
   // Scenario sharing (URL hash round-trip)
@@ -104,7 +104,7 @@ test.describe('Phase 5 — Polish features', () => {
     // the same-document fragment-navigation gotcha (where a second
     // goto to /app.html#... wouldn't re-run bootstrap because the
     // path didn't change).
-    const original = '[meta]\nname = "Phase 5 share roundtrip"\nauthor = "test"\nversion = "0.0.0"\ndescription = "test"\ntags = []\n';
+    const original = '[meta]\nname = "Share roundtrip"\nauthor = "test"\nversion = "0.0.0"\ndescription = "test"\ntags = []\n';
     const encoded = await encodeForHash(original);
 
     await page.goto(`/app.html#scenario=${encoded}`);
@@ -115,7 +115,7 @@ test.describe('Phase 5 — Polish features', () => {
     await page.waitForFunction(
       () => {
         const ta = document.getElementById('toml-editor');
-        return ta && ta.value.includes('Phase 5 share roundtrip');
+        return ta && ta.value.includes('Share roundtrip');
       },
       { timeout: 5000 },
     );

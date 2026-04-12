@@ -425,7 +425,7 @@ attacker = "research_cell"
 target = "federal_protection"
 entry_phase = "covsurv_open_source_recon"
 
-# -- Phase 1: open-source reconnaissance ------------------------------------
+# -- Open-source reconnaissance ---------------------------------------------
 
 [kill_chains.covsurv.phases.covsurv_open_source_recon]
 id = "covsurv_open_source_recon"
@@ -456,7 +456,7 @@ next_phase = "covsurv_sensor_emplacement"
 condition = { type = "OnDetection" }
 next_phase = "covsurv_abort"
 
-# -- Phase 2: commodity sensor emplacement ----------------------------------
+# -- Commodity sensor emplacement -------------------------------------------
 
 [kill_chains.covsurv.phases.covsurv_sensor_emplacement]
 id = "covsurv_sensor_emplacement"
@@ -488,7 +488,7 @@ next_phase = "covsurv_dwell"
 condition = { type = "OnDetection" }
 next_phase = "covsurv_abort"
 
-# -- Phase 3: long dwell / pattern-of-life aggregation ----------------------
+# -- Long dwell / pattern-of-life aggregation -------------------------------
 
 [kill_chains.covsurv.phases.covsurv_dwell]
 id = "covsurv_dwell"
@@ -524,7 +524,7 @@ next_phase = "covsurv_wireless_collection"
 condition = { type = "OnDetection" }
 next_phase = "covsurv_abort"
 
-# -- Phase 4: wireless collection supplement --------------------------------
+# -- Wireless collection supplement -----------------------------------------
 
 [kill_chains.covsurv.phases.covsurv_wireless_collection]
 id = "covsurv_wireless_collection"
@@ -556,7 +556,7 @@ next_phase = "covsurv_exfil_aggregation"
 condition = { type = "OnDetection" }
 next_phase = "covsurv_abort"
 
-# -- Phase 5: exfil / offline aggregation -----------------------------------
+# -- Exfil / offline aggregation --------------------------------------------
 
 [kill_chains.covsurv.phases.covsurv_exfil_aggregation]
 id = "covsurv_exfil_aggregation"
@@ -588,7 +588,7 @@ next_phase = "covsurv_disclosure"
 condition = { type = "OnDetection" }
 next_phase = "covsurv_abort"
 
-# -- Phase 6: terminal — public disclosure ----------------------------------
+# -- Terminal — public disclosure -------------------------------------------
 
 [kill_chains.covsurv.phases.covsurv_disclosure]
 id = "covsurv_disclosure"

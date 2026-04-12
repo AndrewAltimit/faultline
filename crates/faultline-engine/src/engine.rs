@@ -110,7 +110,7 @@ impl Engine {
         // Phase 7: Information warfare.
         tick::information_phase(&mut self.state, &self.scenario);
 
-        // Phase 7b: Campaigns / kill chains (Phase 6.1).
+        // Phase 7b: Campaigns / kill chains.
         if !self.scenario.kill_chains.is_empty() {
             campaign::campaign_phase(
                 &mut self.state,
@@ -222,7 +222,7 @@ impl Engine {
         take_snapshot(&self.state)
     }
 
-    /// Read-only access to in-flight campaign state (Phase 6.1).
+    /// Read-only access to in-flight campaign state.
     pub fn campaigns(&self) -> &BTreeMap<KillChainId, CampaignState> {
         &self.campaigns
     }

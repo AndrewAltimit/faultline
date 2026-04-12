@@ -577,7 +577,7 @@ mod tests {
         );
     }
 
-    // -- Phase 5: collect_snapshots underlying logic --------------------
+    // -- collect_snapshots underlying logic ----------------------------
 
     #[test]
     fn monte_carlo_with_collect_snapshots_populates_snapshots() {
@@ -682,7 +682,7 @@ mod tests {
         }
     }
 
-    // -- Phase 5: sensitivity analysis underlying logic ------------------
+    // -- sensitivity analysis underlying logic -------------------------
 
     #[test]
     fn sensitivity_sweep_through_wasm_path() {

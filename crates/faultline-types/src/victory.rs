@@ -29,7 +29,7 @@ pub enum VictoryType {
         trust_below: f64,
     },
     PeaceSettlement,
-    /// A non-kinetic metric crosses a threshold (Phase 6.6).
+    /// A non-kinetic metric crosses a threshold.
     ///
     /// Metric names are: `information_dominance`, `institutional_erosion`,
     /// `coercion_pressure`, `political_cost`.

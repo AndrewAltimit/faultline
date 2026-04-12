@@ -69,13 +69,13 @@ pub struct CampaignState {
     pub detection_accumulation: BTreeMap<PhaseId, f64>,
     /// Whether the defender has been alerted on any phase in this chain.
     pub defender_alerted: bool,
-    /// Dollar outlays (Phase 6.2).
+    /// Dollar outlays.
     pub attacker_spend: f64,
     pub defender_spend: f64,
     /// Accumulated attribution confidence `[0, 1]` that the defender
     /// has developed about the attacker.
     pub attribution_confidence: f64,
-    /// Non-kinetic metric accumulators (Phase 6.6).
+    /// Non-kinetic metric accumulators.
     pub information_dominance: f64,
     pub institutional_erosion: f64,
     pub coercion_pressure: f64,
@@ -310,7 +310,7 @@ fn activate_ready_phases(
 
     for pid in to_activate {
         if let Some(phase) = chain.phases.get(&pid) {
-            // Budget check (Phase 6.2): if attacker would overspend,
+            // Budget check: if attacker would overspend,
             // the phase cannot begin and is marked Failed. We still
             // resolve branches so that any `OnFailure` branch defined
             // on this phase (typically the entry phase) can activate

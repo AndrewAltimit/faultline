@@ -1,5 +1,6 @@
-//! Integration tests for Phase 2 features: doctrine, event chains,
-//! tech-terrain modifiers, civilian activation, and fog of war.
+//! Integration tests covering doctrine, event chains, tech-terrain
+//! modifiers, civilian activation, fog of war, kill chains, and
+//! tick-stepping semantics.
 
 use std::collections::BTreeMap;
 
@@ -229,7 +230,7 @@ fn base_scenario() -> Scenario {
 }
 
 // -----------------------------------------------------------------------
-// Phase 6.1: Campaign / kill chain tests
+// Campaign / kill chain tests
 // -----------------------------------------------------------------------
 
 fn campaign_scenario() -> Scenario {
@@ -2064,7 +2065,7 @@ fn civilian_activation_noncooperation_reduces_controller_resources() {
 }
 
 // -----------------------------------------------------------------------
-// Phase 4: Tick-stepping integration tests
+// Tick-stepping integration tests
 // These mirror WasmEngine usage: tick_n batches, snapshot capture,
 // event accumulation, and is_finished behavior.
 // -----------------------------------------------------------------------

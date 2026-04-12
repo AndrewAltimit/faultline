@@ -802,7 +802,7 @@ rate = 3.0
 # Events — Kill Chain Phases
 # ============================================================================
 
-# --- Phase 1: Covert Sensor Emplacement (Scenario 7) ---
+# --- Covert Sensor Emplacement (Scenario 7) ---
 # T+0 to T+30: Plant solar-powered sensor nodes on target buildings.
 # Cost: ~$500. Detection risk: Very low. Always succeeds in current defensive posture.
 
@@ -833,7 +833,7 @@ delta = -0.5  # $500 in hardware
 effect = "Narrative"
 text = "10 covert sensor nodes emplaced on buildings surrounding target facilities. Solar-sustained, transmitting via anonymous LTE. No physical evidence at target locations."
 
-# --- Phase 1b: Pattern of Life Acquired ---
+# --- Pattern of Life Acquired ---
 # T+30 to T+60: Sensors collect 30 days of continuous surveillance.
 
 [events.pattern_of_life_acquired]
@@ -866,7 +866,7 @@ damage = 0.1  # Staff device ecosystem is being mapped
 effect = "Narrative"
 text = "Complete pattern-of-life intelligence on 50+ staff members acquired via covert sensors. Security shift rotations, vehicle IDs, and unpublished schedules documented."
 
-# --- Phase 2: Wireless Exploitation Campaign (Scenario 6) ---
+# --- Wireless Exploitation Campaign (Scenario 6) ---
 # T+45 to T+90: Deploy rogue APs at staff-frequented off-site locations.
 
 [events.wireless_recon_complete]
@@ -900,7 +900,7 @@ delta = -2.0  # $2K for RF survey equipment
 effect = "Narrative"
 text = "Passive wireless reconnaissance complete. 50+ staff devices profiled. Auto-connect SSIDs identified for rogue AP deployment."
 
-# --- Phase 2b: Credential Harvest ---
+# --- Credential Harvest ---
 
 [events.credential_harvest]
 id = "credential_harvest"
@@ -939,7 +939,7 @@ delta = 0.05
 effect = "Narrative"
 text = "Organizational credentials captured from 15+ staff personal devices at off-site locations. SSO tokens, VPN configs, and email access acquired via rogue AP captive portals."
 
-# --- Phase 3: Network Penetration ---
+# --- Network Penetration ---
 
 [events.network_access_achieved]
 id = "network_access_achieved"
@@ -987,7 +987,7 @@ delta = 0.10
 effect = "Narrative"
 text = "Full organizational network access achieved. C-UAS deployment maps, protective detail schedules, and internal security protocols exfiltrated. Defender is transparent to attacker."
 
-# --- Phase 4: Decision Point — Coercion or Kinetic ---
+# --- Decision Point — Coercion or Kinetic ---
 # The threat actor now has complete intelligence. Two paths diverge.
 
 [events.coercion_proof_published]

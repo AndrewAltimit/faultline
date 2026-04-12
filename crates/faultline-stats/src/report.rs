@@ -1,7 +1,7 @@
 //! ETRA-style Markdown report generation from Monte Carlo summaries.
 //!
-//! Phase 6.5 deliverable — produces a structured document suitable for
-//! pasting into research write-ups. Consumes only types from
+//! Produces a structured document suitable for pasting into research
+//! write-ups. Consumes only types from
 //! `faultline_types` so it works against any summary source (native CLI,
 //! WASM, or stored JSON).
 

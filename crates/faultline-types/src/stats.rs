@@ -40,7 +40,7 @@ pub struct RunResult {
     pub snapshots: Vec<StateSnapshot>,
     /// Complete log of every event firing across all ticks.
     pub event_log: Vec<EventRecord>,
-    /// Per-kill-chain terminal report (Phase 6.1). Empty when the
+    /// Per-kill-chain terminal report. Empty when the
     /// scenario has no kill chains.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
@@ -93,13 +93,13 @@ pub struct MonteCarloSummary {
     pub regional_control: BTreeMap<RegionId, BTreeMap<FactionId, f64>>,
     /// Probability (0.0–1.0) of each event firing across all runs.
     pub event_probabilities: BTreeMap<EventId, f64>,
-    /// Per-kill-chain phase-level aggregation (Phase 6.1).
+    /// Per-kill-chain phase-level aggregation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub campaign_summaries: BTreeMap<KillChainId, CampaignSummary>,
-    /// Feasibility matrix rows per kill chain (Phase 6.5).
+    /// Feasibility matrix rows per kill chain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub feasibility_matrix: Vec<FeasibilityRow>,
-    /// Doctrinal seam analysis scores per kill chain (Phase 6.4).
+    /// Doctrinal seam analysis scores per kill chain.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub seam_scores: BTreeMap<KillChainId, SeamScore>,
 }
@@ -139,7 +139,7 @@ pub struct PhaseStats {
     pub mean_completion_tick: Option<f64>,
 }
 
-/// Feasibility matrix row for one kill chain (Phase 6.5).
+/// Feasibility matrix row for one kill chain.
 ///
 /// Each field is scored `[0, 1]` with a qualitative confidence rating
 /// derived from variance across Monte Carlo runs.
@@ -183,8 +183,7 @@ pub enum ConfidenceLevel {
 }
 
 /// Doctrinal seam score — how much of the attack success probability
-/// is attributable to exploiting gaps between defensive domains
-/// (Phase 6.4).
+/// is attributable to exploiting gaps between defensive domains.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SeamScore {
     pub chain_id: KillChainId,
