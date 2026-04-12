@@ -311,13 +311,18 @@ fn activate_ready_phases(
     for pid in to_activate {
         if let Some(phase) = chain.phases.get(&pid) {
             // Budget check (Phase 6.2): if attacker would overspend,
-            // the phase cannot begin and is marked Failed.
+            // the phase cannot begin and is marked Failed. We still
+            // resolve branches so that any `OnFailure` branch defined
+            // on this phase (typically the entry phase) can activate
+            // a cheaper fallback path instead of leaving the chain
+            // permanently stuck.
             if let Some(cap) = attacker_budget
                 && campaign.attacker_spend + phase.cost.attacker_dollars > cap
             {
                 campaign
                     .phase_status
-                    .insert(pid, PhaseStatus::Failed { tick });
+                    .insert(pid.clone(), PhaseStatus::Failed { tick });
+                resolve_branches(campaign, chain, &pid, tick, rng, attacker_budget);
                 continue;
             }
             let duration = sample_duration(phase, rng);

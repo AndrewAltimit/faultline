@@ -2848,8 +2848,13 @@ export function insertCardIntoToml(tomlText, card, grantFactions = []) {
 
   const block = `\n${cardToToml(card)}\n`;
 
-  // Anchor 1: insert after the last existing [technology.<something>] block.
-  const techBlockRegex = /\[technology\.[a-zA-Z0-9_]+\][\s\S]*?(?=\n\[[^\]]+\]|\n*$)/g;
+  // Anchor 1: insert after the last existing [technology.<something>]
+  // block (including any trailing array-of-tables sub-entries like
+  // [[technology.<id>.effects]]). The lookahead excludes `[[...]]`
+  // array-of-tables headers so it does not truncate a card in the
+  // middle of its effects table.
+  const techBlockRegex =
+    /\[technology\.[a-zA-Z0-9_]+\](?:[\s\S]*?)(?=\n\[(?!\[)[^\]]+\]|\n*$)/g;
   let lastMatch = null;
   let m;
   while ((m = techBlockRegex.exec(tomlText)) !== null) {

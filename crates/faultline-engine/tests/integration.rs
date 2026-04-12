@@ -380,6 +380,115 @@ fn campaign_budget_cap_blocks_overspend() {
 }
 
 #[test]
+fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, DefensiveDomain, KillChain, PhaseBranch, PhaseCost,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::stats::PhaseOutcome;
+
+    // Build a chain where the entry phase is too expensive for the
+    // attacker budget but has an `OnFailure` branch to a cheaper
+    // fallback phase. Before the fix, the chain was permanently stuck
+    // because resolve_branches was never called on budget-blocked
+    // entry phases.
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 100;
+    scenario.attacker_budget = Some(100.0);
+
+    let chain_id = KillChainId::from("fallback_chain");
+    let expensive = PhaseId::from("expensive_strike");
+    let cheap = PhaseId::from("cheap_fallback");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        expensive.clone(),
+        CampaignPhase {
+            id: expensive.clone(),
+            name: "Expensive Strike".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 2,
+            max_duration: 2,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 500.0, // over cap
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+            },
+            targets_domains: vec![DefensiveDomain::PhysicalSecurity],
+            outputs: vec![],
+            branches: vec![PhaseBranch {
+                condition: BranchCondition::OnFailure,
+                next_phase: cheap.clone(),
+            }],
+        },
+    );
+    phases.insert(
+        cheap.clone(),
+        CampaignPhase {
+            id: cheap.clone(),
+            name: "Cheap Fallback".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 2,
+            max_duration: 2,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 10.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+            },
+            targets_domains: vec![DefensiveDomain::PhysicalSecurity],
+            outputs: vec![],
+            branches: vec![],
+        },
+    );
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Fallback chain".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: expensive.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = faultline_engine::Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+
+    let report = result
+        .campaign_reports
+        .get(&chain_id)
+        .expect("report present");
+
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&expensive),
+            Some(PhaseOutcome::Failed { .. })
+        ),
+        "expensive entry phase should be marked Failed due to budget cap"
+    );
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&cheap),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "cheap fallback should fire via OnFailure branch after budget block"
+    );
+}
+
+#[test]
 fn campaign_deterministic_detection() {
     let mut scenario = campaign_scenario();
     // Force high detection.
