@@ -84,7 +84,12 @@ export function detectMap(scenarioRegions) {
     const overlap = rids.filter((r) => libIds.includes(r)).length;
     if (overlap < 3) continue;
     const ratio = overlap / rids.length;
-    if (ratio > bestScore || (ratio === bestScore && overlap > bestOverlap)) {
+    // Epsilon comparison to sidestep float equality: in practice `ratio`
+    // is a rational with `rids.length` denominator so equal numerators
+    // are bit-exact, but keep the guard to stay robust if this ever
+    // changes to a weighted score.
+    const EPS = 1e-9;
+    if (ratio > bestScore + EPS || (Math.abs(ratio - bestScore) < EPS && overlap > bestOverlap)) {
       bestScore = ratio;
       bestOverlap = overlap;
       bestKey = key;

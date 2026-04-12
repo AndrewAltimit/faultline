@@ -16,6 +16,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INPUT = path.join(__dirname, 'countries.geojson');
 const OUTPUT = path.join(__dirname, '..', '..', 'site', 'js', 'app', 'generated-regions.js');
 
+if (!fs.existsSync(INPUT)) {
+  console.error(`Missing input: ${INPUT}
+
+Fetch the source GeoJSON first (not committed to the repo due to size):
+
+  curl -L -o tools/build-maps/countries.geojson \\
+    https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson
+`);
+  process.exit(1);
+}
+
 const gj = JSON.parse(fs.readFileSync(INPUT, 'utf8'));
 
 // Ramer-Douglas-Peucker simplification (2D, lon/lat treated as Euclidean — fine
@@ -249,10 +260,23 @@ function clipRing(ring, clipLon, clipLat) {
     }
     if (out.length === 0) return null;
   }
+  // Drop degenerate rings (2-point output can survive when RDP + clipping
+  // collapse a polygon to a sliver).
+  if (out.length < 3) return null;
   return out;
 }
 function interp(a, b, axis, val) {
-  const t = (val - a[axis]) / (b[axis] - a[axis]);
+  const denom = b[axis] - a[axis];
+  // Segment parallel to the clip plane: the intersection is undefined, so
+  // return a point on the plane at one endpoint's other-axis coordinate.
+  // Sutherland–Hodgman tolerates this because parallel segments either lie
+  // entirely on one side of the plane (no intersection is ever requested)
+  // or exactly on it (the endpoints themselves are the result).
+  if (denom === 0) {
+    const other = 1 - axis;
+    return axis === 0 ? [val, a[other]] : [a[other], val];
+  }
+  const t = (val - a[axis]) / denom;
   const other = 1 - axis;
   const o = a[other] + t * (b[other] - a[other]);
   return axis === 0 ? [val, o] : [o, val];
