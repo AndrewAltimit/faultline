@@ -1,6 +1,6 @@
 # Faultline Roadmap
 
-Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — compound kill chains and accurate regional maps landed.
+Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — compound kill chains, accurate regional maps, persistent covert surveillance, and European energy-infrastructure sabotage have landed.
 
 ---
 
@@ -158,11 +158,11 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — co
 - [ ] Drone-assisted coup facilitation (ETRA Scenario 2)
 - [ ] Revolutionary infrastructure seizure with drone ISR (ETRA Scenario 3)
 - [ ] Asymmetric coercion campaign — proof-of-capability escalation (ETRA Scenario 4)
-- [ ] Persistent covert surveillance network (ETRA Scenario 5)
+- [x] Persistent covert surveillance network (ETRA Scenario 5) — `scenarios/persistent_covert_surveillance.toml` models a six-phase long-dwell commodity-sensor campaign (open-source recon → emplacement → long dwell → wireless collection → exfil/aggregation → public disclosure) against a notional federal protective posture. Parameters derived from published hobbyist BOMs (ESP32 nodes, solar + LiPo buffer), GAO/CISA public coordination reports, and RAND public research on commodity surveillance. Produces detection window, attribution confidence, and a multi-hundred-× cost-asymmetry ratio in `report.md`.
 - [ ] Cyber-physical network exploitation via drone-delivered rogue APs (ETRA Scenario 6)
 - [ ] Persistent covert sensor emplacement with solar-sustained nodes (ETRA Scenario 7)
 - [ ] Taiwan Strait crisis — multi-domain great power competition
-- [ ] European energy infrastructure sabotage
+- [x] European energy infrastructure sabotage — `scenarios/europe_energy_sabotage.toml` models a four-phase cross-border sabotage campaign (open-source target survey → commercial-cover offshore staging with AIS spoofing → commodity ROV subsea emplacement → coordinated disruption event) targeting ENTSO-E corridors and Baltic / North Sea subsea infrastructure. Parameters from ENTSO-E public TSO reports, IISS Military Balance, CISA/ENISA public advisories, RAND public subsea vulnerability research, and open academic literature on AIS spoofing. Produces ~970× cost-asymmetry ratio and seam-exploitation scoring across physical, network, counter-UAS, and supply-chain defensive domains.
 - [ ] Arctic sovereignty disputes with drone swarm force projection
 - [ ] Domestic critical infrastructure ransomware + physical drone attack convergence
 

@@ -9,17 +9,25 @@ The canonical Rust definitions live in `crates/faultline-types/src/`. If this do
 ## Top-level layout
 
 ```toml
+# Optional scenario-level budget caps — must appear before the first
+# section header so TOML does not attach them to [meta].
+attacker_budget = 250_000.0
+defender_budget = 50_000_000.0
+
 [meta]              # name, description, author, version, tags
 [map]               # source, regions, infrastructure, terrain
 [factions.<id>]     # one table per faction
 [technology.<id>]   # one table per tech card (may be empty)
 [political_climate] # tension, trust, media, segments, modifiers
 [events.<id>]       # one table per event (may be empty)
+[kill_chains.<id>]  # multi-phase campaigns (may be empty)
 [simulation]        # max_ticks, tick_duration, seed, attrition
 [victory_conditions.<id>]  # one table per victory condition
 ```
 
 All map keys (`<id>`) are strings. The engine uses `BTreeMap` everywhere, so iteration order is alphabetical and deterministic — pick IDs that sort sensibly if order matters for debugging.
+
+The `attacker_budget` / `defender_budget` scenario-level fields cap the total dollar spend accumulated across all kill-chain phases. Phases whose per-phase costs would exceed the budget cannot activate and are marked `Failed`. See [`[kill_chains.<id>]`](#kill_chainsid-multi-phase-campaigns) below.
 
 ---
 
@@ -378,6 +386,124 @@ Tagged enum (`effect = "..."`):
 
 ---
 
+## `[kill_chains.<id>]` — multi-phase campaigns
+
+A kill chain is an ordered, branching sequence of [`CampaignPhase`](#kill_chainsidphasesphase_id) entries modeling an adversary campaign against a target faction. Execution begins at `entry_phase`; subsequent phases are reached by resolving branches at phase completion. The phase graph must terminate — a phase with no branches ends the chain.
+
+Kill chains are the primary analytical signal for ETRA-style defensive wargaming: Monte Carlo runs aggregate per-phase success / failure / detection probabilities, cost asymmetry ratios, attribution confidence, and defensive-domain seam exploitation into the scenario's feasibility matrix and Markdown report.
+
+```toml
+[kill_chains.alpha]
+id = "alpha"
+name = "Campaign Alpha — Intelligence-Led Pressure"
+description = "Patient pressure-campaign archetype."
+attacker = "insider_cell"
+target = "federal_security"
+entry_phase = "alpha_sensor_emplacement"
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Must equal the table key |
+| `name` | string | Human-readable campaign name |
+| `description` | string | Free-form; describe the archetype, not tradecraft |
+| `attacker` | faction id | Faction executing the campaign |
+| `target` | faction id | Faction being targeted |
+| `entry_phase` | phase id | Phase graph entry point |
+| `phases` | table | One entry per `[kill_chains.<id>.phases.<phase_id>]` |
+
+### `[kill_chains.<id>.phases.<phase_id>]`
+
+A single phase. Each active tick rolls independently for detection (accumulating exposure); at completion the phase rolls success against `base_success_probability` modified by intelligence gained from prerequisite phases.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Must equal the inner table key |
+| `name` | string | |
+| `description` | string | |
+| `prerequisites` | `[phase_id]` | Prior phases that must succeed first (default: `[]`) |
+| `base_success_probability` | f64 | In `[0, 1]` |
+| `min_duration` | u32 | Minimum active ticks |
+| `max_duration` | u32 | Maximum active ticks |
+| `detection_probability_per_tick` | f64 | Per-active-tick detection roll (default: `0.0`) |
+| `prerequisite_success_boost` | f64 | Additive boost applied per successful prerequisite (default: `0.0`) |
+| `attribution_difficulty` | f64 | `0.0` = trivially attributable, `1.0` = opaque (default: `0.5`) |
+| `cost` | `PhaseCost` | See below (default: zero) |
+| `targets_domains` | `[DefensiveDomain]` | Domains whose seams this phase exploits |
+| `outputs` | `[PhaseOutput]` | Effects applied on success |
+| `branches` | `[PhaseBranch]` | Next-phase transitions |
+
+### `PhaseCost`
+
+```toml
+[kill_chains.alpha.phases.alpha_sensor_emplacement.cost]
+attacker_dollars = 500.0
+defender_dollars = 4_000_000.0
+attacker_resources = 0.5
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `attacker_dollars` | f64 | Accumulated against scenario-level `attacker_budget` |
+| `defender_dollars` | f64 | Accumulated against scenario-level `defender_budget` |
+| `attacker_resources` | f64 | Scenario-resource units consumed from the attacker's pool |
+
+The ratio `mean defender spend / mean attacker spend` across a Monte Carlo batch is the **cost asymmetry ratio** surfaced in `CampaignSummary.cost_asymmetry_ratio`, the feasibility matrix, and the generated Markdown report.
+
+### `PhaseOutput`
+
+A tagged enum of effects applied when a phase completes successfully. One `[[kill_chains.<id>.phases.<phase_id>.outputs]]` array-of-tables entry per effect.
+
+| Variant | Fields | Notes |
+|---|---|---|
+| `IntelligenceGain` | `amount` (f64) | Boosts subsequent phases beyond `prerequisite_success_boost` |
+| `InfraDamage` | `region` (id), `factor` (f64) | Damages infrastructure in the named region |
+| `TensionDelta` | `delta` (f64) | Changes `political_climate.tension` |
+| `MoraleDelta` | `faction` (id), `delta` (f64) | Changes faction morale |
+| `InformationDominance` | `delta` (f64) | Non-kinetic accumulator |
+| `InstitutionalErosion` | `delta` (f64) | Non-kinetic accumulator; also erodes institution loyalty proportionally |
+| `CoercionPressure` | `delta` (f64) | Non-kinetic accumulator |
+| `PoliticalCost` | `delta` (f64) | Non-kinetic accumulator |
+| `Custom` | `key` (string), `value` (f64) | Generic analytical metric |
+
+Each entry is written as:
+
+```toml
+[[kill_chains.alpha.phases.alpha_pressure_disclosure.outputs]]
+type = "CoercionPressure"
+delta = 0.45
+```
+
+### `PhaseBranch`
+
+Branches are evaluated in declaration order; the first matching branch wins. A phase with no branches terminates the chain.
+
+```toml
+[[kill_chains.alpha.phases.alpha_sensor_emplacement.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "alpha_pattern_of_life"
+
+[[kill_chains.alpha.phases.alpha_sensor_emplacement.branches]]
+condition = { type = "OnDetection" }
+next_phase = "alpha_abort"
+```
+
+| `condition.type` | Extra fields | Notes |
+|---|---|---|
+| `OnSuccess` | — | Phase succeeded |
+| `OnFailure` | — | Phase failed outright |
+| `OnDetection` | — | Defender detected the operation while active |
+| `Probability` | `p` (f64) | Independent roll against `p` |
+| `Always` | — | Terminal fallback |
+
+### `DefensiveDomain`
+
+Categories of defensive discipline used for doctrinal-seam scoring. A phase with ≥2 domains in `targets_domains` is counted as cross-domain; the share of successful cross-domain phases appears in `MonteCarloSummary.seam_scores`.
+
+Variants: `PhysicalSecurity`, `NetworkSecurity`, `CounterUAS`, `ExecutiveProtection`, `CivilianEmergency`, `SignalsIntelligence`, `InsiderThreat`, `SupplyChainSecurity`, `Custom(<string>)`.
+
+---
+
 ## `[simulation]`
 
 | Field | Type | Notes |
@@ -427,7 +553,10 @@ threshold = 0.75
 | `HoldRegions` | `regions` (array), `duration` (ticks) |
 | `InstitutionalCollapse` | `trust_below` |
 | `PeaceSettlement` | — |
+| `NonKineticThreshold` | `metric`, `threshold` |
 | `Custom` | `variable`, `threshold`, `above` |
+
+`NonKineticThreshold.metric` accepts the same identifiers as the non-kinetic accumulators emitted by kill-chain `PhaseOutput`: `InformationDominance`, `InstitutionalErosion`, `CoercionPressure`, `PoliticalCost`. The condition fires when the target metric crosses `threshold`.
 
 ---
 
@@ -444,8 +573,21 @@ If you depend on deterministic output, set `seed` explicitly. If `seed` is omitt
 
 ## See also
 
-- [`scenarios/tutorial_symmetric.toml`](../scenarios/tutorial_symmetric.toml) — minimal working example
-- [`scenarios/tutorial_asymmetric.toml`](../scenarios/tutorial_asymmetric.toml) — events, tech, segments, fog of war
-- [`scenarios/us_institutional_fracture.toml`](../scenarios/us_institutional_fracture.toml) — full 4-faction example
+**Tutorial scenarios:**
+- [`scenarios/tutorial_symmetric.toml`](../scenarios/tutorial_symmetric.toml) — minimal working example; two equal factions on a 2×2 grid, pure Lanchester attrition
+- [`scenarios/tutorial_asymmetric.toml`](../scenarios/tutorial_asymmetric.toml) — events, tech cards, population segments, fog of war
+
+**Full multi-faction scenarios:**
+- [`scenarios/us_institutional_fracture.toml`](../scenarios/us_institutional_fracture.toml) — 4-faction institutional crisis across 8 US macro-regions
+- [`scenarios/europe_eastern_flank.toml`](../scenarios/europe_eastern_flank.toml) — NATO / Russia / Ukraine on the bundled Europe map; drone-swarm tech cards
+- [`scenarios/drone_swarm_destabilization.toml`](../scenarios/drone_swarm_destabilization.toml) — multi-phase autonomous drone swarm campaign exercising sensor emplacement through coercion
+- [`scenarios/capabilities_demo.toml`](../scenarios/capabilities_demo.toml) — sandbox exercising every tech card in the bundled Drone Threat Library
+
+**Kill-chain wargames:**
+- [`scenarios/compound_kill_chains.toml`](../scenarios/compound_kill_chains.toml) — three concurrent archetypal red-team campaigns (intelligence-led pressure, non-lethal capability demonstration, cyber-physical convergence) against a notional integrated defender
+- [`scenarios/persistent_covert_surveillance.toml`](../scenarios/persistent_covert_surveillance.toml) — six-phase long-dwell commodity-sensor campaign against a notional federal protective posture
+- [`scenarios/europe_energy_sabotage.toml`](../scenarios/europe_energy_sabotage.toml) — four-phase cross-border campaign against European ENTSO-E / Baltic subsea energy corridors
+
+**Source references:**
 - [`crates/faultline-types/src/`](../crates/faultline-types/src/) — canonical Rust definitions
 - [LEGAL.md](../LEGAL.md) — sourcing and export-control policy

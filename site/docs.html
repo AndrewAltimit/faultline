@@ -480,16 +480,14 @@ console.log(results.outcomes);</code></pre>
 
           <h3>Workflows</h3>
           <ul>
-            <li><strong>ci.yml</strong> &mdash; Runs on push to main. Full format, lint, test, build, cargo-deny pipeline.</li>
-            <li><strong>main-ci.yml</strong> &mdash; Runs on main push and tags. Same CI stages plus auto-creates GitHub issues on failure. Deploys <code>site/</code> to GitHub Pages.</li>
-            <li><strong>pr-validation.yml</strong> &mdash; Runs on pull requests. CI stages + Gemini AI review (primary) + automated agent fix iterations (max 5, extendable with <code>[CONTINUE]</code> comment). Add <code>no-auto-fix</code> label to disable automated fixes.</li>
+            <li><strong>main-ci.yml</strong> &mdash; Runs on main push and tags. Full format, lint, test, build, cargo-deny pipeline plus WASM build via wasm-pack and GitHub Pages deployment. Auto-creates GitHub issues on failure.</li>
+            <li><strong>pr-validation.yml</strong> &mdash; Runs on pull requests. CI stages + Claude Code AI review (security + quality profiles) + OpenRouter / Qwen 3.5 general review + automated agent fix iterations (max 5, extendable with <code>[CONTINUE]</code> comment). Add <code>no-auto-fix</code> label to disable automated fixes.</li>
           </ul>
 
           <h3>Advisory Exemptions</h3>
-          <p>Two advisories are currently exempted in <code>deny.toml</code>:</p>
+          <p>One advisory is currently exempted in <code>deny.toml</code>:</p>
           <ul>
-            <li><code>RUSTSEC-2025-0141</code> &mdash; bincode unmaintained (migration planned)</li>
-            <li><code>RUSTSEC-2026-0007</code> &mdash; bytes integer overflow (update pending)</li>
+            <li><code>RUSTSEC-2026-0097</code> &mdash; rand 0.8 unsound only when a custom logger calls <code>rand::rng()</code> and <code>ThreadRng</code> reseeds inside that logger. Faultline uses <code>tracing</code> (not <code>log</code>) and never calls rand from a logging context; upgrading to rand 0.9+ requires coordinated updates across rand_chacha, rand_distr, statrs, and nalgebra and is planned for a future release.</li>
           </ul>
         </section>
 
