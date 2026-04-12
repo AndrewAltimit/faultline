@@ -80,6 +80,11 @@ export class Editor {
     AppState.toml = toml;
   }
 
+  /** Public entry point so bootstrap can auto-load the default scenario. */
+  loadAndRun() {
+    this._loadAndRun();
+  }
+
   async _loadPreset() {
     const path = this.presetSelect.value;
     if (!path) return;
