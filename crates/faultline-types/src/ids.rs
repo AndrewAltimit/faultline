@@ -36,3 +36,6 @@ define_id!(EventId);
 define_id!(VictoryId);
 define_id!(InstitutionId);
 define_id!(SegmentId);
+define_id!(KillChainId);
+define_id!(PhaseId);
+define_id!(DomainId);

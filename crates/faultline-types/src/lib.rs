@@ -1,3 +1,4 @@
+pub mod campaign;
 pub mod error;
 pub mod events;
 pub mod faction;

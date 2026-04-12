@@ -222,7 +222,183 @@ fn base_scenario() -> Scenario {
             snapshot_interval: 10,
         },
         victory_conditions,
+        kill_chains: BTreeMap::new(),
+        defender_budget: None,
+        attacker_budget: None,
     }
+}
+
+// -----------------------------------------------------------------------
+// Phase 6.1: Campaign / kill chain tests
+// -----------------------------------------------------------------------
+
+fn campaign_scenario() -> Scenario {
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, DefensiveDomain, KillChain, PhaseBranch, PhaseCost,
+        PhaseOutput,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 200;
+
+    let chain_id = KillChainId::from("test_chain");
+    let recon = PhaseId::from("recon");
+    let strike = PhaseId::from("strike");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0, // deterministic success
+            min_duration: 3,
+            max_duration: 3,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.9,
+            cost: PhaseCost {
+                attacker_dollars: 100.0,
+                defender_dollars: 50_000.0,
+                attacker_resources: 0.0,
+            },
+            targets_domains: vec![DefensiveDomain::SignalsIntelligence],
+            outputs: vec![PhaseOutput::TensionDelta { delta: 0.05 }],
+            branches: vec![PhaseBranch {
+                condition: BranchCondition::OnSuccess,
+                next_phase: strike.clone(),
+            }],
+        },
+    );
+    phases.insert(
+        strike.clone(),
+        CampaignPhase {
+            id: strike.clone(),
+            name: "Strike".into(),
+            description: String::new(),
+            prerequisites: vec![recon.clone()],
+            base_success_probability: 1.0,
+            min_duration: 2,
+            max_duration: 2,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.3,
+            cost: PhaseCost {
+                attacker_dollars: 500.0,
+                defender_dollars: 2_000_000.0,
+                attacker_resources: 0.0,
+            },
+            targets_domains: vec![
+                DefensiveDomain::PhysicalSecurity,
+                DefensiveDomain::CounterUAS,
+            ],
+            outputs: vec![PhaseOutput::TensionDelta { delta: 0.1 }],
+            branches: vec![],
+        },
+    );
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id,
+            name: "Test Chain".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon,
+            phases,
+        },
+    );
+
+    scenario
+}
+
+#[test]
+fn campaign_deterministic_phases_succeed() {
+    let scenario = campaign_scenario();
+    let mut engine = faultline_engine::Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+
+    let report = result
+        .campaign_reports
+        .get(&faultline_types::ids::KillChainId::from("test_chain"))
+        .expect("report present");
+
+    use faultline_types::stats::PhaseOutcome;
+    assert!(
+        matches!(
+            report
+                .phase_outcomes
+                .get(&faultline_types::ids::PhaseId::from("recon")),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "recon should succeed deterministically"
+    );
+    assert!(
+        matches!(
+            report
+                .phase_outcomes
+                .get(&faultline_types::ids::PhaseId::from("strike")),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "strike should succeed deterministically via OnSuccess branch"
+    );
+    assert!(!report.defender_alerted, "no detection configured");
+    assert!(
+        (report.attacker_spend - 600.0).abs() < 1e-6,
+        "attacker spend should sum phase costs"
+    );
+    assert!(
+        (report.defender_spend - 2_050_000.0).abs() < 1e-6,
+        "defender spend should sum phase costs"
+    );
+}
+
+#[test]
+fn campaign_budget_cap_blocks_overspend() {
+    let mut scenario = campaign_scenario();
+    scenario.attacker_budget = Some(400.0); // cannot afford strike (500)
+    let mut engine = faultline_engine::Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+
+    let chain_id = faultline_types::ids::KillChainId::from("test_chain");
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+
+    use faultline_types::stats::PhaseOutcome;
+    assert!(
+        matches!(
+            report
+                .phase_outcomes
+                .get(&faultline_types::ids::PhaseId::from("strike")),
+            Some(PhaseOutcome::Failed { .. })
+        ),
+        "strike should be marked Failed when budget cap blocks activation"
+    );
+}
+
+#[test]
+fn campaign_deterministic_detection() {
+    let mut scenario = campaign_scenario();
+    // Force high detection.
+    let recon_pid = faultline_types::ids::PhaseId::from("recon");
+    let chain_id = faultline_types::ids::KillChainId::from("test_chain");
+    if let Some(chain) = scenario.kill_chains.get_mut(&chain_id)
+        && let Some(phase) = chain.phases.get_mut(&recon_pid)
+    {
+        phase.detection_probability_per_tick = 1.0;
+    }
+    let mut engine = faultline_engine::Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+    assert!(report.defender_alerted, "high dp should trigger detection");
+    assert!(
+        report.attribution_confidence > 0.0,
+        "attribution should be set on detection"
+    );
 }
 
 // -----------------------------------------------------------------------

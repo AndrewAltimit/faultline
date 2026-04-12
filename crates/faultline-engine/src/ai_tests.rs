@@ -117,6 +117,7 @@ fn make_ai_test_state() -> SimulationState {
         events_fired: std::collections::BTreeSet::new(),
         events_fired_this_tick: vec![],
         snapshots: vec![],
+        non_kinetic: Default::default(),
     }
 }
 

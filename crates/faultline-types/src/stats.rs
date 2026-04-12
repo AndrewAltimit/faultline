@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EventId, FactionId, InfraId, RegionId};
+use crate::ids::{EventId, FactionId, InfraId, KillChainId, PhaseId, RegionId};
 use crate::strategy::FactionState;
 
 /// Configuration for Monte Carlo simulation runs.
@@ -40,6 +40,38 @@ pub struct RunResult {
     pub snapshots: Vec<StateSnapshot>,
     /// Complete log of every event firing across all ticks.
     pub event_log: Vec<EventRecord>,
+    /// Per-kill-chain terminal report (Phase 6.1). Empty when the
+    /// scenario has no kill chains.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
+}
+
+/// End-of-run snapshot of a single kill chain's resolution.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CampaignReport {
+    pub chain_id: KillChainId,
+    /// Final status of each phase in the chain.
+    pub phase_outcomes: BTreeMap<PhaseId, PhaseOutcome>,
+    /// Accumulated detection probability per phase.
+    pub detection_accumulation: BTreeMap<PhaseId, f64>,
+    pub defender_alerted: bool,
+    pub attacker_spend: f64,
+    pub defender_spend: f64,
+    pub attribution_confidence: f64,
+    pub information_dominance: f64,
+    pub institutional_erosion: f64,
+    pub coercion_pressure: f64,
+    pub political_cost: f64,
+}
+
+/// The terminal state of a single campaign phase.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum PhaseOutcome {
+    Pending,
+    Active,
+    Succeeded { tick: u32 },
+    Failed { tick: u32 },
+    Detected { tick: u32 },
 }
 
 /// The outcome of a single run.
@@ -61,6 +93,110 @@ pub struct MonteCarloSummary {
     pub regional_control: BTreeMap<RegionId, BTreeMap<FactionId, f64>>,
     /// Probability (0.0–1.0) of each event firing across all runs.
     pub event_probabilities: BTreeMap<EventId, f64>,
+    /// Per-kill-chain phase-level aggregation (Phase 6.1).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub campaign_summaries: BTreeMap<KillChainId, CampaignSummary>,
+    /// Feasibility matrix rows per kill chain (Phase 6.5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feasibility_matrix: Vec<FeasibilityRow>,
+    /// Doctrinal seam analysis scores per kill chain (Phase 6.4).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub seam_scores: BTreeMap<KillChainId, SeamScore>,
+}
+
+/// Aggregate statistics for one kill chain across all runs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CampaignSummary {
+    pub chain_id: KillChainId,
+    /// Per-phase aggregate outcomes.
+    pub phase_stats: BTreeMap<PhaseId, PhaseStats>,
+    /// Fraction of runs where the chain reached its terminal phase
+    /// with at least one success (any kinetic output delivered).
+    pub overall_success_rate: f64,
+    /// Fraction of runs where the defender was alerted at any point.
+    pub detection_rate: f64,
+    /// Mean attacker dollar outlay across runs.
+    pub mean_attacker_spend: f64,
+    /// Mean defender dollar outlay across runs.
+    pub mean_defender_spend: f64,
+    /// Cost asymmetry ratio: defender_spend / attacker_spend (0 if
+    /// attacker spend is zero).
+    pub cost_asymmetry_ratio: f64,
+    /// Mean attribution confidence (0 = unknown, 1 = definitive).
+    pub mean_attribution_confidence: f64,
+}
+
+/// Aggregate statistics for a single phase across runs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PhaseStats {
+    pub phase_id: PhaseId,
+    pub success_rate: f64,
+    pub failure_rate: f64,
+    pub detection_rate: f64,
+    pub not_reached_rate: f64,
+    /// Mean tick at which the phase resolved (success/fail/detection).
+    /// `None` if no runs reached a terminal state for this phase.
+    pub mean_completion_tick: Option<f64>,
+}
+
+/// Feasibility matrix row for one kill chain (Phase 6.5).
+///
+/// Each field is scored `[0, 1]` with a qualitative confidence rating
+/// derived from variance across Monte Carlo runs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FeasibilityRow {
+    pub chain_id: KillChainId,
+    pub chain_name: String,
+    /// Technology readiness (average success probability across phases).
+    pub technology_readiness: f64,
+    /// Operational complexity (1.0 - shortest-path success probability).
+    pub operational_complexity: f64,
+    /// Probability the operation is detected before completion.
+    pub detection_probability: f64,
+    /// Overall success probability of the full kill chain.
+    pub success_probability: f64,
+    /// Consequence severity (normalized damage + institutional erosion).
+    pub consequence_severity: f64,
+    /// Attribution difficulty (mean `1 - attribution_confidence`).
+    pub attribution_difficulty: f64,
+    /// Cost asymmetry ratio (defender $ / attacker $).
+    pub cost_asymmetry_ratio: f64,
+    /// Confidence ratings based on MC variance.
+    pub confidence: FeasibilityConfidence,
+}
+
+/// Confidence ratings per feasibility factor.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FeasibilityConfidence {
+    pub technology_readiness: ConfidenceLevel,
+    pub operational_complexity: ConfidenceLevel,
+    pub detection_probability: ConfidenceLevel,
+    pub success_probability: ConfidenceLevel,
+    pub consequence_severity: ConfidenceLevel,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfidenceLevel {
+    High,
+    Medium,
+    Low,
+}
+
+/// Doctrinal seam score — how much of the attack success probability
+/// is attributable to exploiting gaps between defensive domains
+/// (Phase 6.4).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeamScore {
+    pub chain_id: KillChainId,
+    /// Count of phases targeting two or more defensive domains.
+    pub cross_domain_phase_count: u32,
+    /// Mean number of distinct defensive domains targeted per phase.
+    pub mean_domains_per_phase: f64,
+    /// Frequency of each domain across the chain.
+    pub domain_frequency: BTreeMap<String, u32>,
+    /// Share of success probability attributable to seam exploitation
+    /// (weighted by cross-domain phase success rates).
+    pub seam_exploitation_share: f64,
 }
 
 /// Descriptive statistics for a distribution.
@@ -140,4 +276,7 @@ pub struct DeltaEncodedRun {
     pub snapshots: Vec<DeltaSnapshot>,
     /// Complete event log preserved through encoding (not delta-encoded).
     pub event_log: Vec<EventRecord>,
+    /// Campaign reports are small — preserved verbatim, not delta-encoded.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
 }

@@ -268,6 +268,9 @@ fn make_test_scenario() -> Scenario {
             snapshot_interval: 10,
         },
         victory_conditions,
+        kill_chains: BTreeMap::new(),
+        defender_budget: None,
+        attacker_budget: None,
     }
 }
 
