@@ -413,7 +413,7 @@ export class Dashboard {
 
   /** Sanitize a color value for safe use in inline styles. */
   _safeColor(color) {
-    if (typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
     return '#7c5bf0';
   }
 }

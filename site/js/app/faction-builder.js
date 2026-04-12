@@ -308,12 +308,12 @@ export class FactionBuilder {
   _esc(str) {
     const div = document.createElement('div');
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;');
   }
 
   /** Sanitize a color value for safe use in inline styles. */
   _safeColor(color) {
-    if (typeof color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(color)) return color;
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
     return '#7c5bf0';
   }
 }
