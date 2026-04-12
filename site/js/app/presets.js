@@ -35,8 +35,8 @@ export const PRESETS = [
     description: 'Sandbox scenario exercising every tech card in the bundled Drone Threat Library.',
   },
   {
-    name: 'Compound Kill Chains — ETRA Appendix D',
+    name: 'Compound Kill Chains — Defensive Planning Wargame',
     path: 'scenarios/compound_kill_chains.toml',
-    description: 'Three concurrent ETRA Appendix D kill chains (Alpha/Bravo/Charlie). Exercises the Phase 6 multi-phase campaign schema, cost asymmetry, and attribution scoring.',
+    description: 'Research simulation of three concurrent archetypal red-team campaigns (intelligence-led pressure, non-lethal capability demonstration, cyber-physical convergence) against a notional integrated defender. Exercises the Phase 6 multi-phase campaign schema and cost-asymmetry analysis.',
   },
 ];

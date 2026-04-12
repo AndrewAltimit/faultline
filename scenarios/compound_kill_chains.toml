@@ -1,35 +1,41 @@
-# Compound Kill Chains — ETRA Appendix D (Alpha / Bravo / Charlie)
+# Compound Kill Chain Scenario — Research Simulation
 #
-# Exercises the Phase 6.1 `[kill_chains]` TOML schema with three
-# concurrent multi-phase campaigns targeting the US federal security
-# apparatus. Each chain models a distinct ETRA Appendix D profile:
+# Defensive-planning wargame. Exercises the Phase 6.1 `[kill_chains]`
+# schema with three concurrent multi-phase campaigns modeled against a
+# notional integrated federal security posture. The scenario is a tool
+# for red-teaming C-UAS / cyber / physical-security integration gaps —
+# its purpose is to help defenders quantify where their layered posture
+# under-performs, not to operationalize any particular tradecraft.
 #
-#   - Kill Chain Alpha: Intelligence-led coercion — sensor emplacement,
-#     wireless exploitation, credential harvest, coercive disclosure.
-#     Attribution: opaque. Cost asymmetry: ~10,000x.
+# The three campaigns represent archetypal adversary behaviors that
+# recur across published incident retrospectives and open-source threat
+# modeling literature:
 #
-#   - Kill Chain Bravo: Escalatory proof-of-capability — inert swarm
-#     penetration of a public perimeter with drop-and-leaflet messaging.
-#     Attribution: partial. Cost asymmetry: ~1,000x.
+#   - Campaign Alpha: low-visibility intelligence-led pressure campaign
+#     (passive sensing → wireless environment mapping → credential
+#     harvest → disclosure-driven political pressure).
 #
-#   - Kill Chain Charlie: Cyber-physical convergence — drone-delivered
-#     rogue-AP mesh backing a ransomware-style compromise of critical
-#     infrastructure during a simultaneous physical demonstration.
-#     Attribution: moderate. Cost asymmetry: ~5,000x.
+#   - Campaign Bravo: proof-of-capability demonstration (non-lethal
+#     autonomous swarm penetration of a permissive-airspace public event
+#     to invalidate the defender's capability narrative).
 #
-# All phases, durations, detection probabilities, and costs are derived
-# from open-source ETRA framework analysis and CRS / GAO reporting on
-# C-UAS gaps, CISA incident retrospectives, and published Natural Earth /
-# IISS order-of-battle data. No classified or CUI material.
+#   - Campaign Charlie: cyber-physical convergence (drone-delivered
+#     rogue-AP relay into an ICS/SCADA environment at a regional
+#     utility, paired with a simultaneous inert physical demonstration
+#     that consumes defender attention).
 #
-# References:
-# - ETRA "Autonomous Drone Swarms as Instruments of Political
-#   Destabilization" (2026), Appendix D
-# - GAO-23-105912 "Counter-Unmanned Aircraft Systems: DHS and DOJ Should
-#   Establish Baseline Plans for Protecting Covered Events"
-# - CISA Insights "Protecting Against the Threat of Unmanned Aircraft
-#   Systems" (2020)
-# - RAND RR-3023-DHS "Small Unmanned Aerial System Adversary Capabilities"
+# All durations, success rates, detection probabilities, and costs are
+# aggregate statistical descriptors derived from public sources only:
+#   - GAO reports on C-UAS coordination gaps
+#   - CISA public insights on UAS threats and ICS security
+#   - RAND public research on small-UAS adversary capabilities
+#   - IISS Military Balance C-UAS deployment descriptions
+#   - Open reporting on published ransomware and intrusion case studies
+#
+# No classified, CUI, or export-controlled information is used or
+# required. Real hardware and agency names appear where they aid the
+# defender's ability to map simulation outputs onto real posture
+# decisions; the scenario is descriptive, not prescriptive.
 
 # Budget caps (Phase 6.2) — top-level scenario fields. Must appear before
 # the first section header so TOML does not attach them to [meta].
@@ -37,11 +43,11 @@ attacker_budget = 250_000.0
 defender_budget = 50_000_000.0
 
 [meta]
-name = "Compound Kill Chains — ETRA Appendix D"
-description = "Three concurrent ETRA Appendix D kill chains (Alpha / Bravo / Charlie) against the US federal security apparatus. Exercises the Phase 6.1 multi-phase campaign schema, cost asymmetry tracking, detection accumulation, and attribution scoring."
+name = "Compound Kill Chains — Defensive Planning Wargame"
+description = "Research simulation of three concurrent archetypal adversary campaigns (Alpha / Bravo / Charlie) against a notional integrated federal security posture. Exercises the Phase 6.1 multi-phase campaign schema to quantify doctrinal seams between counter-UAS, cyber, and physical security — a defensive-planning tool, not an operational playbook."
 author = "AI Agent Bot"
 version = "0.1.0"
-tags = ["kill-chain", "compound", "phase-6", "etra", "domestic", "coercion"]
+tags = ["kill-chain", "compound", "phase-6", "red-team", "defensive-planning", "c-uas"]
 
 # ============================================================================
 # Map — DC Metro operational theater
@@ -180,7 +186,7 @@ visibility = 0.1
 [factions.federal_security]
 id = "federal_security"
 name = "Federal Security Apparatus"
-description = "Combined USSS, FBI, CISA, Cyber Command, and C-UAS elements. High absolute capability but doctrinally siloed across physical, cyber, and counter-UAS — the seam ETRA Appendix D exploits."
+description = "Notional integrated posture standing in for combined USSS, FBI, CISA, US Cyber Command, and C-UAS elements. High absolute capability but organizationally fragmented across physical, cyber, and counter-UAS — the doctrinal seam this scenario measures."
 color = "#1a5276"
 tech_access = ["cuas_radar", "executive_protection"]
 initial_morale = 0.80
@@ -258,7 +264,7 @@ capabilities = []
 [factions.insider_cell]
 id = "insider_cell"
 name = "Disaffected Insider Cell"
-description = "15-person cell of former mil/intel professionals with institutional knowledge of defensive systems. ETRA Profile A."
+description = "Notional red-team adversary: small cell with former military/intelligence skill mix and institutional familiarity with defensive systems. Used as a forcing function to quantify defender gaps; not a representation of any real group."
 color = "#c0392b"
 tech_access = ["autonomous_swarm", "covert_sensors"]
 initial_morale = 0.90
@@ -389,25 +395,29 @@ internet_availability = 0.97
 [events]
 
 # ============================================================================
-# Kill Chains — ETRA Appendix D compound campaign
+# Kill Chains — compound multi-phase campaigns (Phase 6.1 schema)
 # ============================================================================
 
 # (Budgets declared at scenario top-level above.)
 
-# -- Kill Chain Alpha — Intelligence-led coercion ---------------------------
+# -- Campaign Alpha — pressure-campaign archetype ---------------------------
+#
+# Models a low-visibility, intelligence-driven pressure campaign against
+# the defender. Analytical signal: how long does the defender have to
+# detect the campaign before it reaches a disclosure phase?
 
 [kill_chains.alpha]
 id = "alpha"
-name = "Kill Chain Alpha — Intelligence-Led Coercion"
-description = "Covert sensor emplacement → wireless exploitation → credential harvest → coercive disclosure. Optimized for low detection and opaque attribution."
+name = "Campaign Alpha — Intelligence-Led Pressure"
+description = "Archetype: passive sensing → wireless environment mapping → credential harvest → disclosure-driven political pressure. Models the defender's exposure to a patient adversary operating below the detection threshold."
 attacker = "insider_cell"
 target = "federal_security"
 entry_phase = "alpha_sensor_emplacement"
 
 [kill_chains.alpha.phases.alpha_sensor_emplacement]
 id = "alpha_sensor_emplacement"
-name = "Covert Sensor Emplacement"
-description = "10 ESP32-CAM solar-powered nodes emplaced on rooftops and exterior walls near principal residences. Utility-branded enclosures. Drone-delivered during 0200-0430 window."
+name = "Passive Sensor Emplacement"
+description = "Aggregate model of a covert persistent-surveillance network (commodity components, e.g. ESP32-class sensors with solar power and cellular backhaul) deployed on public-facing building exteriors near target facilities. Parameters tuned to published open-source cost and detection data."
 base_success_probability = 0.90
 min_duration = 5
 max_duration = 10
@@ -435,8 +445,8 @@ next_phase = "alpha_abort"
 
 [kill_chains.alpha.phases.alpha_pattern_of_life]
 id = "alpha_pattern_of_life"
-name = "Pattern-of-Life Intelligence"
-description = "30 days of passive sensor collection yielding full pattern-of-life: arrival/departure windows, vehicle IDs, detail rotations, visitor lists."
+name = "Pattern-of-Life Aggregation"
+description = "Aggregate model of passive sensor collection over ~30 days producing pattern-of-life intelligence on staff movement, facility routines, and protective-detail rotations. No operational tradecraft is modeled; the phase's analytical purpose is to quantify how much intelligence accumulates inside the defender's detection window."
 prerequisites = ["alpha_sensor_emplacement"]
 base_success_probability = 0.95
 min_duration = 20
@@ -465,8 +475,8 @@ next_phase = "alpha_abort"
 
 [kill_chains.alpha.phases.alpha_wireless_harvest]
 id = "alpha_wireless_harvest"
-name = "Wireless Credential Harvest"
-description = "Rogue AP drones deployed to 10 staff-frequented off-site locations. Human-triggered activation; captive portal credential harvesting and TLS interception."
+name = "Wireless Environment Compromise"
+description = "Aggregate model of a wireless-environment attack surface (e.g. rogue access points at staff-frequented off-site locations) yielding credential access. Mirrors the category of technique discussed in published network-security research; parameters reflect public cost/effectiveness estimates only."
 prerequisites = ["alpha_pattern_of_life"]
 base_success_probability = 0.70
 min_duration = 25
@@ -491,16 +501,16 @@ delta = 0.05
 
 [[kill_chains.alpha.phases.alpha_wireless_harvest.branches]]
 condition = { type = "OnSuccess" }
-next_phase = "alpha_coercive_disclosure"
+next_phase = "alpha_pressure_disclosure"
 
 [[kill_chains.alpha.phases.alpha_wireless_harvest.branches]]
 condition = { type = "OnDetection" }
 next_phase = "alpha_abort"
 
-[kill_chains.alpha.phases.alpha_coercive_disclosure]
-id = "alpha_coercive_disclosure"
-name = "Coercive Disclosure"
-description = "Publish timestamped surveillance proving persistent undetected access. Demands accompany release. Political crisis."
+[kill_chains.alpha.phases.alpha_pressure_disclosure]
+id = "alpha_pressure_disclosure"
+name = "Public Disclosure Event"
+description = "Terminal phase. Models the political pressure effect of a public disclosure demonstrating persistent undetected access. Analytical output: coercion-pressure and institutional-erosion metrics used to evaluate defender political resilience."
 prerequisites = ["alpha_wireless_harvest"]
 base_success_probability = 0.80
 min_duration = 3
@@ -510,27 +520,27 @@ prerequisite_success_boost = 0.10
 attribution_difficulty = 0.75
 targets_domains = ["ExecutiveProtection", "NetworkSecurity"]
 
-[kill_chains.alpha.phases.alpha_coercive_disclosure.cost]
+[kill_chains.alpha.phases.alpha_pressure_disclosure.cost]
 attacker_dollars = 5_000.0
 defender_dollars = 12_000_000.0
 attacker_resources = 2.0
 
-[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+[[kill_chains.alpha.phases.alpha_pressure_disclosure.outputs]]
 type = "CoercionPressure"
 delta = 0.45
 
-[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+[[kill_chains.alpha.phases.alpha_pressure_disclosure.outputs]]
 type = "InstitutionalErosion"
 delta = 0.20
 
-[[kill_chains.alpha.phases.alpha_coercive_disclosure.outputs]]
+[[kill_chains.alpha.phases.alpha_pressure_disclosure.outputs]]
 type = "TensionDelta"
 delta = 0.15
 
 [kill_chains.alpha.phases.alpha_abort]
 id = "alpha_abort"
-name = "Chain Aborted — Defender Alerted"
-description = "Terminal phase on detection. Attacker burns infrastructure and withdraws to avoid attribution."
+name = "Campaign Aborted — Defender Alerted"
+description = "Terminal phase taken when the defender detects the campaign. Models red-team withdrawal and residual forensic footprint the defender recovers."
 base_success_probability = 1.0
 min_duration = 1
 max_duration = 1
@@ -544,20 +554,25 @@ attacker_dollars = 1_000.0
 defender_dollars = 500_000.0
 attacker_resources = 1.0
 
-# -- Kill Chain Bravo — Escalatory Proof-of-Capability ----------------------
+# -- Campaign Bravo — proof-of-capability archetype -------------------------
+#
+# Models a high-visibility, non-lethal capability demonstration intended
+# to invalidate the defender's public capability narrative. Analytical
+# signal: how costly is the defender's reactive posture when surprised
+# in a permissive-airspace environment?
 
 [kill_chains.bravo]
 id = "bravo"
-name = "Kill Chain Bravo — Proof-of-Capability Demonstration"
-description = "Inert autonomous swarm penetrates a public security perimeter and drops leaflets. Visible, deniable, and designed to shatter the defender's capability narrative."
+name = "Campaign Bravo — Non-Lethal Capability Demonstration"
+description = "Archetype: public, non-lethal autonomous-swarm demonstration in a permissive-airspace environment. Models the defender's reactive spending and morale cost when a visible incident invalidates the current capability posture."
 attacker = "insider_cell"
 target = "federal_security"
 entry_phase = "bravo_swarm_assembly"
 
 [kill_chains.bravo.phases.bravo_swarm_assembly]
 id = "bravo_swarm_assembly"
-name = "Autonomous Swarm Assembly & Test"
-description = "Assemble 20-drone swarm with onboard edge AI and mesh coordination. Low-altitude flight testing at remote site."
+name = "Swarm Capability Build-Up"
+description = "Aggregate model of adversary capability development: assembly and flight-testing of a small autonomous swarm using commercial components. Parameters drawn from public hobbyist and research literature only."
 base_success_probability = 0.85
 min_duration = 10
 max_duration = 20
@@ -585,8 +600,8 @@ next_phase = "bravo_abort"
 
 [kill_chains.bravo.phases.bravo_launch_window]
 id = "bravo_launch_window"
-name = "Launch Window Selection"
-description = "Identify public event with permissive airspace posture. Pre-stage launch vehicles near perimeter."
+name = "Opportunity Identification"
+description = "Abstract model of red-team opportunity-selection: identifying a public event with a permissive airspace posture. The phase's analytical purpose is to force the defender's C-UAS deployment distribution into the success calculation."
 prerequisites = ["bravo_swarm_assembly"]
 base_success_probability = 0.90
 min_duration = 3
@@ -603,16 +618,16 @@ attacker_resources = 2.0
 
 [[kill_chains.bravo.phases.bravo_launch_window.branches]]
 condition = { type = "OnSuccess" }
-next_phase = "bravo_penetration"
+next_phase = "bravo_demonstration"
 
 [[kill_chains.bravo.phases.bravo_launch_window.branches]]
 condition = { type = "OnDetection" }
 next_phase = "bravo_abort"
 
-[kill_chains.bravo.phases.bravo_penetration]
-id = "bravo_penetration"
-name = "Perimeter Penetration & Leaflet Drop"
-description = "20-drone swarm autonomously breaches security perimeter, broadcasts light pattern, drops leaflets. Inert. Media-saturated. Defensive posture shattered."
+[kill_chains.bravo.phases.bravo_demonstration]
+id = "bravo_demonstration"
+name = "Non-Lethal Demonstration Event"
+description = "Terminal phase. Models a visible, non-lethal capability demonstration — the analytical focus is the defender's forced reactive spending and morale drop in the presence of high media salience. No kinetic effect is modeled."
 prerequisites = ["bravo_launch_window"]
 base_success_probability = 0.65
 min_duration = 1
@@ -622,32 +637,32 @@ prerequisite_success_boost = 0.10
 attribution_difficulty = 0.55
 targets_domains = ["CounterUAS", "ExecutiveProtection", "CivilianEmergency"]
 
-[kill_chains.bravo.phases.bravo_penetration.cost]
+[kill_chains.bravo.phases.bravo_demonstration.cost]
 attacker_dollars = 0.0
 defender_dollars = 30_000_000.0  # Emergency C-UAS expansion
 attacker_resources = 0.0
 
-[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+[[kill_chains.bravo.phases.bravo_demonstration.outputs]]
 type = "CoercionPressure"
 delta = 0.35
 
-[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+[[kill_chains.bravo.phases.bravo_demonstration.outputs]]
 type = "InstitutionalErosion"
 delta = 0.25
 
-[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+[[kill_chains.bravo.phases.bravo_demonstration.outputs]]
 type = "TensionDelta"
 delta = 0.20
 
-[[kill_chains.bravo.phases.bravo_penetration.outputs]]
+[[kill_chains.bravo.phases.bravo_demonstration.outputs]]
 type = "MoraleDelta"
 faction = "federal_security"
 delta = -0.25
 
 [kill_chains.bravo.phases.bravo_abort]
 id = "bravo_abort"
-name = "Chain Aborted"
-description = "Terminal abort phase."
+name = "Campaign Aborted"
+description = "Terminal phase taken when the defender intercepts the campaign before the demonstration."
 base_success_probability = 1.0
 min_duration = 1
 max_duration = 1
@@ -656,20 +671,25 @@ prerequisite_success_boost = 0.0
 attribution_difficulty = 0.80
 targets_domains = []
 
-# -- Kill Chain Charlie — Cyber-Physical Convergence ------------------------
+# -- Campaign Charlie — cyber-physical convergence archetype ---------------
+#
+# Models an adversary that converges cyber and physical attack surfaces
+# against a critical-infrastructure target. Analytical signal: how much
+# does concurrent cyber + physical activity stress the defender's
+# cross-domain response capacity compared to either vector alone?
 
 [kill_chains.charlie]
 id = "charlie"
-name = "Kill Chain Charlie — Cyber-Physical Convergence"
-description = "Drone-delivered rogue-AP mesh backs a ransomware-style compromise of a regional power grid substation during a simultaneous inert physical demonstration. Exploits the seam between C-UAS, cyber, and critical-infrastructure defense."
+name = "Campaign Charlie — Cyber-Physical Convergence"
+description = "Archetype: wireless-relay cyber compromise of an ICS/SCADA-adjacent network at a regional utility, paired with a simultaneous inert physical demonstration that divides defender attention. Analytical focus is the doctrinal seam between C-UAS, cyber, and critical-infrastructure defense."
 attacker = "insider_cell"
 target = "federal_security"
 entry_phase = "charlie_network_recon"
 
 [kill_chains.charlie.phases.charlie_network_recon]
 id = "charlie_network_recon"
-name = "Utility Network Reconnaissance"
-description = "Passive OSINT enumeration of ICS/SCADA vendors, VPN endpoints, and remote-access posture at the target substation."
+name = "Open-Source Network Mapping"
+description = "Aggregate model of publicly sourced reconnaissance against a regional utility — ICS/SCADA vendor footprint, remote-access posture, and exposed management interfaces. Uses only information categories available to open-source security researchers."
 base_success_probability = 0.90
 min_duration = 5
 max_duration = 12
@@ -697,8 +717,8 @@ next_phase = "charlie_abort"
 
 [kill_chains.charlie.phases.charlie_rogue_ap_mesh]
 id = "charlie_rogue_ap_mesh"
-name = "Drone-Delivered Rogue-AP Mesh"
-description = "Drones perch rogue APs near the substation control room and vendor field-office. Mesh relays captured credentials to attacker infrastructure."
+name = "Wireless Relay Footprint"
+description = "Aggregate model of a drone-delivered wireless-relay footprint near utility control and vendor support facilities. The technique category is drawn from published security research on rogue-access-point risks; specific emplacement is not modeled."
 prerequisites = ["charlie_network_recon"]
 base_success_probability = 0.75
 min_duration = 8
@@ -724,16 +744,16 @@ factor = 0.05
 
 [[kill_chains.charlie.phases.charlie_rogue_ap_mesh.branches]]
 condition = { type = "OnSuccess" }
-next_phase = "charlie_ics_exploit"
+next_phase = "charlie_ics_disruption"
 
 [[kill_chains.charlie.phases.charlie_rogue_ap_mesh.branches]]
 condition = { type = "OnDetection" }
 next_phase = "charlie_abort"
 
-[kill_chains.charlie.phases.charlie_ics_exploit]
-id = "charlie_ics_exploit"
-name = "ICS/SCADA Exploit Deployment"
-description = "Deploy ransomware-style wiper against substation control systems during a pre-arranged window. Simultaneous inert drone demonstration over the capital draws defensive attention."
+[kill_chains.charlie.phases.charlie_ics_disruption]
+id = "charlie_ics_disruption"
+name = "ICS Disruption Event"
+description = "Terminal phase. Models a ransomware-class disruption event against ICS/SCADA-adjacent systems at the target utility, concurrent with a physical demonstration that competes for defender attention. Analytical focus is the combined defender response cost and the infrastructure-damage metric."
 prerequisites = ["charlie_rogue_ap_mesh"]
 base_success_probability = 0.55
 min_duration = 1
@@ -743,36 +763,36 @@ prerequisite_success_boost = 0.15
 attribution_difficulty = 0.60
 targets_domains = ["NetworkSecurity", "CivilianEmergency", "SupplyChainSecurity"]
 
-[kill_chains.charlie.phases.charlie_ics_exploit.cost]
+[kill_chains.charlie.phases.charlie_ics_disruption.cost]
 attacker_dollars = 30_000.0
 defender_dollars = 75_000_000.0
 attacker_resources = 15.0
 
-[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+[[kill_chains.charlie.phases.charlie_ics_disruption.outputs]]
 type = "InfraDamage"
 region = "maryland_suburbs"
 factor = 0.45
 
-[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+[[kill_chains.charlie.phases.charlie_ics_disruption.outputs]]
 type = "CoercionPressure"
 delta = 0.40
 
-[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+[[kill_chains.charlie.phases.charlie_ics_disruption.outputs]]
 type = "InstitutionalErosion"
 delta = 0.15
 
-[[kill_chains.charlie.phases.charlie_ics_exploit.outputs]]
+[[kill_chains.charlie.phases.charlie_ics_disruption.outputs]]
 type = "TensionDelta"
 delta = 0.25
 
-[[kill_chains.charlie.phases.charlie_ics_exploit.branches]]
+[[kill_chains.charlie.phases.charlie_ics_disruption.branches]]
 condition = { type = "OnDetection" }
 next_phase = "charlie_abort"
 
 [kill_chains.charlie.phases.charlie_abort]
 id = "charlie_abort"
-name = "Chain Aborted"
-description = "Terminal abort phase."
+name = "Campaign Aborted"
+description = "Terminal phase taken when the defender detects and interrupts the campaign."
 base_success_probability = 1.0
 min_duration = 1
 max_duration = 1
@@ -811,12 +831,16 @@ faction = "federal_security"
 type = "StrategicControl"
 threshold = 0.90
 
-[victory_conditions.coercion_achieved]
-id = "coercion_achieved"
-name = "Coercion Threshold Reached"
+[victory_conditions.pressure_threshold_reached]
+id = "pressure_threshold_reached"
+name = "Red Team Pressure Threshold Reached"
 faction = "insider_cell"
 
-[victory_conditions.coercion_achieved.condition]
+# Analytical end-state: the red-team campaigns accumulated enough
+# CoercionPressure to model a defender political-resilience failure.
+# CoercionPressure is the engine's generic non-kinetic pressure metric
+# (Phase 6.6) and does not imply any real-world action.
+[victory_conditions.pressure_threshold_reached.condition]
 type = "NonKineticThreshold"
 metric = "CoercionPressure"
 threshold = 0.60
