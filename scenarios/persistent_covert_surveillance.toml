@@ -30,8 +30,13 @@
 # not prescriptive, and no classified, CUI, or export-controlled
 # information is used.
 
-# Budget caps (Phase 6.2)
-attacker_budget = 60_000.0
+# Budget caps. Max possible attacker spend across the full kill chain
+# (recon → emplacement → dwell → wireless → exfil → disclosure) is
+# $11.2k; the cap below bites at the wireless-collection phase in a
+# fraction of runs, exercising the engine's budget-exhaustion path.
+# Defender cap is non-binding — the scenario measures detection
+# window, not defender budget pressure.
+attacker_budget = 10_000.0
 defender_budget = 25_000_000.0
 
 [meta]

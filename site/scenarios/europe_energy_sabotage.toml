@@ -31,8 +31,14 @@
 # onto real planning decisions; the scenario is descriptive, not
 # prescriptive.
 
-# Budget caps (Phase 6.2)
-attacker_budget = 5_000_000.0
+# Budget caps. Max possible attacker spend across the full kill chain
+# (survey → staging → emplacement → disruption) is $773k; the cap below
+# bites during the terminal disruption phase in a fraction of runs,
+# exercising the engine's budget-exhaustion path. Defender cap is set
+# well above the dominant disruption-event cost so it never binds —
+# the scenario is a defender-response stress test, not a defender
+# budget-exhaustion test.
+attacker_budget = 600_000.0
 defender_budget = 2_000_000_000.0
 
 [meta]
@@ -412,6 +418,7 @@ description = "Software-defined radio suite fabricating plausible commercial AIS
 category = "Concealment"
 cost_per_tick = 0.05
 deployment_cost = 2.0
+coverage_limit = 3
 countered_by = ["ais_validation"]
 terrain_modifiers = []
 
@@ -426,6 +433,7 @@ description = "Mid-tier commercial remotely operated vehicle platform, aggregate
 category = "OffensiveDrone"
 cost_per_tick = 0.3
 deployment_cost = 45.0
+coverage_limit = 2
 countered_by = ["subsea_monitoring"]
 terrain_modifiers = []
 
