@@ -140,27 +140,24 @@ pub struct PhaseStats {
     /// Mean tick at which the phase resolved (success/fail/detection).
     /// `None` if no runs reached a terminal state for this phase.
     pub mean_completion_tick: Option<f64>,
-    /// 95% Wilson score intervals for the four rates above. Populated
-    /// when `total_runs > 0`; downstream readers should treat missing
-    /// entries as "not enough runs to estimate".
-    #[serde(default)]
-    pub ci_95: PhaseStatsCIs,
+    /// 95% Wilson score intervals for the four rates above. `Some`
+    /// when `total_runs > 0`; `None` means the runner had no data to
+    /// estimate from. The outer `Option` enforces the all-or-none
+    /// invariant at the type level — partial CIs are unrepresentable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ci_95: Option<PhaseStatsCIs>,
 }
 
 /// 95% Wilson score intervals for the rates on [`PhaseStats`]. All
-/// four fields share the same denominator (`total_runs`), so absence
-/// of any one entry means the runner produced no data — never "some
-/// rates have CIs and others don't."
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// four fields share the same denominator (`total_runs`), so this
+/// struct is constructed atomically — the enclosing `Option` on
+/// [`PhaseStats::ci_95`] carries the "no data" state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PhaseStatsCIs {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub success_rate: Option<ConfidenceInterval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure_rate: Option<ConfidenceInterval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detection_rate: Option<ConfidenceInterval>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub not_reached_rate: Option<ConfidenceInterval>,
+    pub success_rate: ConfidenceInterval,
+    pub failure_rate: ConfidenceInterval,
+    pub detection_rate: ConfidenceInterval,
+    pub not_reached_rate: ConfidenceInterval,
 }
 
 /// Feasibility matrix row for one kill chain.

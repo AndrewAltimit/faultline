@@ -445,21 +445,16 @@ fn phase_stats_carry_wilson_cis() {
     assert!(!chain_summary.phase_stats.is_empty());
 
     for (pid, ps) in &chain_summary.phase_stats {
+        let cis = ps
+            .ci_95
+            .as_ref()
+            .unwrap_or_else(|| panic!("phase {pid} missing CIs at n=50"));
         for (label, rate, ci) in [
-            ("success", ps.success_rate, ps.ci_95.success_rate.as_ref()),
-            ("failure", ps.failure_rate, ps.ci_95.failure_rate.as_ref()),
-            (
-                "detection",
-                ps.detection_rate,
-                ps.ci_95.detection_rate.as_ref(),
-            ),
-            (
-                "not_reached",
-                ps.not_reached_rate,
-                ps.ci_95.not_reached_rate.as_ref(),
-            ),
+            ("success", ps.success_rate, &cis.success_rate),
+            ("failure", ps.failure_rate, &cis.failure_rate),
+            ("detection", ps.detection_rate, &cis.detection_rate),
+            ("not_reached", ps.not_reached_rate, &cis.not_reached_rate),
         ] {
-            let ci = ci.unwrap_or_else(|| panic!("phase {pid} missing {label} CI at n=50"));
             assert_eq!(ci.n, 50, "phase {pid} {label} CI n mismatch");
             assert!(
                 ci.lower <= rate + 1e-9 && rate <= ci.upper + 1e-9,

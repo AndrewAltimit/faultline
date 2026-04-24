@@ -378,11 +378,19 @@ fn compute_campaign_summaries(
             // `wilson_score_interval` returns `Some` for all or none.
             // Computing per-field keeps the point estimate exact (counts,
             // not the round-tripped rate) even at small `n`.
-            let ci_95 = PhaseStatsCIs {
-                success_rate: wilson_score_interval(s, n_runs).map(ConfidenceInterval::from),
-                failure_rate: wilson_score_interval(f, n_runs).map(ConfidenceInterval::from),
-                detection_rate: wilson_score_interval(d, n_runs).map(ConfidenceInterval::from),
-                not_reached_rate: wilson_score_interval(nr, n_runs).map(ConfidenceInterval::from),
+            let ci_95 = match (
+                wilson_score_interval(s, n_runs),
+                wilson_score_interval(f, n_runs),
+                wilson_score_interval(d, n_runs),
+                wilson_score_interval(nr, n_runs),
+            ) {
+                (Some(sw), Some(fw), Some(dw), Some(nrw)) => Some(PhaseStatsCIs {
+                    success_rate: ConfidenceInterval::from(sw),
+                    failure_rate: ConfidenceInterval::from(fw),
+                    detection_rate: ConfidenceInterval::from(dw),
+                    not_reached_rate: ConfidenceInterval::from(nrw),
+                }),
+                _ => None,
             };
             phase_stats.insert(
                 pid.clone(),
@@ -494,9 +502,9 @@ fn compute_event_probabilities(runs: &[RunResult]) -> BTreeMap<EventId, f64> {
 ///
 /// When `bootstrap_seed` is `Some`, a 95% percentile-bootstrap CI on
 /// the mean is also populated using a fresh `ChaCha8Rng` seeded with
-/// that value — deterministic given the seed and values. The public
-/// entry point [`compute_distribution`] passes `None`; the runner
-/// uses [`compute_distribution_with_bootstrap`] to fill the CI.
+/// that value — deterministic given the seed and values. The test
+/// helper [`compute_distribution`] passes `None`; production code
+/// calls [`compute_distribution_with_bootstrap`] to fill the CI.
 fn compute_distribution_inner(values: &[f64], bootstrap_seed: Option<u64>) -> DistributionStats {
     if values.is_empty() {
         return DistributionStats {

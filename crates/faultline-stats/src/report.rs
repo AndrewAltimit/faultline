@@ -167,14 +167,15 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
                     .mean_completion_tick
                     .map(|t| format!("{:.1}", t))
                     .unwrap_or_else(|| "—".to_string());
+                let cis = ps.ci_95.as_ref();
                 let _ = writeln!(
                     out,
                     "| `{}` | {} | {} | {} | {} | {} |",
                     pid,
-                    fmt_rate_cell(ps.success_rate, ps.ci_95.success_rate.as_ref()),
-                    fmt_rate_cell(ps.failure_rate, ps.ci_95.failure_rate.as_ref()),
-                    fmt_rate_cell(ps.detection_rate, ps.ci_95.detection_rate.as_ref()),
-                    fmt_rate_cell(ps.not_reached_rate, ps.ci_95.not_reached_rate.as_ref()),
+                    fmt_rate_cell(ps.success_rate, cis.map(|c| &c.success_rate)),
+                    fmt_rate_cell(ps.failure_rate, cis.map(|c| &c.failure_rate)),
+                    fmt_rate_cell(ps.detection_rate, cis.map(|c| &c.detection_rate)),
+                    fmt_rate_cell(ps.not_reached_rate, cis.map(|c| &c.not_reached_rate)),
                     mean_tick
                 );
             }
