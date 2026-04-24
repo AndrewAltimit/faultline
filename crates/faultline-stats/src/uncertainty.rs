@@ -134,6 +134,12 @@ pub fn wilson_from_rate(p_hat: f64, n: u32) -> Option<WilsonInterval> {
     if n == 0 {
         return None;
     }
+    // Surface upstream drift in debug/test builds; in release, the clamp
+    // keeps the arithmetic well-defined rather than emitting NaN/Inf.
+    debug_assert!(
+        (0.0..=1.0).contains(&p_hat),
+        "p_hat {p_hat} out of range [0, 1]"
+    );
     let successes = (p_hat.clamp(0.0, 1.0) * f64::from(n)).round() as u32;
     wilson_score_interval(successes, n)
 }

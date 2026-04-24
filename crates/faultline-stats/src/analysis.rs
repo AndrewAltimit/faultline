@@ -94,7 +94,7 @@ pub fn compute_feasibility_matrix(
             consequence_severity: confidence_from_rate(consequence_severity, runs.len()),
         };
 
-        let n_runs = runs.len() as u32;
+        let n_runs = u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX");
         let ci_95 = FeasibilityCIs {
             detection_probability: wilson_from_rate(detection_probability, n_runs)
                 .map(ConfidenceInterval::from),
