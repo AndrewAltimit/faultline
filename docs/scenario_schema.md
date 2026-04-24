@@ -127,6 +127,32 @@ An array of per-region terrain overlays. Each entry:
 | `diplomacy` | `[DiplomaticStance]` | Initial relations |
 | `doctrine` | enum | `Conventional`, `Guerrilla`, `Defensive`, `Disruption`, `CounterInsurgency`, `Blitzkrieg`, `Adaptive` |
 | `recruitment` | table? | See `RecruitmentConfig` below |
+| `escalation_rules` | table? | _Optional._ Declarative doctrine / ROE ladder (see Epic B) |
+
+### `[factions.<id>.escalation_rules]` (Epic B)
+
+Scenario-author-asserted escalation ladder. Purely declarative in the
+current engine — surfaced in the **Policy Implications** report
+section so analysts can see which counterfactuals implicitly require
+crossing a doctrinal threshold. The engine does not currently enforce
+the ladder when selecting actions.
+
+| Field | Type | Notes |
+|---|---|---|
+| `posture` | string | One-line summary of the faction's ROE stance |
+| `ladder` | `[EscalationRung]` | Ordered low-to-high; each rung defines permitted / prohibited actions |
+| `de_escalation_floor` | f64? | Tension at/above which the faction will not voluntarily de-escalate without an external trigger |
+
+Each `ladder` rung:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | e.g. `"grey_zone"`, `"kinetic"`, `"strategic"` |
+| `name` | string | |
+| `description` | string | |
+| `trigger_tension` | f64? | Tension at/above which the rung is authorized; `None` = always authorized |
+| `permitted_actions` | `[string]` | Free-text descriptions of permitted capabilities |
+| `prohibited_actions` | `[string]` | Explicit red lines |
 
 ### `[factions.<id>.faction_type]`
 
@@ -344,8 +370,24 @@ Tagged enum (`modifier = "..."`):
 | `repeatable` | bool | If false, fires at most once |
 | `effects` | `[EventEffect]` | Applied when the event fires |
 | `chain` | string? | Event id to trigger immediately afterward |
+| `defender_options` | `[DefenderOption]` | _Optional._ Declarative counterfactual defender responses surfaced in the **Policy Implications** report section |
 
 Event chains are validated for cycles when the engine starts.
+
+#### `DefenderOption` (Epic B)
+
+Declarative alternative the defender could take if the event fires.
+Not auto-selected by the engine — present so analysts can enumerate
+the options and activate one via `--counterfactual` in a future
+iteration.
+
+| Field | Type | Notes |
+|---|---|---|
+| `key` | string | Stable identifier referenced by counterfactual overrides |
+| `name` | string | |
+| `description` | string | |
+| `preparedness_cost` | f64 | Dollar cost of holding the response at readiness |
+| `modifier_effects` | `[EventEffect]` | Effects that *replace* the event's default `effects` when the option is active. Empty = cancels the event. |
 
 ### `conditions`
 
@@ -433,6 +475,27 @@ A single phase. Each active tick rolls independently for detection (accumulating
 | `outputs` | `[PhaseOutput]` | Effects applied on success |
 | `branches` | `[PhaseBranch]` | Next-phase transitions |
 | `parameter_confidence` | `"High"` / `"Medium"` / `"Low"` | Optional author self-assessment of how defensible this phase's base rates, detection probability, and attribution difficulty are. Omit for "unrated." Distinct from the Monte Carlo-derived confidence in the feasibility matrix, which reflects *sampling* stability — `parameter_confidence` reflects *parameter* defensibility. Phases tagged `Low` are listed in a dedicated section of the generated Markdown report. |
+| `warning_indicators` | `[WarningIndicator]` | _Optional._ IWI / IOC entries surfaced in the **Countermeasure Analysis** report section (Epic B) |
+
+### `WarningIndicator` (Epic B)
+
+Observable the defender could monitor for to catch this phase before
+completion. Currently declarative — `detection_probability_per_tick`
+still drives the detection roll. The section makes the monitoring
+posture required to hit that detection rate concrete.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Stable identifier, e.g. `"beaconing_rf_emissions"` |
+| `name` | string | |
+| `description` | string | |
+| `observable` | enum | Collection discipline required to see it (see below) |
+| `detectability` | f64 | `[0, 1]` — probability of catching the observable *if* the defender is looking |
+| `time_to_detect_ticks` | u32? | Expected latency from phase activation to reliable detection |
+| `monitoring_cost_annual` | f64? | Annual dollar cost of a monitoring posture covering this observable |
+
+`observable` enum values: `SIGINT`, `HUMINT`, `OSINT`, `GEOINT`,
+`MASINT`, `CYBINT`, `FININT`, `Physical`, or `Custom = "..."`.
 
 ### `PhaseCost`
 

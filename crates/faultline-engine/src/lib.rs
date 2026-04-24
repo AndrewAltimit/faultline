@@ -139,6 +139,7 @@ mod tests {
                 intelligence: 0.5,
                 diplomacy: vec![],
                 doctrine: Doctrine::Conventional,
+                escalation_rules: None,
             },
         );
 

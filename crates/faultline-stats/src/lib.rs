@@ -6,6 +6,7 @@
 //! and metric distributions.
 
 pub mod analysis;
+pub mod counterfactual;
 pub mod delta;
 pub mod report;
 pub mod sensitivity;
@@ -1522,6 +1523,7 @@ mod tests {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         }
     }
 }

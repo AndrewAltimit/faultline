@@ -16,6 +16,38 @@ pub struct EventDefinition {
     pub repeatable: bool,
     pub effects: Vec<EventEffect>,
     pub chain: Option<EventId>,
+    /// Counterfactual defender responses the scenario author wants
+    /// surfaced in analysis. These are *declarative* alternatives the
+    /// defender could take if the event fires — the engine does not
+    /// auto-select one. Reports enumerate them for the Policy
+    /// Implications section; the `--counterfactual event.<id>.option=<key>`
+    /// CLI mode can activate one to compare against baseline.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defender_options: Vec<DefenderOption>,
+}
+
+/// A counterfactual defender response bundled to an event.
+///
+/// Each option bundles a dollar cost (the investment the defender
+/// would have to make *ahead of time* to hold this response at
+/// readiness) and a set of modifying effects that *replace* the
+/// event's default effects when the option is active. Options are
+/// analytical — they exist to make "what if the defender had
+/// pre-positioned X?" questions addressable without hand-editing TOML.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderOption {
+    /// Stable identifier referenced by `--counterfactual event.<eid>.option=<key>`.
+    pub key: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Preparedness cost for holding this response at readiness.
+    #[serde(default)]
+    pub preparedness_cost: f64,
+    /// Effects that replace the event's baseline `effects` when this
+    /// option is selected. Empty = this option cancels the event.
+    #[serde(default)]
+    pub modifier_effects: Vec<EventEffect>,
 }
 
 /// Conditions that must hold for an event to fire.

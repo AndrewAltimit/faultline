@@ -116,6 +116,7 @@ fn base_scenario() -> Scenario {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         },
     );
     factions.insert(
@@ -137,6 +138,7 @@ fn base_scenario() -> Scenario {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         },
     );
 
@@ -275,6 +277,7 @@ fn campaign_scenario() -> Scenario {
                 next_phase: strike.clone(),
             }],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
     phases.insert(
@@ -303,6 +306,7 @@ fn campaign_scenario() -> Scenario {
             outputs: vec![PhaseOutput::TensionDelta { delta: 0.1 }],
             branches: vec![],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
 
@@ -433,6 +437,7 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
                 next_phase: cheap.clone(),
             }],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
     phases.insert(
@@ -458,6 +463,7 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
             outputs: vec![],
             branches: vec![],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
 
@@ -602,6 +608,7 @@ fn event_chain_fires_sequentially() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.05 }],
         chain: Some(EventId::from("event_b")),
+        defender_options: vec![],
     };
     let event_b = EventDefinition {
         id: EventId::from("event_b"),
@@ -617,6 +624,7 @@ fn event_chain_fires_sequentially() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.05 }],
         chain: Some(EventId::from("event_c")),
+        defender_options: vec![],
     };
     let event_c = EventDefinition {
         id: EventId::from("event_c"),
@@ -632,6 +640,7 @@ fn event_chain_fires_sequentially() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.05 }],
         chain: None,
+        defender_options: vec![],
     };
 
     scenario.events.insert(EventId::from("event_a"), event_a);
@@ -683,6 +692,7 @@ fn event_chain_cycle_detected() {
         repeatable: false,
         effects: vec![],
         chain: Some(EventId::from("cycle_b")),
+        defender_options: vec![],
     };
     let event_b = EventDefinition {
         id: EventId::from("cycle_b"),
@@ -695,6 +705,7 @@ fn event_chain_cycle_detected() {
         repeatable: false,
         effects: vec![],
         chain: Some(EventId::from("cycle_a")),
+        defender_options: vec![],
     };
 
     let result = EventEvaluator::new(vec![event_a, event_b]);
@@ -1765,6 +1776,7 @@ fn event_chain_self_referencing_cycle_detected() {
         repeatable: false,
         effects: vec![],
         chain: Some(EventId::from("self_ref")), // Points to itself.
+        defender_options: vec![],
     };
 
     let result = EventEvaluator::new(vec![event]);
@@ -1789,6 +1801,7 @@ fn event_chain_long_cycle_detected() {
             repeatable: false,
             effects: vec![],
             chain: Some(EventId::from("b")),
+            defender_options: vec![],
         },
         EventDefinition {
             id: EventId::from("b"),
@@ -1801,6 +1814,7 @@ fn event_chain_long_cycle_detected() {
             repeatable: false,
             effects: vec![],
             chain: Some(EventId::from("c")),
+            defender_options: vec![],
         },
         EventDefinition {
             id: EventId::from("c"),
@@ -1813,6 +1827,7 @@ fn event_chain_long_cycle_detected() {
             repeatable: false,
             effects: vec![],
             chain: Some(EventId::from("d")),
+            defender_options: vec![],
         },
         EventDefinition {
             id: EventId::from("d"),
@@ -1825,6 +1840,7 @@ fn event_chain_long_cycle_detected() {
             repeatable: false,
             effects: vec![],
             chain: Some(EventId::from("a")), // Back to A.
+            defender_options: vec![],
         },
     ];
 
@@ -1847,6 +1863,7 @@ fn event_chain_no_cycle_with_none_termination() {
             repeatable: false,
             effects: vec![],
             chain: Some(EventId::from("y")),
+            defender_options: vec![],
         },
         EventDefinition {
             id: EventId::from("y"),
@@ -1859,6 +1876,7 @@ fn event_chain_no_cycle_with_none_termination() {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         },
     ];
 
@@ -1886,6 +1904,7 @@ fn event_chain_stops_when_chained_conditions_fail() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.1 }],
         chain: Some(EventId::from("chain_b")),
+        defender_options: vec![],
     };
     let event_b = EventDefinition {
         id: EventId::from("chain_b"),
@@ -1898,6 +1917,7 @@ fn event_chain_stops_when_chained_conditions_fail() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.3 }],
         chain: None,
+        defender_options: vec![],
     };
 
     scenario.events.insert(EventId::from("chain_a"), event_a);

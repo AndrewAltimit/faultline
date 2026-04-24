@@ -10,8 +10,9 @@ use tracing::{error, info};
 
 use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::compute_summary;
+use faultline_stats::counterfactual::{ComparisonReport, ParamOverride};
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{MonteCarloResult, RunResult};
+use faultline_types::stats::{MonteCarloConfig, MonteCarloResult, RunResult};
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -72,6 +73,24 @@ struct Cli {
         requires = "sensitivity"
     )]
     sensitivity_runs: u32,
+
+    /// Counterfactual override of the form `<param.path>=<value>`.
+    ///
+    /// Pass repeatedly to stack overrides. The baseline scenario is
+    /// run first, then the overridden variant is run with the same
+    /// seed and run count so the reported deltas isolate the
+    /// parameter change. Supported paths are documented in
+    /// `faultline_stats::sensitivity::get_param`.
+    #[arg(long = "counterfactual", value_name = "PATH=VALUE")]
+    counterfactual: Vec<String>,
+
+    /// Path to a second scenario TOML for side-by-side comparison.
+    ///
+    /// Runs baseline and alt scenarios with matching seed / run
+    /// count; output includes a comparison report with per-faction
+    /// win rate deltas and per-chain feasibility deltas.
+    #[arg(long = "compare", value_name = "OTHER_SCENARIO")]
+    compare: Option<PathBuf>,
 
     /// Suppress progress output.
     #[arg(long = "quiet")]
@@ -143,6 +162,14 @@ fn main() -> Result<()> {
 
     if cli.sensitivity {
         return run_sensitivity_analysis(&cli, &scenario);
+    }
+
+    if !cli.counterfactual.is_empty() {
+        return run_counterfactual_analysis(&cli, &scenario);
+    }
+
+    if let Some(alt_path) = cli.compare.clone() {
+        return run_compare_analysis(&cli, &scenario, &alt_path);
     }
 
     // Monte Carlo run.
@@ -262,6 +289,114 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
     }
 
     write_outputs(cli, &mc_result, scenario)?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Counterfactual & comparison (Epic B)
+// ---------------------------------------------------------------------------
+
+fn run_counterfactual_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    let overrides: Vec<ParamOverride> = cli
+        .counterfactual
+        .iter()
+        .map(|s| ParamOverride::parse(s))
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|| "failed to parse --counterfactual override")?;
+
+    let base_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+
+    let config = MonteCarloConfig {
+        num_runs: cli.runs,
+        seed: Some(base_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    info!(
+        runs = cli.runs,
+        base_seed,
+        overrides = overrides.len(),
+        "starting counterfactual analysis"
+    );
+
+    let report = faultline_stats::counterfactual::run_counterfactual(scenario, &config, &overrides)
+        .with_context(|| "counterfactual analysis failed")?;
+
+    write_comparison_outputs(cli, &report, scenario)?;
+
+    Ok(())
+}
+
+fn run_compare_analysis(cli: &Cli, scenario: &Scenario, alt_path: &PathBuf) -> Result<()> {
+    let alt_toml = fs::read_to_string(alt_path)
+        .with_context(|| format!("failed to read --compare scenario: {}", alt_path.display()))?;
+    let alt_scenario: Scenario = toml::from_str(&alt_toml).with_context(|| {
+        format!(
+            "failed to parse --compare scenario TOML: {}",
+            alt_path.display()
+        )
+    })?;
+    validate_scenario(&alt_scenario).with_context(|| "--compare scenario validation failed")?;
+
+    let base_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+
+    let config = MonteCarloConfig {
+        num_runs: cli.runs,
+        seed: Some(base_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let alt_label = alt_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("alt")
+        .to_string();
+
+    info!(
+        runs = cli.runs,
+        base_seed,
+        alt_label = %alt_label,
+        "starting comparison analysis"
+    );
+
+    let report =
+        faultline_stats::counterfactual::run_compare(scenario, &alt_scenario, &alt_label, &config)
+            .with_context(|| "scenario comparison failed")?;
+
+    write_comparison_outputs(cli, &report, scenario)?;
+
+    Ok(())
+}
+
+fn write_comparison_outputs(
+    cli: &Cli,
+    report: &ComparisonReport,
+    scenario: &Scenario,
+) -> Result<()> {
+    // JSON — always written; it is the machine-readable fan-out.
+    let json_path = cli.output.join("comparison.json");
+    let json = serde_json::to_string_pretty(report)
+        .with_context(|| "failed to serialize comparison report")?;
+    fs::write(&json_path, json)
+        .with_context(|| format!("failed to write {}", json_path.display()))?;
+    info!(path = %json_path.display(), "wrote comparison JSON");
+
+    // Markdown — emits the standard per-scenario report for the
+    // baseline plus a comparison section at the top.
+    if matches!(cli.format, OutputFormat::Json | OutputFormat::Both) {
+        let md_path = cli.output.join("comparison_report.md");
+        let md = faultline_stats::report::render_comparison_markdown(report, scenario);
+        fs::write(&md_path, md)
+            .with_context(|| format!("failed to write {}", md_path.display()))?;
+        info!(path = %md_path.display(), "wrote comparison Markdown report");
+    }
 
     Ok(())
 }

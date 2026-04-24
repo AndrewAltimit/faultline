@@ -193,6 +193,7 @@ mod tests {
             repeatable: false,
             effects: vec![EventEffect::TensionShift { delta: 0.1 }],
             chain: None,
+            defender_options: vec![],
         }
     }
 
@@ -276,6 +277,7 @@ mod tests {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         };
         let mut state = sample_state();
         state.region_control.insert(region, Some(faction));
@@ -304,6 +306,7 @@ mod tests {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         };
         let mut state = sample_state();
         // Different faction controls the region.
@@ -333,6 +336,7 @@ mod tests {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         };
         let mut state = sample_state();
         state.faction_strengths.insert(faction.clone(), 75.0);
@@ -365,6 +369,7 @@ mod tests {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         };
         let mut state = sample_state();
         state.faction_morale.insert(faction.clone(), 0.2);
@@ -397,6 +402,7 @@ mod tests {
             repeatable: false,
             effects: vec![],
             chain: None,
+            defender_options: vec![],
         };
 
         // Event was not fired.

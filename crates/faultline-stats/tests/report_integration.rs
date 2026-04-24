@@ -62,6 +62,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         intelligence: 0.5,
         diplomacy: vec![],
         doctrine: Doctrine::Conventional,
+        escalation_rules: None,
     }
 }
 
@@ -139,6 +140,7 @@ fn flagged_chain_scenario() -> Scenario {
                 next_phase: strike.clone(),
             }],
             parameter_confidence: Some(ConfidenceLevel::Low),
+            warning_indicators: vec![],
         },
     );
     phases.insert(
@@ -164,6 +166,7 @@ fn flagged_chain_scenario() -> Scenario {
             outputs: vec![PhaseOutput::TensionDelta { delta: 0.1 }],
             branches: vec![],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
 
