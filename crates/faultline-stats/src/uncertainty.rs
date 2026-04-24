@@ -61,11 +61,16 @@ impl From<WilsonInterval> for ConfidenceInterval {
 
 impl From<BootstrapCI> for ConfidenceInterval {
     fn from(b: BootstrapCI) -> Self {
+        // `n` on `ConfidenceInterval` documents the sample supporting
+        // the estimate, not the resample count — those are distinct
+        // notions of "sample size" and conflating them inflates
+        // perceived precision. Saturating cast tolerates pathological
+        // sample sizes above u32::MAX.
         ConfidenceInterval {
             point: b.point,
             lower: b.lower,
             upper: b.upper,
-            n: b.n_resamples as u32,
+            n: u32::try_from(b.n_samples).unwrap_or(u32::MAX),
         }
     }
 }
@@ -130,7 +135,13 @@ pub struct BootstrapCI {
     pub lower: f64,
     /// Upper percentile of the resampled means.
     pub upper: f64,
-    /// Number of bootstrap resamples used.
+    /// Size of the original sample the CI was computed from — this is
+    /// the "support" of the estimate and is what [`ConfidenceInterval`]
+    /// records, not the resample count.
+    pub n_samples: usize,
+    /// Number of bootstrap resamples drawn to build the distribution.
+    /// Affects the *precision* of the CI's endpoints, not the
+    /// underlying sample's information content.
     pub n_resamples: usize,
     /// Two-sided alpha level (e.g. `0.05` for a 95% CI).
     pub alpha: f64,
@@ -153,16 +164,17 @@ pub fn percentile_bootstrap_ci(
     if values.is_empty() || n_resamples == 0 {
         return None;
     }
-    let n = values.len();
-    let point = values.iter().copied().sum::<f64>() / n as f64;
+    let n_samples = values.len();
+    let point = values.iter().copied().sum::<f64>() / n_samples as f64;
 
     // Special case: single-element input means every resample is
     // identical, so the CI collapses to a point.
-    if n == 1 {
+    if n_samples == 1 {
         return Some(BootstrapCI {
             point,
             lower: point,
             upper: point,
+            n_samples,
             n_resamples,
             alpha,
         });
@@ -171,11 +183,11 @@ pub fn percentile_bootstrap_ci(
     let mut resampled_means = Vec::with_capacity(n_resamples);
     for _ in 0..n_resamples {
         let mut sum = 0.0_f64;
-        for _ in 0..n {
-            let idx = rng.gen_range(0..n);
+        for _ in 0..n_samples {
+            let idx = rng.gen_range(0..n_samples);
             sum += values[idx];
         }
-        resampled_means.push(sum / n as f64);
+        resampled_means.push(sum / n_samples as f64);
     }
     resampled_means.sort_by(|a, b| a.total_cmp(b));
 
@@ -187,6 +199,7 @@ pub fn percentile_bootstrap_ci(
         point,
         lower,
         upper,
+        n_samples,
         n_resamples,
         alpha,
     })
@@ -297,6 +310,60 @@ mod tests {
     }
 
     #[test]
+    fn wilson_matches_published_reference_values() {
+        // Hand-derived reference values using the closed-form Wilson
+        // formula from Agresti & Coull (1998). Any drift here almost
+        // certainly means an arithmetic error was introduced in the
+        // implementation. Tolerance is 1e-4 to absorb the difference
+        // between Z_95 = 1.959964... and the rounded 1.960 commonly
+        // used in hand-worked textbook examples.
+        //
+        // ┌─────────────┬───────────────────┐
+        // │  (k, n)     │  95% Wilson CI    │
+        // ├─────────────┼───────────────────┤
+        // │  50 / 100   │  0.4038 – 0.5962  │
+        // │  10 / 100   │  0.0552 – 0.1744  │
+        // │  90 / 100   │  0.8256 – 0.9448  │
+        // │   0 /  10   │  0.0000 – 0.2775  │
+        // │  10 /  10   │  0.7225 – 1.0000  │
+        // └─────────────┴───────────────────┘
+        let tol = 1e-4;
+        let cases: &[(u32, u32, f64, f64)] = &[
+            (50, 100, 0.4038, 0.5962),
+            (10, 100, 0.0552, 0.1744),
+            (90, 100, 0.8256, 0.9448),
+            (0, 10, 0.0000, 0.2775),
+            (10, 10, 0.7225, 1.0000),
+        ];
+        for &(k, n, lo, hi) in cases {
+            let ci = wilson_score_interval(k, n).expect("n>0");
+            assert!(
+                (ci.lower - lo).abs() < tol,
+                "wilson({k}, {n}).lower = {} (expected ~{lo})",
+                ci.lower
+            );
+            assert!(
+                (ci.upper - hi).abs() < tol,
+                "wilson({k}, {n}).upper = {} (expected ~{hi})",
+                ci.upper
+            );
+        }
+    }
+
+    #[test]
+    fn wilson_symmetric_at_p_half() {
+        // At p̂ = 0.5 the Wilson CI is symmetric about 0.5 — a useful
+        // invariant that catches sign errors in the spread term.
+        let ci = wilson_score_interval(50, 100).expect("n>0");
+        let low_gap = 0.5 - ci.lower;
+        let high_gap = ci.upper - 0.5;
+        assert!(
+            (low_gap - high_gap).abs() < 1e-12,
+            "CI at p̂=0.5 should be symmetric: 0.5-lo={low_gap}, hi-0.5={high_gap}"
+        );
+    }
+
+    #[test]
     fn wilson_from_rate_roundtrips_to_successes() {
         // 0.25 of 100 = 25 successes.
         let from_rate = wilson_from_rate(0.25, 100).expect("n>0");
@@ -355,6 +422,58 @@ mod tests {
             "point mean {mean} should fall inside CI [{}, {}]",
             ci.lower,
             ci.upper
+        );
+    }
+
+    #[test]
+    fn bootstrap_ci_records_original_sample_size() {
+        // n_samples must reflect the input slice length, not the
+        // resample count — mixing these inflates perceived precision
+        // downstream.
+        let values: Vec<f64> = (0..25).map(f64::from).collect();
+        let ci = percentile_bootstrap_ci_seeded(&values, 500, 0.05, 1).expect("non-empty");
+        assert_eq!(ci.n_samples, 25);
+        assert_eq!(ci.n_resamples, 500);
+    }
+
+    #[test]
+    fn bootstrap_conversion_to_confidence_interval_uses_samples() {
+        let values: Vec<f64> = (0..25).map(f64::from).collect();
+        let boot = percentile_bootstrap_ci_seeded(&values, 500, 0.05, 1).expect("non-empty");
+        let ci: ConfidenceInterval = boot.into();
+        assert_eq!(
+            ci.n, 25,
+            "ConfidenceInterval.n should track the original sample size, not resample count"
+        );
+    }
+
+    #[test]
+    fn bootstrap_coverage_is_reasonable() {
+        // Weak statistical smoke test: if we draw many synthetic
+        // "samples" from a known distribution and build a bootstrap CI
+        // for each, the true mean should be covered by most of them.
+        // This won't hit the asymptotic 95% exactly for small samples,
+        // but a floor of ~80% catches gross errors.
+        let mut rng_outer = ChaCha8Rng::seed_from_u64(99);
+        let true_mean = 10.0_f64;
+        let mut covered: u32 = 0;
+        let trials: u32 = 200;
+        let sample_size: u32 = 40;
+        for trial in 0..trials {
+            // Generate a synthetic "sample" from uniform(0, 20).
+            let sample: Vec<f64> = (0..sample_size)
+                .map(|_| rng_outer.gen_range(0.0..20.0))
+                .collect();
+            let ci = percentile_bootstrap_ci_seeded(&sample, 500, 0.05, u64::from(trial))
+                .expect("non-empty");
+            if ci.lower <= true_mean && true_mean <= ci.upper {
+                covered += 1;
+            }
+        }
+        let coverage = f64::from(covered) / f64::from(trials);
+        assert!(
+            coverage >= 0.80,
+            "bootstrap coverage was {coverage:.2} ({covered}/{trials}); expected ≥ 0.80"
         );
     }
 }

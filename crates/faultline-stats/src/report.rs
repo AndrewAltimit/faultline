@@ -57,7 +57,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
             let _ = writeln!(out);
             let _ = writeln!(
                 out,
-                "_Win-rate CIs use the Wilson score interval (95%, z = 1.96)._"
+                "_Win-rate CIs use the Wilson score interval (95%, z ≈ 1.960)._"
             );
         }
         let _ = writeln!(out);
@@ -224,7 +224,7 @@ This report combines two distinct sources of uncertainty. Mixing them up is a co
 - **Parameter uncertainty** (the author-flagged confidence tags). Are the input parameters themselves defensible? A tight Wilson CI around a success rate derived from expert-guess detection probabilities does not mean the real-world success rate is known to that precision.
 
 ### 95% confidence intervals
-Win rates, phase success rates, detection rates, and the rate-valued feasibility cells use the [Wilson score interval][wilson] at `z = 1.96`. Wilson is used in preference to the textbook Wald approximation because Wald collapses to `[0, 0]` or `[1, 1]` when zero or all runs succeed, implying false certainty for rare events. Wilson retains well-calibrated coverage across `p ∈ [0, 1]`.
+Win rates, phase success rates, detection rates, and the rate-valued feasibility cells use the [Wilson score interval][wilson] at `z ≈ 1.960` (the standard-normal 97.5% quantile). Wilson is used in preference to the textbook Wald approximation because Wald collapses to `[0, 0]` or `[1, 1]` when zero or all runs succeed, implying false certainty for rare events. Wilson retains well-calibrated coverage across `p ∈ [0, 1]`.
 
 Continuous metrics (duration, casualties, resources expended) are summarised by their mean, 5th / 95th percentiles, and standard deviation. A percentile-bootstrap CI helper is available in `faultline_stats::uncertainty::percentile_bootstrap_ci` for downstream callers that need a CI on the mean; it is deterministic under a seeded `ChaCha8Rng`.
 

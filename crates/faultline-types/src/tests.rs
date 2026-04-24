@@ -1066,3 +1066,284 @@ fn wrong_type_for_field_produces_error() {
         "expected error when name is integer instead of string"
     );
 }
+
+// ============================================================================
+// 10. Confidence tag fields (PR 1 — uncertainty foundation)
+// ============================================================================
+//
+// Exercises the optional author-confidence tags on `CampaignPhase` and
+// `PhaseCost`. Three behaviours matter and are covered below:
+//
+//   1. TOML input WITHOUT confidence tags continues to parse — the
+//      fields are `Option<ConfidenceLevel>` with `#[serde(default)]`.
+//   2. TOML input WITH explicit tags rounds-trips through serde.
+//   3. JSON output omits `None` values (the `skip_serializing_if`
+//      attribute) so old consumers don't see spurious keys.
+
+/// Suffix that appends a kill-chain with two phases — one carrying
+/// explicit confidence tags, one without — to the minimal TOML.
+const CONFIDENCE_CHAIN_SUFFIX: &str = r##"
+[kill_chains.alpha]
+id = "alpha"
+name = "Alpha"
+attacker = "red"
+target = "blue"
+entry_phase = "tagged"
+
+[kill_chains.alpha.phases.tagged]
+id = "tagged"
+name = "Tagged Phase"
+base_success_probability = 0.5
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.1
+attribution_difficulty = 0.5
+parameter_confidence = "Low"
+
+[kill_chains.alpha.phases.tagged.cost]
+attacker_dollars = 100.0
+defender_dollars = 10000.0
+attacker_resources = 0.0
+confidence = "High"
+
+[kill_chains.alpha.phases.untagged]
+id = "untagged"
+name = "Untagged Phase"
+base_success_probability = 0.5
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.1
+attribution_difficulty = 0.5
+
+[kill_chains.alpha.phases.untagged.cost]
+attacker_dollars = 1.0
+defender_dollars = 1.0
+attacker_resources = 0.0
+"##;
+
+fn confidence_chain_toml() -> String {
+    let mut s = minimal_scenario_toml();
+    s.push_str(CONFIDENCE_CHAIN_SUFFIX);
+    s
+}
+
+#[test]
+fn parameter_confidence_absent_parses_as_none() {
+    // Tutorial scenarios have no confidence tags and must continue to
+    // load as `None` rather than producing a parse error.
+    let scenario: Scenario =
+        toml::from_str(TUTORIAL_TOML).expect("tutorial should still parse after schema additions");
+    // No kill chains in the tutorial — just ensure deserialization
+    // succeeded and the default `None` variant is in effect where the
+    // schema touches it.
+    assert!(scenario.kill_chains.is_empty());
+}
+
+#[test]
+fn parameter_confidence_tags_roundtrip_through_toml() {
+    use crate::stats::ConfidenceLevel;
+
+    let scenario: Scenario =
+        toml::from_str(&confidence_chain_toml()).expect("tagged scenario should parse");
+    let chain = scenario
+        .kill_chains
+        .get(&crate::ids::KillChainId::from("alpha"))
+        .expect("alpha chain should exist");
+
+    let tagged = chain
+        .phases
+        .get(&crate::ids::PhaseId::from("tagged"))
+        .expect("tagged phase");
+    assert_eq!(
+        tagged.parameter_confidence,
+        Some(ConfidenceLevel::Low),
+        "explicit 'Low' tag should deserialize"
+    );
+    assert_eq!(
+        tagged.cost.confidence,
+        Some(ConfidenceLevel::High),
+        "explicit cost 'High' tag should deserialize"
+    );
+
+    let untagged = chain
+        .phases
+        .get(&crate::ids::PhaseId::from("untagged"))
+        .expect("untagged phase");
+    assert!(
+        untagged.parameter_confidence.is_none(),
+        "absent tag must deserialize as None"
+    );
+    assert!(
+        untagged.cost.confidence.is_none(),
+        "absent cost tag must deserialize as None"
+    );
+
+    // Roundtrip once through TOML and re-verify — catches asymmetric
+    // serialize/deserialize bugs.
+    let serialized = toml::to_string(&scenario).expect("serialize");
+    let reparsed: Scenario = toml::from_str(&serialized).expect("reparse");
+    let chain2 = reparsed
+        .kill_chains
+        .get(&crate::ids::KillChainId::from("alpha"))
+        .expect("chain survives roundtrip");
+    let tagged2 = chain2
+        .phases
+        .get(&crate::ids::PhaseId::from("tagged"))
+        .expect("phase survives roundtrip");
+    assert_eq!(tagged2.parameter_confidence, Some(ConfidenceLevel::Low));
+    assert_eq!(tagged2.cost.confidence, Some(ConfidenceLevel::High));
+}
+
+#[test]
+fn untagged_phase_json_omits_confidence_keys() {
+    // `skip_serializing_if = "Option::is_none"` on the new fields means
+    // downstream JSON consumers never see a `"parameter_confidence":
+    // null` key when the author didn't tag the phase.
+    let scenario: Scenario =
+        toml::from_str(&confidence_chain_toml()).expect("tagged scenario should parse");
+    let json = serde_json::to_string(&scenario).expect("serialize");
+    // Extract the "untagged" phase substring to inspect — we only want
+    // to assert on that phase, not the whole doc.
+    let needle = "\"untagged\":";
+    let idx = json.find(needle).expect("untagged phase should be present");
+    // Take up to the next phase or end, whichever comes first.
+    let slice = &json[idx..(idx + 400).min(json.len())];
+    assert!(
+        !slice.contains("parameter_confidence"),
+        "absent parameter_confidence must not serialize; got:\n{slice}"
+    );
+    // The cost block for the untagged phase also should lack its tag.
+    // This slice is small enough to check in one go.
+    assert!(
+        !slice.contains("\"confidence\":"),
+        "absent cost confidence must not serialize; got:\n{slice}"
+    );
+}
+
+// ============================================================================
+// 11. MonteCarloSummary CI fields serde roundtrip
+// ============================================================================
+
+#[test]
+fn monte_carlo_summary_ci_fields_json_roundtrip() {
+    use crate::ids::{FactionId, KillChainId};
+    use crate::stats::{
+        ConfidenceInterval, ConfidenceLevel, FeasibilityCIs, FeasibilityConfidence, FeasibilityRow,
+        MonteCarloSummary,
+    };
+    use std::collections::BTreeMap;
+
+    let fid = FactionId::from("gov");
+    let chain_id = KillChainId::from("alpha");
+    let mut win_rates = BTreeMap::new();
+    win_rates.insert(fid.clone(), 0.625);
+    let mut win_rate_cis = BTreeMap::new();
+    win_rate_cis.insert(
+        fid.clone(),
+        ConfidenceInterval {
+            point: 0.625,
+            lower: 0.525,
+            upper: 0.715,
+            n: 100,
+        },
+    );
+    let row = FeasibilityRow {
+        chain_id: chain_id.clone(),
+        chain_name: "Alpha".into(),
+        technology_readiness: 0.7,
+        operational_complexity: 0.3,
+        detection_probability: 0.4,
+        success_probability: 0.8,
+        consequence_severity: 0.5,
+        attribution_difficulty: 0.2,
+        cost_asymmetry_ratio: 1000.0,
+        confidence: FeasibilityConfidence {
+            technology_readiness: ConfidenceLevel::High,
+            operational_complexity: ConfidenceLevel::Medium,
+            detection_probability: ConfidenceLevel::High,
+            success_probability: ConfidenceLevel::Medium,
+            consequence_severity: ConfidenceLevel::Low,
+        },
+        ci_95: FeasibilityCIs {
+            detection_probability: Some(ConfidenceInterval {
+                point: 0.4,
+                lower: 0.32,
+                upper: 0.48,
+                n: 100,
+            }),
+            success_probability: Some(ConfidenceInterval {
+                point: 0.8,
+                lower: 0.72,
+                upper: 0.86,
+                n: 100,
+            }),
+            consequence_severity: None,
+        },
+    };
+    let summary = MonteCarloSummary {
+        total_runs: 100,
+        win_rates,
+        win_rate_cis,
+        average_duration: 42.0,
+        metric_distributions: BTreeMap::new(),
+        regional_control: BTreeMap::new(),
+        event_probabilities: BTreeMap::new(),
+        campaign_summaries: BTreeMap::new(),
+        feasibility_matrix: vec![row],
+        seam_scores: BTreeMap::new(),
+    };
+
+    let json = serde_json::to_string(&summary).expect("serialize");
+    let reparsed: MonteCarloSummary = serde_json::from_str(&json).expect("deserialize");
+
+    assert_eq!(reparsed.total_runs, 100);
+    let ci = reparsed
+        .win_rate_cis
+        .get(&fid)
+        .expect("win rate CI survives JSON roundtrip");
+    assert!((ci.lower - 0.525).abs() < 1e-12);
+    assert!((ci.upper - 0.715).abs() < 1e-12);
+    assert_eq!(ci.n, 100);
+
+    let fr = reparsed
+        .feasibility_matrix
+        .first()
+        .expect("feasibility row survives");
+    let dc = fr
+        .ci_95
+        .detection_probability
+        .as_ref()
+        .expect("detection CI survives");
+    assert!((dc.lower - 0.32).abs() < 1e-12);
+    assert!(
+        fr.ci_95.consequence_severity.is_none(),
+        "None CI must survive roundtrip as None"
+    );
+}
+
+#[test]
+fn old_summary_without_ci_fields_deserializes() {
+    // Simulate a JSON document produced by a pre-PR1 build: no
+    // `win_rate_cis` key, no `ci_95` on feasibility rows. This must
+    // still deserialize into the current `MonteCarloSummary` shape
+    // with the new fields populated from their defaults.
+    use crate::stats::MonteCarloSummary;
+
+    let legacy_json = r#"{
+        "total_runs": 4,
+        "win_rates": {"gov": 0.75},
+        "average_duration": 12.5,
+        "metric_distributions": {},
+        "regional_control": {},
+        "event_probabilities": {},
+        "feasibility_matrix": []
+    }"#;
+    let parsed: MonteCarloSummary =
+        serde_json::from_str(legacy_json).expect("legacy summary should parse");
+    assert_eq!(parsed.total_runs, 4);
+    assert!(
+        parsed.win_rate_cis.is_empty(),
+        "absent field should default to empty map"
+    );
+    assert!(parsed.feasibility_matrix.is_empty());
+}

@@ -43,17 +43,30 @@ so the flash lands on a substrate worth showing.
 Foundation for everything else. Without proper CIs and confidence
 tagging, downstream comparisons are suspect.
 
-- [ ] `Confidence` tags on `PhaseCost`, `CampaignPhase` (serde-optional)
-- [ ] Replace Wald CI in `analysis.rs::confidence_from_rate` with
+- [x] `Confidence` tags on `PhaseCost`, `CampaignPhase` (serde-optional)
+- [x] Replace Wald CI in `analysis.rs::confidence_from_rate` with
       Wilson score interval
-- [ ] Bootstrap CI helper for continuous metrics (duration,
-      casualties, cost asymmetry)
-- [ ] Wilson CI bounds surfaced on `FeasibilityRow`
-- [ ] Win-rate Wilson CIs in report
-- [ ] Methodology appendix + confidence legend in `report.md`
-- [ ] "Low-confidence parameters" section when authors tag any
+- [x] Bootstrap CI helper for continuous metrics (duration,
+      casualties, cost asymmetry) — available in
+      `faultline_stats::uncertainty::percentile_bootstrap_ci`; not yet
+      wired into the report for continuous metrics
+- [x] Wilson CI bounds surfaced on `FeasibilityRow`
+- [x] Win-rate Wilson CIs in report
+- [x] Methodology appendix + confidence legend in `report.md`
+- [x] "Low-confidence parameters" section when authors tag any
+- [ ] Wilson CIs on `PhaseStats` (per-phase success / detection /
+      failure / not-reached rates)
+- [ ] Bootstrap CIs on duration / casualties / cost-asymmetry
+      distributions in the report
+- [ ] Metadata-level `confidence` on scenario `[meta]` (coarse
+      whole-scenario tag — "this scenario is a conceptual sketch" vs
+      "this is ETRA-candidate"); feeds into an at-a-glance report
+      banner
 
-**Status:** PR 1 in flight.
+**Status:** PR 1 landed (commit `44d9121` + hardening follow-up on
+branch `review/comprehensive-improvements`). Remaining items are
+incremental polish — they unblock nothing downstream, so Epic B can
+proceed independently.
 
 ### Epic B — Counterfactual & comparative analysis
 
