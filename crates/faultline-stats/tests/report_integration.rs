@@ -581,3 +581,32 @@ fn report_omits_meta_confidence_banner_when_unset() {
         "banner must be elided when meta.confidence is None; got:\n{md}"
     );
 }
+
+#[test]
+fn continuous_metrics_header_omits_ci_label_when_missing() {
+    // Simulates a legacy `MonteCarloSummary` deserialized from a pre-bootstrap
+    // build: `bootstrap_ci_mean` defaults to `None` for every metric. The
+    // renderer must degrade the table header to plain "Mean" so the header
+    // does not mislabel the (bare-mean) cells.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(7),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let mut result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    for stats in result.summary.metric_distributions.values_mut() {
+        stats.bootstrap_ci_mean = None;
+    }
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("| Metric | Mean | Median |"),
+        "header should fall back to plain 'Mean' when no metric carries a bootstrap CI; got:\n{md}"
+    );
+    assert!(
+        !md.contains("95% bootstrap CI"),
+        "CI label must disappear (header + footnote) when no metric carries a CI; got:\n{md}"
+    );
+}

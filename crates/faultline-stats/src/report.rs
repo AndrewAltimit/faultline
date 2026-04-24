@@ -342,10 +342,24 @@ fn render_continuous_metrics(out: &mut String, summary: &MonteCarloSummary) {
     if summary.metric_distributions.is_empty() {
         return;
     }
+    // Header must match cell content: if any metric lacks a bootstrap CI
+    // (e.g. a legacy `MonteCarloSummary` deserialized from a pre-bootstrap
+    // build where `bootstrap_ci_mean` defaults to `None`), `fmt_mean_with_bootstrap`
+    // falls back to a bare mean for those rows. A blanket "Mean (95% bootstrap CI)"
+    // header would then mislabel those cells.
+    let all_have_ci = summary
+        .metric_distributions
+        .values()
+        .all(|s| s.bootstrap_ci_mean.is_some());
+    let mean_header = if all_have_ci {
+        "Mean (95% bootstrap CI)"
+    } else {
+        "Mean"
+    };
     let _ = writeln!(out, "## Continuous Metrics");
     let _ = writeln!(
         out,
-        "| Metric | Mean (95% bootstrap CI) | Median | 5th – 95th pct | Std dev |"
+        "| Metric | {mean_header} | Median | 5th – 95th pct | Std dev |"
     );
     let _ = writeln!(out, "|---|---|---|---|---|");
     for (metric, stats) in &summary.metric_distributions {
@@ -360,11 +374,13 @@ fn render_continuous_metrics(out: &mut String, summary: &MonteCarloSummary) {
             fmt_scalar(stats.std_dev),
         );
     }
-    let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "_Bootstrap CIs use 500 percentile-bootstrap resamples seeded from the scenario. Percentiles describe the *distribution* of run outcomes — not uncertainty on the mean._"
-    );
+    if all_have_ci {
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "_Bootstrap CIs use 500 percentile-bootstrap resamples seeded from the scenario. Percentiles describe the *distribution* of run outcomes — not uncertainty on the mean._"
+        );
+    }
     let _ = writeln!(out);
 }
 
