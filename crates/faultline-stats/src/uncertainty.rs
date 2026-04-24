@@ -56,17 +56,38 @@ impl From<WilsonInterval> for ConfidenceInterval {
 
 impl From<BootstrapCI> for ConfidenceInterval {
     fn from(b: BootstrapCI) -> Self {
-        // `n` on `ConfidenceInterval` documents the sample supporting
-        // the estimate, not the resample count — those are distinct
-        // notions of "sample size" and conflating them inflates
-        // perceived precision. Saturating cast tolerates pathological
-        // sample sizes above u32::MAX.
-        ConfidenceInterval::new(
+        // Bypasses `ConfidenceInterval::new` deliberately: that constructor
+        // enforces `lower <= point <= upper`, which holds for Wilson CIs
+        // (point == p_hat, bounds are center ± spread) but *not* for
+        // percentile bootstrap CIs on skewed distributions — the sample
+        // mean can legitimately fall outside the resample percentile band.
+        // Enforcing the stronger invariant here would panic in debug builds
+        // and silently emit the skewed bounds in release. Instead, keep
+        // the universally-valid `lower <= upper` check and preserve the
+        // point estimate as reported by the bootstrap.
+        //
+        // `n` documents the sample supporting the estimate, not the
+        // resample count — saturating cast tolerates pathological sample
+        // sizes above `u32::MAX`.
+        debug_assert!(
+            b.point.is_finite() && b.lower.is_finite() && b.upper.is_finite(),
+            "BootstrapCI bounds must be finite: point={} lower={} upper={}",
             b.point,
             b.lower,
-            b.upper,
-            u32::try_from(b.n_samples).unwrap_or(u32::MAX),
-        )
+            b.upper
+        );
+        debug_assert!(
+            b.lower <= b.upper,
+            "BootstrapCI invariant violated: lower={} upper={}",
+            b.lower,
+            b.upper
+        );
+        ConfidenceInterval {
+            point: b.point,
+            lower: b.lower,
+            upper: b.upper,
+            n: u32::try_from(b.n_samples).unwrap_or(u32::MAX),
+        }
     }
 }
 
@@ -186,6 +207,12 @@ pub fn percentile_bootstrap_ci(
     }
     resampled_means.sort_by(|a, b| a.total_cmp(b));
 
+    // Surface caller mistakes in debug/test builds; in release, silently
+    // clamp to the usable range so we never emit a degenerate percentile.
+    debug_assert!(
+        alpha > 0.0 && alpha <= 0.5,
+        "alpha {alpha} out of range (0, 0.5]"
+    );
     let alpha = alpha.clamp(f64::EPSILON, 0.5);
     let lower = percentile_sorted(&resampled_means, 100.0 * alpha * 0.5);
     let upper = percentile_sorted(&resampled_means, 100.0 * (1.0 - alpha * 0.5));
@@ -440,6 +467,27 @@ mod tests {
             ci.n, 25,
             "ConfidenceInterval.n should track the original sample size, not resample count"
         );
+    }
+
+    #[test]
+    fn bootstrap_conversion_accepts_point_outside_interval() {
+        // Percentile bootstrap CIs on skewed distributions can place the
+        // sample mean outside [lower, upper]. The `From<BootstrapCI>`
+        // impl must not panic on this shape — the stronger `lower <=
+        // point <= upper` invariant applies only to Wilson CIs.
+        let skewed = BootstrapCI {
+            point: 100.0,
+            lower: 1.0,
+            upper: 5.0,
+            n_samples: 20,
+            n_resamples: 500,
+            alpha: 0.05,
+        };
+        let ci: ConfidenceInterval = skewed.into();
+        assert!((ci.point - 100.0).abs() < f64::EPSILON);
+        assert!((ci.lower - 1.0).abs() < f64::EPSILON);
+        assert!((ci.upper - 5.0).abs() < f64::EPSILON);
+        assert_eq!(ci.n, 20);
     }
 
     #[test]
