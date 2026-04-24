@@ -54,19 +54,24 @@ tagging, downstream comparisons are suspect.
 - [x] Win-rate Wilson CIs in report
 - [x] Methodology appendix + confidence legend in `report.md`
 - [x] "Low-confidence parameters" section when authors tag any
-- [ ] Wilson CIs on `PhaseStats` (per-phase success / detection /
+- [x] Wilson CIs on `PhaseStats` (per-phase success / detection /
       failure / not-reached rates)
-- [ ] Bootstrap CIs on duration / casualties / cost-asymmetry
+- [x] Bootstrap CIs on duration / casualties / cost-asymmetry
       distributions in the report
-- [ ] Metadata-level `confidence` on scenario `[meta]` (coarse
+- [x] Metadata-level `confidence` on scenario `[meta]` (coarse
       whole-scenario tag — "this scenario is a conceptual sketch" vs
       "this is ETRA-candidate"); feeds into an at-a-glance report
       banner
 
-**Status:** PR 1 landed (commit `44d9121` + hardening follow-up on
-branch `review/comprehensive-improvements`). Remaining items are
-incremental polish — they unblock nothing downstream, so Epic B can
-proceed independently.
+**Status:** Epic A **closed**. Two PRs landed: PR 1 (commit `44d9121`
++ hardening follow-up) shipped Wilson CIs on win rates and feasibility
+cells, the confidence legend, and the low-confidence section. PR 2
+(branch `epic-a-uncertainty-polish`) shipped the remaining three items
+— per-phase Wilson CIs in the phase breakdown table, a Continuous
+Metrics section with percentile-bootstrap CIs on the mean of every
+scalar distribution (seeded from `scenario.simulation.seed` so the
+report stays bit-identical under fixed inputs), and an optional
+`[meta].confidence` scenario-level banner. Epic B can now proceed.
 
 ### Epic B — Counterfactual & comparative analysis
 

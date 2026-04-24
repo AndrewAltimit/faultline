@@ -140,6 +140,27 @@ pub struct PhaseStats {
     /// Mean tick at which the phase resolved (success/fail/detection).
     /// `None` if no runs reached a terminal state for this phase.
     pub mean_completion_tick: Option<f64>,
+    /// 95% Wilson score intervals for the four rates above. Populated
+    /// when `total_runs > 0`; downstream readers should treat missing
+    /// entries as "not enough runs to estimate".
+    #[serde(default)]
+    pub ci_95: PhaseStatsCIs,
+}
+
+/// 95% Wilson score intervals for the rates on [`PhaseStats`]. All
+/// four fields share the same denominator (`total_runs`), so absence
+/// of any one entry means the runner produced no data — never "some
+/// rates have CIs and others don't."
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PhaseStatsCIs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub success_rate: Option<ConfidenceInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_rate: Option<ConfidenceInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_rate: Option<ConfidenceInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_reached_rate: Option<ConfidenceInterval>,
 }
 
 /// Feasibility matrix row for one kill chain.
@@ -271,6 +292,12 @@ pub struct DistributionStats {
     pub max: f64,
     pub percentile_5: f64,
     pub percentile_95: f64,
+    /// 95% percentile-bootstrap CI on the mean. `None` when the
+    /// distribution is empty or when the consumer computed the stats
+    /// without supplying a bootstrap seed (e.g. a stored summary from
+    /// a pre-bootstrap build).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootstrap_ci_mean: Option<ConfidenceInterval>,
 }
 
 /// Categories of metrics tracked across runs.

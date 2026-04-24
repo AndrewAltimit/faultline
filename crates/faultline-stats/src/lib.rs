@@ -20,11 +20,11 @@ use faultline_engine::{Engine, EngineError};
 use faultline_types::ids::{EventId, FactionId, KillChainId, PhaseId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    CampaignSummary, DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult,
-    MonteCarloSummary, PhaseOutcome, PhaseStats, RunResult,
+    CampaignSummary, ConfidenceInterval, DistributionStats, MetricType, MonteCarloConfig,
+    MonteCarloResult, MonteCarloSummary, PhaseOutcome, PhaseStats, PhaseStatsCIs, RunResult,
 };
 
-use crate::uncertainty::wilson_score_interval;
+use crate::uncertainty::{percentile_bootstrap_ci_seeded, wilson_score_interval};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -159,9 +159,26 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // Final tension distribution.
     let tensions: Vec<f64> = runs.iter().map(|r| r.outcome.final_tension).collect();
 
+    // Bootstrap-CI seeds are derived deterministically from the scenario's
+    // simulation seed so that `render_markdown` output is bit-identical
+    // across re-runs of `MonteCarloRunner::run` on the same inputs. Each
+    // metric gets a distinct salt so its resample sequence is independent
+    // of the others — otherwise all four CIs would share the same draws
+    // and look artificially correlated.
+    let base_boot_seed = scenario
+        .simulation
+        .seed
+        .unwrap_or(0)
+        .wrapping_add(0xB005_7CA9);
     let mut metric_distributions = BTreeMap::new();
-    metric_distributions.insert(MetricType::Duration, compute_distribution(&durations));
-    metric_distributions.insert(MetricType::FinalTension, compute_distribution(&tensions));
+    metric_distributions.insert(
+        MetricType::Duration,
+        compute_distribution_with_bootstrap(&durations, base_boot_seed.wrapping_add(1)),
+    );
+    metric_distributions.insert(
+        MetricType::FinalTension,
+        compute_distribution_with_bootstrap(&tensions, base_boot_seed.wrapping_add(2)),
+    );
 
     // Total casualties: sum of (initial_strength - final_strength) across all factions per run.
     let initial_total_strength: f64 = scenario
@@ -184,7 +201,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         .collect();
     metric_distributions.insert(
         MetricType::TotalCasualties,
-        compute_distribution(&casualties),
+        compute_distribution_with_bootstrap(&casualties, base_boot_seed.wrapping_add(3)),
     );
 
     // Infrastructure damage: sum of (initial_status - final_status) across all infra nodes.
@@ -211,7 +228,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             .collect();
         metric_distributions.insert(
             MetricType::InfrastructureDamage,
-            compute_distribution(&infra_damage),
+            compute_distribution_with_bootstrap(&infra_damage, base_boot_seed.wrapping_add(4)),
         );
     }
 
@@ -235,7 +252,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         .collect();
     metric_distributions.insert(
         MetricType::ResourcesExpended,
-        compute_distribution(&resources_expended),
+        compute_distribution_with_bootstrap(&resources_expended, base_boot_seed.wrapping_add(5)),
     );
 
     // Regional control probabilities from final state.
@@ -343,6 +360,7 @@ fn compute_campaign_summaries(
             }
         }
 
+        let n_runs = u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX");
         let mut phase_stats = BTreeMap::new();
         for pid in chain.phases.keys() {
             let s = *phase_success.get(pid).unwrap_or(&0);
@@ -356,6 +374,16 @@ fn compute_campaign_summaries(
                     None
                 }
             });
+            // All four rates share the same denominator (`n_runs`), so
+            // `wilson_score_interval` returns `Some` for all or none.
+            // Computing per-field keeps the point estimate exact (counts,
+            // not the round-tripped rate) even at small `n`.
+            let ci_95 = PhaseStatsCIs {
+                success_rate: wilson_score_interval(s, n_runs).map(ConfidenceInterval::from),
+                failure_rate: wilson_score_interval(f, n_runs).map(ConfidenceInterval::from),
+                detection_rate: wilson_score_interval(d, n_runs).map(ConfidenceInterval::from),
+                not_reached_rate: wilson_score_interval(nr, n_runs).map(ConfidenceInterval::from),
+            };
             phase_stats.insert(
                 pid.clone(),
                 PhaseStats {
@@ -365,6 +393,7 @@ fn compute_campaign_summaries(
                     detection_rate: f64::from(d) / total,
                     not_reached_rate: f64::from(nr) / total,
                     mean_completion_tick: mean_tick,
+                    ci_95,
                 },
             );
         }
@@ -462,7 +491,13 @@ fn compute_event_probabilities(runs: &[RunResult]) -> BTreeMap<EventId, f64> {
 ///
 /// Returns mean, median, standard deviation, min, max, and
 /// 5th/95th percentiles. Returns zeroed stats for empty input.
-fn compute_distribution(values: &[f64]) -> DistributionStats {
+///
+/// When `bootstrap_seed` is `Some`, a 95% percentile-bootstrap CI on
+/// the mean is also populated using a fresh `ChaCha8Rng` seeded with
+/// that value — deterministic given the seed and values. The public
+/// entry point [`compute_distribution`] passes `None`; the runner
+/// uses [`compute_distribution_with_bootstrap`] to fill the CI.
+fn compute_distribution_inner(values: &[f64], bootstrap_seed: Option<u64>) -> DistributionStats {
     if values.is_empty() {
         return DistributionStats {
             mean: 0.0,
@@ -472,6 +507,7 @@ fn compute_distribution(values: &[f64]) -> DistributionStats {
             max: 0.0,
             percentile_5: 0.0,
             percentile_95: 0.0,
+            bootstrap_ci_mean: None,
         };
     }
 
@@ -494,6 +530,13 @@ fn compute_distribution(values: &[f64]) -> DistributionStats {
     let percentile_5 = percentile_of_sorted(&sorted, 5.0);
     let percentile_95 = percentile_of_sorted(&sorted, 95.0);
 
+    // 500 resamples: small enough to keep compute_summary well under a
+    // millisecond for normal MC sizes, large enough that endpoint
+    // percentiles are stable to ~0.01 for samples of 100+.
+    let bootstrap_ci_mean = bootstrap_seed.and_then(|seed| {
+        percentile_bootstrap_ci_seeded(values, 500, 0.05, seed).map(ConfidenceInterval::from)
+    });
+
     DistributionStats {
         mean,
         median,
@@ -502,7 +545,23 @@ fn compute_distribution(values: &[f64]) -> DistributionStats {
         max,
         percentile_5,
         percentile_95,
+        bootstrap_ci_mean,
     }
+}
+
+/// Convenience wrapper: descriptive stats without a bootstrap CI.
+/// Only used by in-file tests today; production paths always pass a seed
+/// via [`compute_distribution_with_bootstrap`] so the report carries CIs.
+#[cfg(test)]
+fn compute_distribution(values: &[f64]) -> DistributionStats {
+    compute_distribution_inner(values, None)
+}
+
+/// Descriptive stats + percentile-bootstrap CI on the mean. Seed is
+/// carried from the caller (typically derived from the scenario) so
+/// the report remains deterministic under fixed inputs.
+fn compute_distribution_with_bootstrap(values: &[f64], seed: u64) -> DistributionStats {
+    compute_distribution_inner(values, Some(seed))
 }
 
 /// Compute the p-th percentile from a pre-sorted slice using linear
@@ -806,6 +865,7 @@ mod tests {
                 author: "test".into(),
                 version: "0.1.0".into(),
                 tags: vec![],
+                confidence: None,
             },
             map: MapConfig {
                 source: MapSource::Grid {

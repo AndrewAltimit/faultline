@@ -1332,3 +1332,37 @@ fn old_summary_without_ci_fields_deserializes() {
     );
     assert!(parsed.feasibility_matrix.is_empty());
 }
+
+#[test]
+fn meta_confidence_roundtrips_through_toml() {
+    use crate::scenario::ScenarioMeta;
+    use crate::stats::ConfidenceLevel;
+
+    // Absent field decodes as None — this is what makes the change
+    // backwards-compatible for the nine scenarios already on disk.
+    let toml_without = r#"
+name = "Test"
+description = "Test"
+author = "test"
+version = "0.1"
+tags = []
+"#;
+    let m: ScenarioMeta = toml::from_str(toml_without).expect("no-confidence TOML should parse");
+    assert!(m.confidence.is_none());
+
+    // Each variant round-trips verbatim via serde's default variant
+    // naming (PascalCase). If we ever switch to a renamed serde
+    // representation, this test flags the drift.
+    for (repr, variant) in [
+        ("\"High\"", ConfidenceLevel::High),
+        ("\"Medium\"", ConfidenceLevel::Medium),
+        ("\"Low\"", ConfidenceLevel::Low),
+    ] {
+        let toml_str = format!(
+            "name = \"T\"\ndescription = \"T\"\nauthor = \"t\"\nversion = \"0\"\ntags = []\nconfidence = {repr}\n"
+        );
+        let m: ScenarioMeta =
+            toml::from_str(&toml_str).unwrap_or_else(|e| panic!("parsing {repr}: {e}"));
+        assert_eq!(m.confidence, Some(variant), "variant mismatch for {repr}");
+    }
+}

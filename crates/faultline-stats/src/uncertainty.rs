@@ -120,10 +120,19 @@ pub fn wilson_score_interval(successes: u32, n: u32) -> Option<WilsonInterval> {
     let denom = 1.0 + z2 / n_f;
     let center = (p_hat + z2 / (2.0 * n_f)) / denom;
     let spread = z * (p_hat * (1.0 - p_hat) / n_f + z2 / (4.0 * n_f * n_f)).sqrt() / denom;
+    // Structural invariant: `lower <= p_hat <= upper`. The closed-form
+    // algebra satisfies this exactly, but floating-point subtraction in
+    // `center - spread` at `p_hat = 0` (resp. `center + spread` at
+    // `p_hat = 1`) can leave a sub-ulp stray — e.g. lower = 6.9e-18
+    // instead of exact zero. `ConfidenceInterval::new` debug-asserts the
+    // invariant, so without this tightening the `From<WilsonInterval>`
+    // conversion panics on any 0-success or n-success phase.
+    let lower = (center - spread).clamp(0.0, 1.0).min(p_hat);
+    let upper = (center + spread).clamp(0.0, 1.0).max(p_hat);
     Some(WilsonInterval {
         p_hat,
-        lower: (center - spread).clamp(0.0, 1.0),
-        upper: (center + spread).clamp(0.0, 1.0),
+        lower,
+        upper,
         n,
     })
 }
