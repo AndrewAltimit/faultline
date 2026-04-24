@@ -432,6 +432,7 @@ A single phase. Each active tick rolls independently for detection (accumulating
 | `targets_domains` | `[DefensiveDomain]` | Domains whose seams this phase exploits |
 | `outputs` | `[PhaseOutput]` | Effects applied on success |
 | `branches` | `[PhaseBranch]` | Next-phase transitions |
+| `parameter_confidence` | `"High"` / `"Medium"` / `"Low"` | Optional author self-assessment of how defensible this phase's base rates, detection probability, and attribution difficulty are. Omit for "unrated." Distinct from the Monte Carlo-derived confidence in the feasibility matrix, which reflects *sampling* stability — `parameter_confidence` reflects *parameter* defensibility. Phases tagged `Low` are listed in a dedicated section of the generated Markdown report. |
 
 ### `PhaseCost`
 
@@ -440,6 +441,7 @@ A single phase. Each active tick rolls independently for detection (accumulating
 attacker_dollars = 500.0
 defender_dollars = 4_000_000.0
 attacker_resources = 0.5
+confidence = "High"  # optional
 ```
 
 | Field | Type | Notes |
@@ -447,6 +449,7 @@ attacker_resources = 0.5
 | `attacker_dollars` | f64 | Accumulated against scenario-level `attacker_budget` |
 | `defender_dollars` | f64 | Accumulated against scenario-level `defender_budget` |
 | `attacker_resources` | f64 | Scenario-resource units consumed from the attacker's pool |
+| `confidence` | `"High"` / `"Medium"` / `"Low"` | Optional author self-assessment of cost defensibility — `High` for commodity-parts BOMs / published rate cards, `Low` for wide expert estimates. Omit for "unrated." Complements `parameter_confidence` on the phase itself. |
 
 The ratio `mean defender spend / mean attacker spend` across a Monte Carlo batch is the **cost asymmetry ratio** surfaced in `CampaignSummary.cost_asymmetry_ratio`, the feasibility matrix, and the generated Markdown report.
 

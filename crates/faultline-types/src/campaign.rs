@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{FactionId, KillChainId, PhaseId, RegionId};
+use crate::stats::ConfidenceLevel;
 
 // ---------------------------------------------------------------------------
 // Kill chain
@@ -85,6 +86,13 @@ pub struct CampaignPhase {
     /// Branching logic for resolving the next phase.
     #[serde(default)]
     pub branches: Vec<PhaseBranch>,
+    /// Author's self-assessment of the *parameter quality* for this
+    /// phase (base rates, detection probability, attribution
+    /// difficulty). Orthogonal to the Monte Carlo-derived confidence
+    /// reported in `FeasibilityConfidence`, which reflects sampling
+    /// stability. `None` = author has not rated it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_confidence: Option<ConfidenceLevel>,
 }
 
 fn default_attribution() -> f64 {
@@ -111,6 +119,11 @@ pub struct PhaseCost {
     /// (distinct from dollar accounting).
     #[serde(default)]
     pub attacker_resources: f64,
+    /// Author's self-assessment of the dollar-cost defensibility.
+    /// High = commodity parts / published rate cards; Low = expert
+    /// estimate with wide uncertainty. `None` = unrated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<ConfidenceLevel>,
 }
 
 // ---------------------------------------------------------------------------

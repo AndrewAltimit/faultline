@@ -133,8 +133,8 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — co
 ### 6.5 — Feasibility Matrix Output — COMPLETE (core)
 
 - [x] Per-scenario feasibility matrix — `MonteCarloSummary.feasibility_matrix` with technology readiness, operational complexity, detection probability, success probability, consequence severity, attribution difficulty, cost asymmetry ratio
-- [x] Confidence ratings — `FeasibilityConfidence` with High/Medium/Low derived from MC variance (Wald CI + coefficient of variation on phase success rates)
-- [x] Markdown report generation — `faultline_stats::report::render_markdown` produces an ETRA-style document; CLI auto-emits `report.md` alongside JSON summaries
+- [x] Confidence ratings — `FeasibilityConfidence` with High/Medium/Low derived from Wilson score CI half-width (replaced the earlier Wald approximation in PR 1 of the `review/comprehensive-improvements` branch). Wilson was chosen because Wald collapses to `[0, 0]` / `[1, 1]` at boundaries, implying false certainty for rare events.
+- [x] Markdown report generation — `faultline_stats::report::render_markdown` produces an ETRA-style document; CLI auto-emits `report.md` alongside JSON summaries. Reports now include a Methodology & Confidence appendix and a dedicated section listing scenario parameters tagged `Low` confidence by the author (`CampaignPhase.parameter_confidence` / `PhaseCost.confidence`).
 - [~] Sensitivity to assumptions — existing sensitivity sweep works against any parameter; not yet cross-referenced with feasibility columns
 - [~] Comparative scenario matrix — structure supports it; UI for comparing multiple scenarios deferred
 
@@ -165,6 +165,41 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — co
 - [x] European energy infrastructure sabotage — `scenarios/europe_energy_sabotage.toml` models a four-phase cross-border sabotage campaign (open-source target survey → commercial-cover offshore staging with AIS spoofing → commodity ROV subsea emplacement → coordinated disruption event) targeting ENTSO-E corridors and Baltic / North Sea subsea infrastructure. Parameters from ENTSO-E public TSO reports, IISS Military Balance, CISA/ENISA public advisories, RAND public subsea vulnerability research, and open academic literature on AIS spoofing. Produces ~970× cost-asymmetry ratio and seam-exploitation scoring across physical, network, counter-UAS, and supply-chain defensive domains.
 - [ ] Arctic sovereignty disputes with drone swarm force projection
 - [ ] Domestic critical infrastructure ransomware + physical drone attack convergence
+
+---
+
+## Phase 8: Comprehensive Review (branch: `review/comprehensive-improvements`)
+
+Cross-cutting hardening and capability expansion driven by the April 2026 three-angle audit (engine analytics, frontend/UX, scenario content). Sequenced as six epics. See `docs/improvement-plan.md` for the full living tracker.
+
+### 8.A — Uncertainty as a first-class citizen — IN PROGRESS
+
+- [x] `faultline_stats::uncertainty` module: Wilson score interval (replaces Wald) and deterministic percentile-bootstrap CI
+- [x] `CampaignPhase.parameter_confidence` and `PhaseCost.confidence` — optional author self-assessments of parameter defensibility
+- [x] `FeasibilityRow.ci_95` + `MonteCarloSummary.win_rate_cis` — Wilson bounds surfaced through report
+- [x] Report methodology appendix + author-flagged low-confidence section
+- [ ] Wilson CIs on per-phase success / detection / failure rates in `PhaseStats`
+- [ ] Bootstrap CIs on continuous metric distributions (duration, casualties, cost) in the report
+
+### 8.B — Counterfactual & comparative analysis — DEFERRED
+
+See `docs/improvement-plan.md` Epic B for the full scope.
+
+### 8.C — Time & attribution dynamics — DEFERRED
+
+See `docs/improvement-plan.md` Epic C.
+
+### 8.D — Engine model depth — DEFERRED
+
+See `docs/improvement-plan.md` Epic D — pick-2–3 items (supply networks, multi-front coupling, decapitation, info-op competition, weather, alliance fracture, refugee flows, OR prerequisites).
+
+### 8.E — UI identity & analytical density — DEFERRED
+
+See `docs/improvement-plan.md` Epic E.
+
+### 8.F — Scenario library & metadata — DEFERRED
+
+See `docs/improvement-plan.md` Epic F.
 
 ---
 

@@ -265,6 +265,7 @@ fn campaign_scenario() -> Scenario {
                 attacker_dollars: 100.0,
                 defender_dollars: 50_000.0,
                 attacker_resources: 0.0,
+                confidence: None,
             },
             targets_domains: vec![DefensiveDomain::SignalsIntelligence],
             outputs: vec![PhaseOutput::TensionDelta { delta: 0.05 }],
@@ -272,6 +273,7 @@ fn campaign_scenario() -> Scenario {
                 condition: BranchCondition::OnSuccess,
                 next_phase: strike.clone(),
             }],
+            parameter_confidence: None,
         },
     );
     phases.insert(
@@ -291,6 +293,7 @@ fn campaign_scenario() -> Scenario {
                 attacker_dollars: 500.0,
                 defender_dollars: 2_000_000.0,
                 attacker_resources: 0.0,
+                confidence: None,
             },
             targets_domains: vec![
                 DefensiveDomain::PhysicalSecurity,
@@ -298,6 +301,7 @@ fn campaign_scenario() -> Scenario {
             ],
             outputs: vec![PhaseOutput::TensionDelta { delta: 0.1 }],
             branches: vec![],
+            parameter_confidence: None,
         },
     );
 
@@ -419,6 +423,7 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
                 attacker_dollars: 500.0, // over cap
                 defender_dollars: 0.0,
                 attacker_resources: 0.0,
+                confidence: None,
             },
             targets_domains: vec![DefensiveDomain::PhysicalSecurity],
             outputs: vec![],
@@ -426,6 +431,7 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
                 condition: BranchCondition::OnFailure,
                 next_phase: cheap.clone(),
             }],
+            parameter_confidence: None,
         },
     );
     phases.insert(
@@ -445,10 +451,12 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
                 attacker_dollars: 10.0,
                 defender_dollars: 0.0,
                 attacker_resources: 0.0,
+                confidence: None,
             },
             targets_domains: vec![DefensiveDomain::PhysicalSecurity],
             outputs: vec![],
             branches: vec![],
+            parameter_confidence: None,
         },
     );
 

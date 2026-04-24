@@ -9,10 +9,12 @@ use faultline_types::campaign::DefensiveDomain;
 use faultline_types::ids::KillChainId;
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    ConfidenceLevel, FeasibilityConfidence, FeasibilityRow, PhaseOutcome, RunResult, SeamScore,
+    ConfidenceInterval, ConfidenceLevel, FeasibilityCIs, FeasibilityConfidence, FeasibilityRow,
+    PhaseOutcome, RunResult, SeamScore,
 };
 
 use crate::CampaignSummary;
+use crate::uncertainty::wilson_from_rate;
 
 // ---------------------------------------------------------------------------
 // Feasibility matrix (6.5)
@@ -92,6 +94,16 @@ pub fn compute_feasibility_matrix(
             consequence_severity: confidence_from_rate(consequence_severity, runs.len()),
         };
 
+        let n_runs = u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX");
+        let ci_95 = FeasibilityCIs {
+            detection_probability: wilson_from_rate(detection_probability, n_runs)
+                .map(ConfidenceInterval::from),
+            success_probability: wilson_from_rate(success_probability, n_runs)
+                .map(ConfidenceInterval::from),
+            consequence_severity: wilson_from_rate(consequence_severity, n_runs)
+                .map(ConfidenceInterval::from),
+        };
+
         rows.push(FeasibilityRow {
             chain_id: chain_id.clone(),
             chain_name: chain.name.clone(),
@@ -103,6 +115,7 @@ pub fn compute_feasibility_matrix(
             attribution_difficulty,
             cost_asymmetry_ratio: summary.cost_asymmetry_ratio,
             confidence,
+            ci_95,
         });
     }
 
@@ -129,12 +142,15 @@ fn confidence_from_variance(values: &[f64]) -> ConfidenceLevel {
 }
 
 fn confidence_from_rate(rate: f64, n: usize) -> ConfidenceLevel {
-    // Wald 95% CI half-width as a confidence proxy.
+    // Wilson 95% CI half-width as a confidence proxy. Better
+    // behavior than Wald near `p = 0` and `p = 1`, which is exactly
+    // where Monte Carlo rates for rare events spend their time.
     if n < 30 {
         return ConfidenceLevel::Low;
     }
-    let p = rate.clamp(0.01, 0.99);
-    let half_width = 1.96 * (p * (1.0 - p) / n as f64).sqrt();
+    let ci = wilson_from_rate(rate, n as u32)
+        .expect("n >= 30 after guard above, so wilson_from_rate is always Some");
+    let half_width = ci.half_width();
     if half_width < 0.03 {
         ConfidenceLevel::High
     } else if half_width < 0.08 {
