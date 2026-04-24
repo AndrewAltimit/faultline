@@ -9,6 +9,7 @@ use crate::ids::{EventId, FactionId, KillChainId, TechCardId, VictoryId};
 use crate::map::MapConfig;
 use crate::politics::PoliticalClimate;
 use crate::simulation::SimulationConfig;
+use crate::stats::ConfidenceLevel;
 use crate::tech::TechCard;
 use crate::victory::VictoryCondition;
 
@@ -43,4 +44,11 @@ pub struct ScenarioMeta {
     pub author: String,
     pub version: String,
     pub tags: Vec<String>,
+    /// Coarse author-supplied confidence tag for the scenario as a
+    /// whole. Signals "this is a conceptual sketch" vs.
+    /// "this is ETRA-candidate rigor" to report readers. Orthogonal
+    /// to the Wilson CIs on individual rates — those measure sampling
+    /// uncertainty; this one measures parameter defensibility.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<ConfidenceLevel>,
 }

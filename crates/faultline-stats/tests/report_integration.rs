@@ -202,6 +202,7 @@ fn flagged_chain_scenario() -> Scenario {
             author: "test".into(),
             version: "0.0.1".into(),
             tags: vec![],
+            confidence: None,
         },
         map: MapConfig {
             source: MapSource::Grid {
@@ -418,4 +419,268 @@ fn report_omits_flagged_section_when_scenario_has_no_flags() {
     );
     // Methodology still renders.
     assert!(md.contains("## Methodology & Confidence"));
+}
+
+#[test]
+fn phase_stats_carry_wilson_cis() {
+    // Every phase rate must have a matching CI when runs > 0, and the
+    // Wilson invariant `lower <= point <= upper` must hold for all four
+    // rates — the regression this guards against is the floating-point
+    // drift that slipped `lower` above zero at `p_hat = 0`.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 50,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+
+    let chain_summary = result
+        .summary
+        .campaign_summaries
+        .values()
+        .next()
+        .expect("should have at least one campaign summary");
+    assert!(!chain_summary.phase_stats.is_empty());
+
+    for (pid, ps) in &chain_summary.phase_stats {
+        let cis = ps
+            .ci_95
+            .as_ref()
+            .unwrap_or_else(|| panic!("phase {pid} missing CIs at n=50"));
+        for (label, rate, ci) in [
+            ("success", ps.success_rate, &cis.success_rate),
+            ("failure", ps.failure_rate, &cis.failure_rate),
+            ("detection", ps.detection_rate, &cis.detection_rate),
+            ("not_reached", ps.not_reached_rate, &cis.not_reached_rate),
+        ] {
+            assert_eq!(ci.n, 50, "phase {pid} {label} CI n mismatch");
+            assert!(
+                ci.lower <= rate + 1e-9 && rate <= ci.upper + 1e-9,
+                "phase {pid} {label}: point {rate} outside CI [{}, {}]",
+                ci.lower,
+                ci.upper
+            );
+            assert!(
+                (0.0..=1.0).contains(&ci.lower) && (0.0..=1.0).contains(&ci.upper),
+                "phase {pid} {label}: CI bounds must stay in [0, 1]"
+            );
+        }
+    }
+}
+
+#[test]
+fn rendered_phase_breakdown_shows_wilson_bounds() {
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 50,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    // The phase-breakdown section should carry Wilson bounds inline in
+    // each rate cell. `"% ("` is a unique-enough fragment: it only
+    // appears when a rate cell is printed as `X.X% (lo–hi)`.
+    let phase_section = md
+        .split("## Kill Chain Phase Breakdown")
+        .nth(1)
+        .expect("phase breakdown section should exist");
+    assert!(
+        phase_section.contains("% ("),
+        "phase breakdown cells should render `XX.X% (lo–hi)`; got:\n{phase_section}"
+    );
+}
+
+#[test]
+fn rendered_report_includes_continuous_metrics_with_bootstrap() {
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 50,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("## Continuous Metrics"),
+        "continuous metrics section missing; got:\n{md}"
+    );
+    assert!(
+        md.contains("95% bootstrap CI"),
+        "continuous metrics header should name bootstrap CIs; got:\n{md}"
+    );
+    assert!(
+        md.contains("Duration (ticks)"),
+        "duration metric should render with friendly label; got:\n{md}"
+    );
+
+    // Every DistributionStats emitted by the runner must carry a
+    // bootstrap CI — the table claims one in its header.
+    for (metric, stats) in &result.summary.metric_distributions {
+        assert!(
+            stats.bootstrap_ci_mean.is_some(),
+            "{metric:?} should have a bootstrap CI after runner pipeline"
+        );
+        let ci = stats.bootstrap_ci_mean.expect("just checked some");
+        assert!(
+            ci.lower <= ci.upper,
+            "{metric:?}: bootstrap CI inverted: lower={} upper={}",
+            ci.lower,
+            ci.upper
+        );
+    }
+}
+
+#[test]
+fn report_renders_meta_confidence_banner() {
+    let mut scenario = flagged_chain_scenario();
+    scenario.meta.confidence = Some(ConfidenceLevel::Medium);
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(123),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("Scenario confidence:"),
+        "banner should appear when meta.confidence is set; got:\n{md}"
+    );
+    assert!(
+        md.contains("Medium"),
+        "banner should name the confidence level word; got:\n{md}"
+    );
+    assert!(
+        md.contains("working draft"),
+        "banner should include the Medium interpretation phrase; got:\n{md}"
+    );
+}
+
+#[test]
+fn report_omits_meta_confidence_banner_when_unset() {
+    let scenario = flagged_chain_scenario();
+    assert!(scenario.meta.confidence.is_none());
+    let config = MonteCarloConfig {
+        num_runs: 5,
+        seed: Some(1),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+    assert!(
+        !md.contains("Scenario confidence:"),
+        "banner must be elided when meta.confidence is None; got:\n{md}"
+    );
+}
+
+#[test]
+fn continuous_metrics_header_omits_ci_label_when_missing() {
+    // Simulates a legacy `MonteCarloSummary` deserialized from a pre-bootstrap
+    // build: `bootstrap_ci_mean` defaults to `None` for every metric. The
+    // renderer must degrade the table header to plain "Mean" so the header
+    // does not mislabel the (bare-mean) cells.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(7),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let mut result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    for stats in result.summary.metric_distributions.values_mut() {
+        stats.bootstrap_ci_mean = None;
+    }
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("| Metric | Mean | Median |"),
+        "header should fall back to plain 'Mean' when no metric carries a bootstrap CI; got:\n{md}"
+    );
+    assert!(
+        !md.contains("95% bootstrap CI"),
+        "CI label must disappear (header + footnote) when no metric carries a CI; got:\n{md}"
+    );
+}
+
+#[test]
+fn continuous_metrics_partial_ci_suppresses_bounds_in_cells() {
+    // Simulates a partially-populated `MonteCarloSummary`: some metrics carry
+    // a `bootstrap_ci_mean`, others do not (e.g. manual construction, partial
+    // migration). Header must degrade to plain "Mean" and, crucially, cells
+    // that *do* carry a CI must also drop their `(lo – hi)` suffix — otherwise
+    // a plain-"Mean"-header row would still display CI syntax in some cells.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(11),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let mut result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    // Clear the bootstrap CI on only the first metric; leave the rest populated.
+    let first_key = result
+        .summary
+        .metric_distributions
+        .keys()
+        .next()
+        .expect("at least one metric distribution")
+        .clone();
+    result
+        .summary
+        .metric_distributions
+        .get_mut(&first_key)
+        .expect("first metric stats")
+        .bootstrap_ci_mean = None;
+
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("| Metric | Mean | Median |"),
+        "header should fall back to plain 'Mean' in the partial-CI case; got:\n{md}"
+    );
+    assert!(
+        !md.contains("95% bootstrap CI"),
+        "CI label must disappear when not every metric carries a CI; got:\n{md}"
+    );
+    // The continuous-metrics rows live in the `## Continuous Metrics` section.
+    // Slice that section and verify the Mean cell (second column) never
+    // contains the `(lo – hi)` CI suffix, even for metrics that retained a
+    // populated `bootstrap_ci_mean`. Other columns like `5th – 95th pct`
+    // legitimately contain ` – `, so we only inspect column index 1.
+    let section_start = md
+        .find("## Continuous Metrics")
+        .expect("continuous metrics section present");
+    let rest = &md[section_start..];
+    let section_end = rest[1..].find("\n## ").map(|i| i + 1).unwrap_or(rest.len());
+    let section = &rest[..section_end];
+    let mut data_rows_checked = 0;
+    for line in section.lines() {
+        // Skip the header row, the `|---|...|` separator, and non-table lines.
+        if !line.starts_with("| ") || line.contains("Metric |") || line.contains("---") {
+            continue;
+        }
+        // Columns are `| metric | mean | median | p5 – p95 | std_dev |`.
+        // Splitting on `|` produces an empty leading element, so the mean
+        // cell lives at index 2.
+        let cells: Vec<&str> = line.split('|').collect();
+        let mean_cell = cells.get(2).expect("mean column present").trim();
+        assert!(
+            !mean_cell.contains('('),
+            "mean cell must not carry CI syntax when header is plain 'Mean'; got mean cell {mean_cell:?} in row:\n{line}"
+        );
+        data_rows_checked += 1;
+    }
+    assert!(
+        data_rows_checked > 0,
+        "expected at least one continuous-metrics data row to inspect; section was:\n{section}"
+    );
 }

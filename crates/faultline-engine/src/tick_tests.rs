@@ -232,6 +232,7 @@ fn make_test_scenario() -> Scenario {
             author: "test".into(),
             version: "0.1.0".into(),
             tags: vec![],
+            confidence: None,
         },
         map: MapConfig {
             source: MapSource::Grid {

@@ -11,7 +11,8 @@ use faultline_types::campaign::{CampaignPhase, KillChain};
 use faultline_types::ids::PhaseId;
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    ConfidenceInterval, ConfidenceLevel, FeasibilityConfidence, FeasibilityRow, MonteCarloSummary,
+    ConfidenceInterval, ConfidenceLevel, DistributionStats, FeasibilityConfidence, FeasibilityRow,
+    MetricType, MonteCarloSummary,
 };
 
 /// Render a Markdown feasibility / cost asymmetry / seam analysis
@@ -22,6 +23,24 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
     let _ = writeln!(out, "## Scenario: {}", scenario.meta.name);
     let _ = writeln!(out, "_{}_", scenario.meta.description.trim());
     let _ = writeln!(out);
+    if let Some(conf) = &scenario.meta.confidence {
+        // Banner is distinct from the Wilson CIs — it flags *parameter*
+        // defensibility, not sampling precision. Symbol is intentionally
+        // plain ASCII so reports render identically in stripped terminals.
+        let (glyph, label) = match conf {
+            ConfidenceLevel::High => ("[H]", "ETRA-candidate rigor"),
+            ConfidenceLevel::Medium => ("[M]", "working draft"),
+            ConfidenceLevel::Low => ("[L]", "conceptual sketch"),
+        };
+        let _ = writeln!(
+            out,
+            "> **Scenario confidence: {} {} — _{}_.** See Methodology for how this interacts with the Wilson CIs below.",
+            glyph,
+            confidence_word(conf),
+            label
+        );
+        let _ = writeln!(out);
+    }
     let _ = writeln!(out, "- **Runs:** {}", summary.total_runs);
     let _ = writeln!(
         out,
@@ -69,6 +88,8 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
         }
         let _ = writeln!(out);
     }
+
+    render_continuous_metrics(&mut out, summary);
 
     if !summary.feasibility_matrix.is_empty() {
         let _ = writeln!(out, "## Feasibility Matrix");
@@ -146,17 +167,23 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
                     .mean_completion_tick
                     .map(|t| format!("{:.1}", t))
                     .unwrap_or_else(|| "—".to_string());
+                let cis = ps.ci_95.as_ref();
                 let _ = writeln!(
                     out,
-                    "| `{}` | {:.1}% | {:.1}% | {:.1}% | {:.1}% | {} |",
+                    "| `{}` | {} | {} | {} | {} | {} |",
                     pid,
-                    ps.success_rate * 100.0,
-                    ps.failure_rate * 100.0,
-                    ps.detection_rate * 100.0,
-                    ps.not_reached_rate * 100.0,
+                    fmt_rate_cell(ps.success_rate, cis.map(|c| &c.success_rate)),
+                    fmt_rate_cell(ps.failure_rate, cis.map(|c| &c.failure_rate)),
+                    fmt_rate_cell(ps.detection_rate, cis.map(|c| &c.detection_rate)),
+                    fmt_rate_cell(ps.not_reached_rate, cis.map(|c| &c.not_reached_rate)),
                     mean_tick
                 );
             }
+            let _ = writeln!(out);
+            let _ = writeln!(
+                out,
+                "_Rate cells show point estimate with 95% Wilson bounds when `n > 0`. Bounds widen for rare outcomes — a `0.0% (0.0–7.1)` success rate at `n = 50` is not the same as a deterministic zero._"
+            );
             let _ = writeln!(out);
         }
     }
@@ -233,7 +260,7 @@ This report combines two distinct sources of uncertainty. Mixing them up is a co
 ### 95% confidence intervals
 Win rates, phase success rates, detection rates, and the rate-valued feasibility cells use the [Wilson score interval][wilson] at `z ≈ 1.960` (the standard-normal 97.5% quantile). Wilson is used in preference to the textbook Wald approximation because Wald collapses to `[0, 0]` or `[1, 1]` when zero or all runs succeed, implying false certainty for rare events. Wilson retains well-calibrated coverage across `p ∈ [0, 1]`.
 
-Continuous metrics (duration, casualties, resources expended) are summarised by their mean, 5th / 95th percentiles, and standard deviation. A percentile-bootstrap CI helper is available in `faultline_stats::uncertainty::percentile_bootstrap_ci` for downstream callers that need a CI on the mean; it is deterministic under a seeded `ChaCha8Rng`.
+Continuous metrics (duration, casualties, resources expended) are summarised by their mean with a 95% **percentile-bootstrap CI** on the mean, plus the 5th / 95th percentiles and standard deviation of the run distribution itself. The bootstrap draws 500 resamples from a deterministic `ChaCha8Rng` seeded from `scenario.simulation.seed` so the report is bit-identical across repeated runs. Keep the two quantities distinct: the bootstrap CI narrows as `n_runs` grows; the 5–95 percentile spread reflects inherent variability in the modelled outcome and does not.
 
 [wilson]: https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval
 
@@ -250,6 +277,17 @@ The `technology_readiness` bucket is a separate diagnostic: it is `L` when fewer
 
 ### Author-flagged parameters
 Authors can annotate `CampaignPhase.parameter_confidence` and `PhaseCost.confidence` in the TOML scenario to signal how defensible the input numbers are — `High` for commodity-parts costs or published rate cards, `Low` for wide expert estimates. Any phase or cost block flagged `Low` is listed in a dedicated section above when present. This complements, and does not replace, a full sensitivity sweep.
+
+### Scenario-level confidence banner
+The optional `[meta].confidence` field tags the scenario as a whole:
+
+| Tag | Intended meaning |
+|---|---|
+| `High` | ETRA-candidate rigor — every capability parameter is backed by a cited open source. |
+| `Medium` | Working draft — structurally complete but some parameters still rest on expert guess. |
+| `Low` | Conceptual sketch — intended to illustrate a mechanic, not to stand as analysis. |
+
+This is a coarse, author-asserted flag. It is *not* derived from the MC output and does not narrow or widen any CI — it tells the reader how much weight to place on the inputs before any sampling question comes into play.
 "#;
 
 fn fmt_cell(value: f64, conf: ConfidenceLevel, ci: Option<&ConfidenceInterval>) -> String {
@@ -264,8 +302,116 @@ fn fmt_cell(value: f64, conf: ConfidenceLevel, ci: Option<&ConfidenceInterval>) 
     }
 }
 
+fn fmt_rate_cell(rate: f64, ci: Option<&ConfidenceInterval>) -> String {
+    match ci {
+        Some(ci) => format!(
+            "{:.1}% ({:.1}–{:.1})",
+            rate * 100.0,
+            ci.lower * 100.0,
+            ci.upper * 100.0
+        ),
+        None => format!("{:.1}%", rate * 100.0),
+    }
+}
+
 fn fmt_ci_pct(ci: &ConfidenceInterval) -> String {
     format!("{:.1}% – {:.1}%", ci.lower * 100.0, ci.upper * 100.0)
+}
+
+fn confidence_word(c: &ConfidenceLevel) -> &'static str {
+    match c {
+        ConfidenceLevel::High => "High",
+        ConfidenceLevel::Medium => "Medium",
+        ConfidenceLevel::Low => "Low",
+    }
+}
+
+fn metric_label(m: &MetricType) -> String {
+    match m {
+        MetricType::Duration => "Duration (ticks)".into(),
+        MetricType::FinalTension => "Final tension".into(),
+        MetricType::TotalCasualties => "Total casualties".into(),
+        MetricType::InfrastructureDamage => "Infrastructure damage".into(),
+        MetricType::CivilianDisplacement => "Civilian displacement".into(),
+        MetricType::ResourcesExpended => "Resources expended".into(),
+        MetricType::Custom(s) => s.clone(),
+    }
+}
+
+fn render_continuous_metrics(out: &mut String, summary: &MonteCarloSummary) {
+    if summary.metric_distributions.is_empty() {
+        return;
+    }
+    // Header must match cell content: if any metric lacks a bootstrap CI
+    // (e.g. a legacy `MonteCarloSummary` deserialized from a pre-bootstrap
+    // build where `bootstrap_ci_mean` defaults to `None`), `fmt_mean_with_bootstrap`
+    // falls back to a bare mean for those rows. A blanket "Mean (95% bootstrap CI)"
+    // header would then mislabel those cells.
+    let all_have_ci = summary
+        .metric_distributions
+        .values()
+        .all(|s| s.bootstrap_ci_mean.is_some());
+    let mean_header = if all_have_ci {
+        "Mean (95% bootstrap CI)"
+    } else {
+        "Mean"
+    };
+    let _ = writeln!(out, "## Continuous Metrics");
+    let _ = writeln!(
+        out,
+        "| Metric | {mean_header} | Median | 5th – 95th pct | Std dev |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|");
+    for (metric, stats) in &summary.metric_distributions {
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} – {} | {} |",
+            metric_label(metric),
+            fmt_mean_with_bootstrap(stats, all_have_ci),
+            fmt_scalar(stats.median),
+            fmt_scalar(stats.percentile_5),
+            fmt_scalar(stats.percentile_95),
+            fmt_scalar(stats.std_dev),
+        );
+    }
+    if all_have_ci {
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "_Bootstrap CIs use 500 percentile-bootstrap resamples seeded from the scenario. Percentiles describe the *distribution* of run outcomes — not uncertainty on the mean._"
+        );
+    }
+    let _ = writeln!(out);
+}
+
+// `show_ci` must mirror the column header: if the header does not advertise
+// a bootstrap CI (because some other row in the same table lacks one), this
+// row must also suppress its bounds even if its own `bootstrap_ci_mean` is
+// `Some(..)`. Otherwise the cell carries CI syntax under a plain "Mean" header.
+fn fmt_mean_with_bootstrap(stats: &DistributionStats, show_ci: bool) -> String {
+    match (show_ci, stats.bootstrap_ci_mean.as_ref()) {
+        (true, Some(ci)) => format!(
+            "{} ({} – {})",
+            fmt_scalar(stats.mean),
+            fmt_scalar(ci.lower),
+            fmt_scalar(ci.upper)
+        ),
+        _ => fmt_scalar(stats.mean),
+    }
+}
+
+// Adaptive number formatting: proportions get three decimals, larger
+// magnitudes round to whole units. Keeps the metrics table legible
+// whether it's showing `0.234` tension or `2_500` casualties.
+fn fmt_scalar(v: f64) -> String {
+    let abs = v.abs();
+    if abs < 1.0 {
+        format!("{v:.3}")
+    } else if abs < 100.0 {
+        format!("{v:.2}")
+    } else {
+        format!("{v:.0}")
+    }
 }
 
 fn collect_author_flagged(scenario: &Scenario) -> Vec<(String, PhaseId, String)> {
@@ -347,6 +493,7 @@ mod tests {
                 author: "test".into(),
                 version: "0.0.1".into(),
                 tags: vec![],
+                confidence: None,
             },
             map: MapConfig {
                 source: MapSource::Grid {
