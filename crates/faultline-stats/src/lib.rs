@@ -9,6 +9,7 @@ pub mod analysis;
 pub mod delta;
 pub mod report;
 pub mod sensitivity;
+pub mod uncertainty;
 
 use std::collections::BTreeMap;
 
@@ -22,6 +23,8 @@ use faultline_types::stats::{
     CampaignSummary, DistributionStats, MetricType, MonteCarloConfig, MonteCarloResult,
     MonteCarloSummary, PhaseOutcome, PhaseStats, RunResult,
 };
+
+use crate::uncertainty::wilson_score_interval;
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -113,6 +116,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         return MonteCarloSummary {
             total_runs: 0,
             win_rates: BTreeMap::new(),
+            win_rate_cis: BTreeMap::new(),
             average_duration: 0.0,
             metric_distributions: BTreeMap::new(),
             regional_control: BTreeMap::new(),
@@ -130,9 +134,16 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             *win_counts.entry(victor.clone()).or_insert(0) += 1;
         }
     }
+    let n_runs = runs.len() as u32;
     let win_rates: BTreeMap<FactionId, f64> = win_counts
-        .into_iter()
-        .map(|(fid, count)| (fid, f64::from(count) / total))
+        .iter()
+        .map(|(fid, count)| (fid.clone(), f64::from(*count) / total))
+        .collect();
+    let win_rate_cis: BTreeMap<FactionId, _> = win_counts
+        .iter()
+        .filter_map(|(fid, count)| {
+            wilson_score_interval(*count, n_runs).map(|ci| (fid.clone(), ci.into()))
+        })
         .collect();
 
     // Duration distribution.
@@ -238,6 +249,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     MonteCarloSummary {
         total_runs: runs.len() as u32,
         win_rates,
+        win_rate_cis,
         average_duration,
         metric_distributions,
         regional_control,

@@ -87,6 +87,9 @@ pub struct Outcome {
 pub struct MonteCarloSummary {
     pub total_runs: u32,
     pub win_rates: BTreeMap<FactionId, f64>,
+    /// 95% Wilson score intervals for `win_rates`. Same keys.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub win_rate_cis: BTreeMap<FactionId, ConfidenceInterval>,
     pub average_duration: f64,
     pub metric_distributions: BTreeMap<MetricType, DistributionStats>,
     /// Per-region probability of each faction controlling it at the end of the simulation.
@@ -163,6 +166,34 @@ pub struct FeasibilityRow {
     pub cost_asymmetry_ratio: f64,
     /// Confidence ratings based on MC variance.
     pub confidence: FeasibilityConfidence,
+    /// 95% Wilson score intervals for the rate-valued cells.
+    /// Populated when enough runs exist to compute them.
+    #[serde(default)]
+    pub ci_95: FeasibilityCIs,
+}
+
+/// 95% confidence intervals for the rate-valued [`FeasibilityRow`]
+/// fields. All entries are optional because a CI is undefined at
+/// `n == 0`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FeasibilityCIs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_probability: Option<ConfidenceInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub success_probability: Option<ConfidenceInterval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consequence_severity: Option<ConfidenceInterval>,
+}
+
+/// Serializable 95% confidence interval on a scalar estimate.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ConfidenceInterval {
+    /// Point estimate (observed proportion or mean).
+    pub point: f64,
+    pub lower: f64,
+    pub upper: f64,
+    /// Sample size supporting the estimate.
+    pub n: u32,
 }
 
 /// Confidence ratings per feasibility factor.
