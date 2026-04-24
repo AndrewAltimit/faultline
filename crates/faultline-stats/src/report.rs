@@ -367,7 +367,7 @@ fn render_continuous_metrics(out: &mut String, summary: &MonteCarloSummary) {
             out,
             "| {} | {} | {} | {} – {} | {} |",
             metric_label(metric),
-            fmt_mean_with_bootstrap(stats),
+            fmt_mean_with_bootstrap(stats, all_have_ci),
             fmt_scalar(stats.median),
             fmt_scalar(stats.percentile_5),
             fmt_scalar(stats.percentile_95),
@@ -384,15 +384,19 @@ fn render_continuous_metrics(out: &mut String, summary: &MonteCarloSummary) {
     let _ = writeln!(out);
 }
 
-fn fmt_mean_with_bootstrap(stats: &DistributionStats) -> String {
-    match stats.bootstrap_ci_mean.as_ref() {
-        Some(ci) => format!(
+// `show_ci` must mirror the column header: if the header does not advertise
+// a bootstrap CI (because some other row in the same table lacks one), this
+// row must also suppress its bounds even if its own `bootstrap_ci_mean` is
+// `Some(..)`. Otherwise the cell carries CI syntax under a plain "Mean" header.
+fn fmt_mean_with_bootstrap(stats: &DistributionStats, show_ci: bool) -> String {
+    match (show_ci, stats.bootstrap_ci_mean.as_ref()) {
+        (true, Some(ci)) => format!(
             "{} ({} – {})",
             fmt_scalar(stats.mean),
             fmt_scalar(ci.lower),
             fmt_scalar(ci.upper)
         ),
-        None => fmt_scalar(stats.mean),
+        _ => fmt_scalar(stats.mean),
     }
 }
 

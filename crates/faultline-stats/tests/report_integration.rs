@@ -610,3 +610,77 @@ fn continuous_metrics_header_omits_ci_label_when_missing() {
         "CI label must disappear (header + footnote) when no metric carries a CI; got:\n{md}"
     );
 }
+
+#[test]
+fn continuous_metrics_partial_ci_suppresses_bounds_in_cells() {
+    // Simulates a partially-populated `MonteCarloSummary`: some metrics carry
+    // a `bootstrap_ci_mean`, others do not (e.g. manual construction, partial
+    // migration). Header must degrade to plain "Mean" and, crucially, cells
+    // that *do* carry a CI must also drop their `(lo – hi)` suffix — otherwise
+    // a plain-"Mean"-header row would still display CI syntax in some cells.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(11),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let mut result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    // Clear the bootstrap CI on only the first metric; leave the rest populated.
+    let first_key = result
+        .summary
+        .metric_distributions
+        .keys()
+        .next()
+        .expect("at least one metric distribution")
+        .clone();
+    result
+        .summary
+        .metric_distributions
+        .get_mut(&first_key)
+        .expect("first metric stats")
+        .bootstrap_ci_mean = None;
+
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("| Metric | Mean | Median |"),
+        "header should fall back to plain 'Mean' in the partial-CI case; got:\n{md}"
+    );
+    assert!(
+        !md.contains("95% bootstrap CI"),
+        "CI label must disappear when not every metric carries a CI; got:\n{md}"
+    );
+    // The continuous-metrics rows live in the `## Continuous Metrics` section.
+    // Slice that section and verify the Mean cell (second column) never
+    // contains the `(lo – hi)` CI suffix, even for metrics that retained a
+    // populated `bootstrap_ci_mean`. Other columns like `5th – 95th pct`
+    // legitimately contain ` – `, so we only inspect column index 1.
+    let section_start = md
+        .find("## Continuous Metrics")
+        .expect("continuous metrics section present");
+    let rest = &md[section_start..];
+    let section_end = rest[1..].find("\n## ").map(|i| i + 1).unwrap_or(rest.len());
+    let section = &rest[..section_end];
+    let mut data_rows_checked = 0;
+    for line in section.lines() {
+        // Skip the header row, the `|---|...|` separator, and non-table lines.
+        if !line.starts_with("| ") || line.contains("Metric |") || line.contains("---") {
+            continue;
+        }
+        // Columns are `| metric | mean | median | p5 – p95 | std_dev |`.
+        // Splitting on `|` produces an empty leading element, so the mean
+        // cell lives at index 2.
+        let cells: Vec<&str> = line.split('|').collect();
+        let mean_cell = cells.get(2).expect("mean column present").trim();
+        assert!(
+            !mean_cell.contains('('),
+            "mean cell must not carry CI syntax when header is plain 'Mean'; got mean cell {mean_cell:?} in row:\n{line}"
+        );
+        data_rows_checked += 1;
+    }
+    assert!(
+        data_rows_checked > 0,
+        "expected at least one continuous-metrics data row to inspect; section was:\n{section}"
+    );
+}
