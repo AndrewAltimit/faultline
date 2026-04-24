@@ -186,6 +186,13 @@ pub struct FeasibilityCIs {
 }
 
 /// Serializable 95% confidence interval on a scalar estimate.
+///
+/// Fields are `pub` so that `serde` derives and downstream readers
+/// (report rendering, integration tests, JS callers via wasm) can
+/// consume them directly. For *construction*, prefer
+/// [`ConfidenceInterval::new`] — it enforces the invariant
+/// `lower <= point <= upper` and guards against silently emitting
+/// nonsensical intervals (`lower > upper`, etc.) into report output.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ConfidenceInterval {
     /// Point estimate (observed proportion or mean).
@@ -194,6 +201,31 @@ pub struct ConfidenceInterval {
     pub upper: f64,
     /// Sample size supporting the estimate.
     pub n: u32,
+}
+
+impl ConfidenceInterval {
+    /// Construct a `ConfidenceInterval` with invariant checks.
+    ///
+    /// Panics in debug builds if `lower`, `point`, or `upper` are
+    /// non-finite, or if `lower <= point <= upper` does not hold. In
+    /// release builds the values are used as-given (no clamping) so
+    /// this is a zero-cost wrapper in hot paths.
+    pub fn new(point: f64, lower: f64, upper: f64, n: u32) -> Self {
+        debug_assert!(
+            point.is_finite() && lower.is_finite() && upper.is_finite(),
+            "ConfidenceInterval bounds must be finite: point={point} lower={lower} upper={upper}"
+        );
+        debug_assert!(
+            lower <= point && point <= upper,
+            "ConfidenceInterval invariant violated: lower={lower} point={point} upper={upper}"
+        );
+        Self {
+            point,
+            lower,
+            upper,
+            n,
+        }
+    }
 }
 
 /// Confidence ratings per feasibility factor.

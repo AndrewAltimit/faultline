@@ -362,16 +362,16 @@ fn rendered_report_contains_new_sections() {
     );
 
     // Feasibility matrix cell format should include a Wilson range.
-    // Look for a `[` + `]` + `(` sequence indicating `value [X] (lo–hi)`
-    // somewhere in the feasibility-matrix region of the doc.
+    // Cells render as `value [X] (lo–hi)`, so the exact pattern `"] ("`
+    // only appears in feasibility cells with CIs — not in any other
+    // section of the document.
     let matrix_section = md
         .split("## Feasibility Matrix")
         .nth(1)
         .expect("feasibility matrix section should exist");
     assert!(
-        matrix_section.contains('[') && matrix_section.contains("](")
-            || (matrix_section.contains(" (") && matrix_section.contains("–")),
-        "feasibility cells should format Wilson bounds like '(lo–hi)'; got:\n{matrix_section}"
+        matrix_section.contains("] (") && matrix_section.contains("–"),
+        "feasibility cells should format Wilson bounds like '[X] (lo–hi)'; got:\n{matrix_section}"
     );
 }
 

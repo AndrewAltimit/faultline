@@ -1240,12 +1240,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
     let mut win_rate_cis = BTreeMap::new();
     win_rate_cis.insert(
         fid.clone(),
-        ConfidenceInterval {
-            point: 0.625,
-            lower: 0.525,
-            upper: 0.715,
-            n: 100,
-        },
+        ConfidenceInterval::new(0.625, 0.525, 0.715, 100),
     );
     let row = FeasibilityRow {
         chain_id: chain_id.clone(),
@@ -1265,18 +1260,8 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
             consequence_severity: ConfidenceLevel::Low,
         },
         ci_95: FeasibilityCIs {
-            detection_probability: Some(ConfidenceInterval {
-                point: 0.4,
-                lower: 0.32,
-                upper: 0.48,
-                n: 100,
-            }),
-            success_probability: Some(ConfidenceInterval {
-                point: 0.8,
-                lower: 0.72,
-                upper: 0.86,
-                n: 100,
-            }),
+            detection_probability: Some(ConfidenceInterval::new(0.4, 0.32, 0.48, 100)),
+            success_probability: Some(ConfidenceInterval::new(0.8, 0.72, 0.86, 100)),
             consequence_severity: None,
         },
     };

@@ -50,12 +50,7 @@ impl WilsonInterval {
 
 impl From<WilsonInterval> for ConfidenceInterval {
     fn from(w: WilsonInterval) -> Self {
-        ConfidenceInterval {
-            point: w.p_hat,
-            lower: w.lower,
-            upper: w.upper,
-            n: w.n,
-        }
+        ConfidenceInterval::new(w.p_hat, w.lower, w.upper, w.n)
     }
 }
 
@@ -66,12 +61,12 @@ impl From<BootstrapCI> for ConfidenceInterval {
         // notions of "sample size" and conflating them inflates
         // perceived precision. Saturating cast tolerates pathological
         // sample sizes above u32::MAX.
-        ConfidenceInterval {
-            point: b.point,
-            lower: b.lower,
-            upper: b.upper,
-            n: u32::try_from(b.n_samples).unwrap_or(u32::MAX),
-        }
+        ConfidenceInterval::new(
+            b.point,
+            b.lower,
+            b.upper,
+            u32::try_from(b.n_samples).unwrap_or(u32::MAX),
+        )
     }
 }
 
