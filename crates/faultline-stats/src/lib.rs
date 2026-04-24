@@ -139,10 +139,16 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         .iter()
         .map(|(fid, count)| (fid.clone(), f64::from(*count) / total))
         .collect();
+    // `n_runs > 0` here because the `total == 0.0` early return above
+    // rejects empty input. This guarantees `win_rate_cis` and `win_rates`
+    // share the same key set — a structural invariant the report layer
+    // depends on.
     let win_rate_cis: BTreeMap<FactionId, _> = win_counts
         .iter()
-        .filter_map(|(fid, count)| {
-            wilson_score_interval(*count, n_runs).map(|ci| (fid.clone(), ci.into()))
+        .map(|(fid, count)| {
+            let ci = wilson_score_interval(*count, n_runs)
+                .expect("n_runs > 0 after empty-runs early return above");
+            (fid.clone(), ci.into())
         })
         .collect();
 

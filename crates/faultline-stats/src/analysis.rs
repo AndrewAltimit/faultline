@@ -148,10 +148,8 @@ fn confidence_from_rate(rate: f64, n: usize) -> ConfidenceLevel {
     if n < 30 {
         return ConfidenceLevel::Low;
     }
-    let ci = match wilson_from_rate(rate, n as u32) {
-        Some(ci) => ci,
-        None => return ConfidenceLevel::Low,
-    };
+    let ci = wilson_from_rate(rate, n as u32)
+        .expect("n >= 30 after guard above, so wilson_from_rate is always Some");
     let half_width = ci.half_width();
     if half_width < 0.03 {
         ConfidenceLevel::High
