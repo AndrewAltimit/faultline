@@ -53,12 +53,24 @@ EXCLUDES=(
 )
 
 # Per-file whitelist (pruned from the match list after scanning).
+#   docs/improvement-plan.md  — Epic G section legitimately mentions
+#                               the patterns it bans (it describes the
+#                               cleanup itself).
+#   tools/ci/grep-guard.sh    — this script defines the patterns; the
+#                               regex literals must remain readable.
+#   tests/integration/grep-guard.test.mjs — fixtures for the script's
+#                               own test suite plant the patterns
+#                               into a temp dir.
 WHITELIST=(
   'docs/improvement-plan.md'
   'tools/ci/grep-guard.sh'
+  'tests/integration/grep-guard.test.mjs'
 )
 
-cd "$(dirname "$0")/../.."
+# Default scan root is the repo (script lives at tools/ci/). Tests
+# override via FAULTLINE_SCAN_ROOT so they can point at a fixture
+# directory without having to plant files in the real tree.
+cd "${FAULTLINE_SCAN_ROOT:-$(dirname "$0")/../..}"
 
 raw_matches=$(grep -rnEI "${INCLUDES[@]}" "${EXCLUDES[@]}" "$PATTERN" . || true)
 

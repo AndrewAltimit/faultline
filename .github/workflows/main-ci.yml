@@ -122,6 +122,18 @@ jobs:
             --out-dir ../../site/pkg \
             --no-typescript
 
+      # site/scenarios is a symlink to ../scenarios so the source of truth
+      # lives in one place. The Pages artifact only includes site/, so the
+      # symlink target would be missing in the deployed bundle. Replace
+      # the symlink with a real copy here so the deployed site can serve
+      # the scenarios over HTTP.
+      - name: Materialize site/scenarios for deploy
+        run: |
+          if [ -L site/scenarios ]; then
+            rm site/scenarios
+            cp -R scenarios site/scenarios
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

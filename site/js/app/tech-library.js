@@ -1307,7 +1307,7 @@ export const TECH_LIBRARY = {
   hyper_personalized_spearphishing_targeting: {
     domain: "political",
     id: "hyper_personalized_spearphishing_targeting",
-    name: "Spearphishing 2.0: Multi-Channel Coordinated Attack",
+    name: "Multi-Channel AI Spearphishing",
     description: "AI-orchestrated simultaneous email, SMS, voice clone, and deepfake video social engineering targeting family and staff of protected figures with psychologically personalized attacks.",
     is_offensive: true,
     category: "InformationWarfare",
@@ -2193,7 +2193,7 @@ export const TECH_LIBRARY = {
     domain: "ic_erosion",
     id: "finint_nano_smurfing_financial_obfuscation",
     name: "AI-Orchestrated Financial Transaction Obfuscation",
-    description: "AI agents conduct financial intelligence evasion through coordinated nano-smurfing, threshold-adjacent transactions, and cryptocurrency mixing.",
+    description: "AI agents conduct financial-intelligence evasion through coordinated sub-threshold transaction structuring, threshold-adjacent transactions, and cryptocurrency mixing.",
     is_offensive: true,
     category: "Logistics",
     deployment_cost: 21,
@@ -2212,7 +2212,7 @@ export const TECH_LIBRARY = {
   attribution_intent_gap_legal_deniability: {
     domain: "ic_erosion",
     id: "attribution_intent_gap_legal_deniability",
-    name: "Plausible Deniability 2.0: Autonomous Agent Liability Evasion",
+    name: "Autonomous Agent Liability Evasion",
     description: "State actors deploy AI agents optimizing for political outcomes without directed methodology, creating legal ambiguity about principal responsibility under international law.",
     is_offensive: true,
     category: "InformationWarfare",

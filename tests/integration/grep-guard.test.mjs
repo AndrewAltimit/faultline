@@ -1,0 +1,197 @@
+/**
+ * Tests for tools/ci/grep-guard.sh — the CI gate that blocks
+ * re-introduction of references coupling Faultline to a specific
+ * external threat-assessment publication series.
+ *
+ * The guard is a bash script, not a JS module, but exit-code behavior
+ * is the contract worth pinning. Each test plants a fixture directory,
+ * points the script at it via the `FAULTLINE_SCAN_ROOT` env var, and
+ * asserts the script's exit code (0 = clean, 1 = violation).
+ *
+ * Run with:
+ *   node --test tests/integration/grep-guard.test.mjs
+ */
+
+import { test, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(__dirname, '..', '..');
+const scriptPath = join(repoRoot, 'tools', 'ci', 'grep-guard.sh');
+
+let fixture;
+
+beforeEach(() => {
+  fixture = mkdtempSync(join(tmpdir(), 'faultline-grep-guard-'));
+});
+
+afterEach(() => {
+  if (fixture) rmSync(fixture, { recursive: true, force: true });
+});
+
+/**
+ * Run the guard against the current fixture and return
+ * `{ status, stdout }`. Status 0 = clean, 1 = violation. Doesn't throw
+ * on non-zero exit so tests can assert against either outcome.
+ */
+function runGuard() {
+  try {
+    const stdout = execFileSync(scriptPath, [], {
+      env: { ...process.env, FAULTLINE_SCAN_ROOT: fixture },
+      encoding: 'utf8',
+    });
+    return { status: 0, stdout };
+  } catch (e) {
+    return { status: e.status ?? -1, stdout: e.stdout?.toString() || '' };
+  }
+}
+
+function plant(relPath, content) {
+  const full = join(fixture, relPath);
+  mkdirSync(dirname(full), { recursive: true });
+  writeFileSync(full, content);
+}
+
+// ---------------------------------------------------------------------------
+// Clean-tree behavior
+// ---------------------------------------------------------------------------
+
+test('grep-guard: empty tree exits 0', () => {
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+test('grep-guard: tree with only neutral content exits 0', () => {
+  plant('src/main.rs', 'fn main() { println!("hello"); }');
+  plant('docs/README.md', '# Faultline\n\nA conflict simulator.');
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Violation detection — each banned pattern
+// ---------------------------------------------------------------------------
+
+test('grep-guard: catches \\bETRA\\b in code comments', () => {
+  // The bare acronym is the most common reintroduction pattern (a
+  // contributor pasting in legacy notes). The guard MUST flag it.
+  plant('src/lib.rs', '// derived from the ETRA framework');
+  const { status, stdout } = runGuard();
+  assert.equal(status, 1);
+  assert.match(stdout, /banned reference pattern\(s\) found/);
+  assert.match(stdout, /src\/lib\.rs/);
+});
+
+test('grep-guard: catches etra_ref schema field', () => {
+  // The previous JS schema field name. If it returns to the codebase,
+  // it would re-enable structured coupling at the data-shape layer
+  // even if the values were generic.
+  plant('site/js/app/cards.js', "{ etra_ref: 'something' }");
+  const { status } = runGuard();
+  assert.equal(status, 1);
+});
+
+test('grep-guard: catches ETRA-YYYY- document identifiers', () => {
+  // The fingerprint pattern — these uniquely identify specific
+  // external publications.
+  plant('docs/notes.md', 'Reference: ETRA-2026-WMD-001 covers...');
+  const { status, stdout } = runGuard();
+  assert.equal(status, 1);
+  assert.match(stdout, /docs\/notes\.md/);
+});
+
+// ---------------------------------------------------------------------------
+// False-positive avoidance
+// ---------------------------------------------------------------------------
+
+test('grep-guard: does not match "ETRA" inside other words', () => {
+  // The \b word boundary in the regex must prevent accidental matches
+  // inside legitimate words like "penetration", "getrandom", etc.
+  // Without the boundary, half the engine would trigger.
+  plant('src/lib.rs', `
+    let social_media_penetration = 0.5;
+    use rand::getrandom;
+  `);
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// File-type filtering
+// ---------------------------------------------------------------------------
+
+test('grep-guard: scans .toml scenario files', () => {
+  plant('scenarios/test.toml', '# Header: based on the ETRA framework\n');
+  const { status } = runGuard();
+  assert.equal(status, 1);
+});
+
+test('grep-guard: scans .css comments', () => {
+  // The original audit caught an ETRA reference in app.css. Coverage
+  // here pins that the scan continues to include CSS.
+  plant('site/css/test.css', '/* ETRA-derived panel styles */');
+  const { status } = runGuard();
+  assert.equal(status, 1);
+});
+
+test('grep-guard: ignores file extensions outside the include list', () => {
+  // Binary files, vendored libraries, lockfiles, and the like get
+  // skipped by extension. Putting a banned pattern in a `.lock` file
+  // shouldn't fail the build.
+  plant('Cargo.lock', '# version = "ETRA"');
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+test('grep-guard: ignores excluded directories', () => {
+  // target/, pkg/, node_modules/, and .git/ are excluded — vendored
+  // or generated content can carry the substring without the human
+  // author having introduced it.
+  plant('target/debug/build/note.md', 'ETRA artifact note');
+  plant('site/pkg/generated.js', 'const ETRA = true;');
+  plant('node_modules/dep/lib.js', '// ETRA');
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Whitelist behavior
+// ---------------------------------------------------------------------------
+
+test('grep-guard: whitelisted improvement-plan.md does not trigger', () => {
+  // The Round-Two roadmap describes the cleanup itself and quotes the
+  // patterns it bans. Whitelisting prevents the doc from being a
+  // permanent build-failure source.
+  plant(
+    'docs/improvement-plan.md',
+    'Replace "ETRA-style" / "ETRA-grade" / etra_ref references.',
+  );
+  const { status } = runGuard();
+  assert.equal(status, 0);
+});
+
+test('grep-guard: whitelist match is path-exact, not basename', () => {
+  // A file at docs/copy/improvement-plan.md should NOT be whitelisted
+  // — only the exact path docs/improvement-plan.md is. Otherwise
+  // someone could rename a file with banned content into a different
+  // directory and bypass the guard by accident.
+  plant('docs/copy/improvement-plan.md', 'mention of ETRA here');
+  const { status, stdout } = runGuard();
+  assert.equal(status, 1);
+  assert.match(stdout, /docs\/copy\/improvement-plan\.md/);
+});
+
+test('grep-guard: whitelisted file co-existing with violation still fails', () => {
+  // The whitelist only suppresses the specific file. A real violation
+  // elsewhere in the same run must still cause exit 1.
+  plant('docs/improvement-plan.md', '// describes the ban: ETRA');
+  plant('src/lib.rs', '// real violation: ETRA');
+  const { status, stdout } = runGuard();
+  assert.equal(status, 1);
+  assert.match(stdout, /src\/lib\.rs/);
+});
