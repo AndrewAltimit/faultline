@@ -11,6 +11,7 @@ use tracing::{error, info};
 use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::compute_summary;
 use faultline_stats::counterfactual::{ComparisonReport, ParamOverride};
+use faultline_stats::manifest::{self, ManifestMcConfig, ManifestMode, RunManifest, VerifyResult};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{MonteCarloConfig, MonteCarloResult, RunResult};
 
@@ -116,6 +117,26 @@ struct Cli {
     #[arg(long = "compare", value_name = "OTHER_SCENARIO")]
     compare: Option<PathBuf>,
 
+    /// Verify a saved run by replaying it from a manifest.
+    ///
+    /// Loads the manifest from `<MANIFEST_PATH>`, hashes the
+    /// positional scenario file, asserts it matches the manifest's
+    /// `scenario_hash`, then replays the recorded mode + Monte Carlo
+    /// config and compares the freshly computed output hash to the
+    /// saved one. Exits non-zero on mismatch with a structured diff.
+    ///
+    /// The manifest's `mc_config` overrides `--runs` and `--seed`;
+    /// the recorded `mode` overrides the run-mode flags. So in a
+    /// verify invocation the CLI's run-mode flags are ignored — only
+    /// the scenario path, the output directory, and `--verify` itself
+    /// are consulted.
+    #[arg(
+        long = "verify",
+        value_name = "MANIFEST_PATH",
+        conflicts_with_all = ["single_run", "sensitivity", "counterfactual", "compare", "validate"]
+    )]
+    verify: Option<PathBuf>,
+
     /// Suppress progress output.
     #[arg(long = "quiet")]
     quiet: bool,
@@ -180,6 +201,10 @@ fn main() -> Result<()> {
         )
     })?;
 
+    if let Some(ref manifest_path) = cli.verify {
+        return run_verify(&cli, &scenario, manifest_path);
+    }
+
     if cli.single_run {
         return run_single(&cli, &scenario);
     }
@@ -209,6 +234,27 @@ fn run_single(cli: &Cli, scenario: &Scenario) -> Result<()> {
         .seed
         .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
 
+    let result = execute_single(scenario, seed)?;
+
+    write_result_json(cli, &result)?;
+
+    let manifest_mc = ManifestMcConfig {
+        num_runs: 1,
+        base_seed: seed,
+        // `--single-run` always collects snapshots; the manifest field
+        // exists for parity with the MC modes' config.
+        collect_snapshots: true,
+    };
+    let mode = ManifestMode::SingleRun;
+    let output_hash =
+        manifest::output_hash(&result).with_context(|| "failed to hash single-run result")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+    write_manifest_object(cli, &manifest_obj)?;
+
+    Ok(())
+}
+
+fn execute_single(scenario: &Scenario, seed: u64) -> Result<RunResult> {
     info!(seed, "running single simulation");
 
     let mut engine =
@@ -222,9 +268,7 @@ fn run_single(cli: &Cli, scenario: &Scenario) -> Result<()> {
         "simulation complete"
     );
 
-    write_result_json(cli, &result)?;
-
-    Ok(())
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -242,8 +286,50 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
             .unwrap_or(1)
     });
 
+    let mc_result = execute_monte_carlo(scenario, base_seed, cli.runs, num_jobs)?;
+
     info!(
-        runs = cli.runs,
+        total_runs = mc_result.summary.total_runs,
+        avg_duration = mc_result.summary.average_duration,
+        "Monte Carlo complete"
+    );
+
+    // Report win rates.
+    for (fid, rate) in &mc_result.summary.win_rates {
+        info!(faction = %fid, win_rate = rate, "faction win rate");
+    }
+
+    let manifest_mc = ManifestMcConfig {
+        num_runs: cli.runs,
+        base_seed,
+        collect_snapshots: false,
+    };
+    let mode = ManifestMode::MonteCarlo;
+    let output_hash =
+        manifest::summary_hash(&mc_result.summary).with_context(|| "failed to hash MC summary")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    write_outputs(cli, &mc_result, scenario, Some(&manifest_obj))?;
+    write_manifest_object(cli, &manifest_obj)?;
+
+    Ok(())
+}
+
+/// Execute a parallel Monte Carlo batch and return the aggregated result.
+///
+/// Failed runs are logged and skipped (matching the historical CLI
+/// behaviour); the resulting summary is computed over whichever runs
+/// completed. This is deterministic given a fixed seed because rayon's
+/// indexed `into_par_iter` over a `Range` collects in source order, and
+/// engine failures are themselves a function of the per-run seed.
+fn execute_monte_carlo(
+    scenario: &Scenario,
+    base_seed: u64,
+    num_runs: u32,
+    num_jobs: usize,
+) -> Result<MonteCarloResult> {
+    info!(
+        runs = num_runs,
         jobs = num_jobs,
         base_seed,
         "starting Monte Carlo simulation"
@@ -256,7 +342,6 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
         .with_context(|| "failed to build rayon thread pool")?;
 
     let scenario_clone = scenario.clone();
-    let num_runs = cli.runs;
     let failed_runs = std::sync::atomic::AtomicU32::new(0);
 
     let runs: Vec<RunResult> = pool.install(|| {
@@ -299,22 +384,7 @@ fn run_monte_carlo(cli: &Cli, scenario: &Scenario) -> Result<()> {
     }
 
     let summary = compute_summary(&runs, scenario);
-    let mc_result = MonteCarloResult { runs, summary };
-
-    info!(
-        total_runs = mc_result.summary.total_runs,
-        avg_duration = mc_result.summary.average_duration,
-        "Monte Carlo complete"
-    );
-
-    // Report win rates.
-    for (fid, rate) in &mc_result.summary.win_rates {
-        info!(faction = %fid, win_rate = rate, "faction win rate");
-    }
-
-    write_outputs(cli, &mc_result, scenario)?;
-
-    Ok(())
+    Ok(MonteCarloResult { runs, summary })
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +420,18 @@ fn run_counterfactual_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
     let report = faultline_stats::counterfactual::run_counterfactual(scenario, &config, &overrides)
         .with_context(|| "counterfactual analysis failed")?;
 
-    write_comparison_outputs(cli, &report, scenario)?;
+    let manifest_mc = ManifestMcConfig::from_config(&config, base_seed);
+    let mode = ManifestMode::Counterfactual {
+        // Store the raw `path=value` strings — the same form the user
+        // would type to reproduce. Reparsing happens in verify.
+        overrides: cli.counterfactual.clone(),
+    };
+    let output_hash =
+        manifest::output_hash(&report).with_context(|| "failed to hash comparison report")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    write_comparison_outputs(cli, &report, scenario, Some(&manifest_obj))?;
+    write_manifest_object(cli, &manifest_obj)?;
 
     Ok(())
 }
@@ -394,7 +475,19 @@ fn run_compare_analysis(cli: &Cli, scenario: &Scenario, alt_path: &Path) -> Resu
         faultline_stats::counterfactual::run_compare(scenario, &alt_scenario, &alt_label, &config)
             .with_context(|| "scenario comparison failed")?;
 
-    write_comparison_outputs(cli, &report, scenario)?;
+    let manifest_mc = ManifestMcConfig::from_config(&config, base_seed);
+    let alt_hash =
+        manifest::scenario_hash(&alt_scenario).with_context(|| "failed to hash alt scenario")?;
+    let mode = ManifestMode::Compare {
+        alt_scenario_path: alt_path.display().to_string(),
+        alt_scenario_hash: alt_hash,
+    };
+    let output_hash =
+        manifest::output_hash(&report).with_context(|| "failed to hash comparison report")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    write_comparison_outputs(cli, &report, scenario, Some(&manifest_obj))?;
+    write_manifest_object(cli, &manifest_obj)?;
 
     Ok(())
 }
@@ -403,6 +496,7 @@ fn write_comparison_outputs(
     cli: &Cli,
     report: &ComparisonReport,
     scenario: &Scenario,
+    manifest_obj: Option<&RunManifest>,
 ) -> Result<()> {
     // Comparison mode produces a *delta* between two Monte Carlo batches.
     // The per-run CSV shape (one row per simulation) does not apply, so
@@ -440,7 +534,8 @@ fn write_comparison_outputs(
 
     if want_md {
         let md_path = cli.output.join("comparison_report.md");
-        let md = faultline_stats::report::render_comparison_markdown(report, scenario);
+        let body = faultline_stats::report::render_comparison_markdown(report, scenario);
+        let md = with_manifest_front_matter(&body, manifest_obj);
         fs::write(&md_path, md)
             .with_context(|| format!("failed to write {}", md_path.display()))?;
         info!(path = %md_path.display(), "wrote comparison Markdown report");
@@ -492,6 +587,19 @@ fn run_sensitivity_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
     );
 
     write_sensitivity_output(cli, &result)?;
+
+    let manifest_mc = ManifestMcConfig::from_config(&config, base_seed);
+    let mode = ManifestMode::Sensitivity {
+        param: param.to_string(),
+        low,
+        high,
+        steps,
+        runs_per_step: cli.sensitivity_runs,
+    };
+    let output_hash =
+        manifest::output_hash(&result).with_context(|| "failed to hash sensitivity result")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+    write_manifest_object(cli, &manifest_obj)?;
 
     Ok(())
 }
@@ -575,6 +683,290 @@ fn write_sensitivity_output(
 }
 
 // ---------------------------------------------------------------------------
+// Manifest emission + verify (Epic Q)
+// ---------------------------------------------------------------------------
+
+/// Build a [`RunManifest`] from the run inputs without writing it to
+/// disk. Splitting the build from the write lets the manifest hash
+/// flow into the markdown report's front-matter before the manifest
+/// itself is persisted.
+fn build_manifest_object(
+    cli: &Cli,
+    scenario: &Scenario,
+    mc_config: ManifestMcConfig,
+    mode: ManifestMode,
+    output_hash: String,
+) -> Result<RunManifest> {
+    let scenario_hash = manifest::scenario_hash(scenario)
+        .with_context(|| "failed to hash scenario for manifest")?;
+    manifest::build_manifest(
+        cli.scenario.display().to_string(),
+        scenario_hash,
+        mc_config,
+        mode,
+        output_hash,
+    )
+    .with_context(|| "failed to build manifest")
+}
+
+/// Persist a manifest to `manifest.json` in the output directory.
+fn write_manifest_object(cli: &Cli, manifest_obj: &RunManifest) -> Result<()> {
+    let path = cli.output.join("manifest.json");
+    let json = serde_json::to_string_pretty(manifest_obj)
+        .with_context(|| "failed to serialize manifest")?;
+    fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
+    info!(
+        path = %path.display(),
+        manifest_hash = %manifest_obj.manifest_hash,
+        "wrote manifest"
+    );
+    Ok(())
+}
+
+/// Replay a saved manifest against the live scenario and assert
+/// bit-identical output. Exits non-zero on any mismatch.
+fn run_verify(cli: &Cli, scenario: &Scenario, manifest_path: &Path) -> Result<()> {
+    let saved_str = fs::read_to_string(manifest_path)
+        .with_context(|| format!("failed to read manifest: {}", manifest_path.display()))?;
+    let saved: RunManifest = serde_json::from_str(&saved_str).with_context(|| {
+        format!(
+            "failed to parse manifest as JSON: {}",
+            manifest_path.display()
+        )
+    })?;
+
+    if saved.manifest_version != manifest::MANIFEST_VERSION {
+        anyhow::bail!(
+            "manifest version mismatch: saved={}, this build supports={}",
+            saved.manifest_version,
+            manifest::MANIFEST_VERSION
+        );
+    }
+
+    // Self-integrity: re-derive the manifest's own hash before doing
+    // any expensive replay work. Catches silent field tampering
+    // (swapped `output_hash`, inflated `num_runs`) where the replay
+    // would otherwise still match a manipulated `output_hash`.
+    let recomputed_self_hash = manifest::compute_manifest_hash(&saved)
+        .with_context(|| "failed to recompute manifest self-hash")?;
+    if recomputed_self_hash != saved.manifest_hash {
+        anyhow::bail!(
+            "manifest self-hash mismatch:\n  recorded:   {}\n  recomputed: {}\nThe manifest file at {} has been altered after emission.",
+            saved.manifest_hash,
+            recomputed_self_hash,
+            manifest_path.display(),
+        );
+    }
+
+    info!(
+        manifest_hash = %saved.manifest_hash,
+        engine_version = %saved.engine_version,
+        "verifying manifest"
+    );
+
+    // Hash the live scenario before doing any work — failing here saves
+    // a multi-minute MC run on a hash that's already wrong.
+    let live_scenario_hash =
+        manifest::scenario_hash(scenario).with_context(|| "failed to hash live scenario")?;
+    if live_scenario_hash != saved.scenario_hash {
+        anyhow::bail!(
+            "scenario hash mismatch:\n  saved:    {}\n  live:     {}\nThe scenario file at {} differs semantically from the one used to produce the manifest.",
+            saved.scenario_hash,
+            live_scenario_hash,
+            cli.scenario.display(),
+        );
+    }
+    info!("scenario hash matches; replaying run");
+
+    let replay_manifest =
+        replay_manifest_mode(cli, scenario, &saved).with_context(|| "manifest replay failed")?;
+
+    match manifest::verify_manifest(&saved, &replay_manifest) {
+        VerifyResult::Match => {
+            info!(
+                manifest_hash = %saved.manifest_hash,
+                "verify OK: replay produced bit-identical output"
+            );
+            // Also print to stdout so a script consuming `faultline
+            // verify` can grep for "VERIFY OK".
+            println!(
+                "VERIFY OK manifest_hash={} output_hash={}",
+                saved.manifest_hash, saved.output_hash
+            );
+            Ok(())
+        },
+        VerifyResult::Mismatch { reason } => {
+            error!(reason = %reason, "verify FAILED");
+            anyhow::bail!("VERIFY FAILED: {reason}");
+        },
+    }
+}
+
+/// Re-execute the saved mode against `scenario` and produce the
+/// manifest the replay would have emitted. The manifest's
+/// `output_hash` is computed from the freshly produced output and is
+/// the field that detects determinism drift.
+fn replay_manifest_mode(
+    cli: &Cli,
+    scenario: &Scenario,
+    saved: &RunManifest,
+) -> Result<RunManifest> {
+    let config = saved.mc_config.to_config();
+    let scenario_path = cli.scenario.display().to_string();
+    let scenario_hash = saved.scenario_hash.clone();
+
+    let (mode, output_hash) = match &saved.mode {
+        ManifestMode::SingleRun => {
+            let result = execute_single(scenario, saved.mc_config.base_seed)?;
+            let h = manifest::output_hash(&result)
+                .with_context(|| "failed to hash single-run replay")?;
+            (ManifestMode::SingleRun, h)
+        },
+        ManifestMode::MonteCarlo => {
+            // Replay uses one job for stable ordering — the parallel
+            // path is also deterministic but pinning to one thread
+            // removes a degree of freedom from "why did the hash
+            // mismatch?" debugging.
+            let mc_result = execute_monte_carlo(
+                scenario,
+                saved.mc_config.base_seed,
+                saved.mc_config.num_runs,
+                1,
+            )?;
+            let h = manifest::summary_hash(&mc_result.summary)
+                .with_context(|| "failed to hash MC replay summary")?;
+            (ManifestMode::MonteCarlo, h)
+        },
+        ManifestMode::Counterfactual { overrides } => {
+            let parsed: Vec<ParamOverride> = overrides
+                .iter()
+                .map(|s| ParamOverride::parse(s))
+                .collect::<Result<Vec<_>, _>>()
+                .with_context(|| "failed to reparse counterfactual overrides")?;
+            let report =
+                faultline_stats::counterfactual::run_counterfactual(scenario, &config, &parsed)
+                    .with_context(|| "counterfactual replay failed")?;
+            let h = manifest::output_hash(&report)
+                .with_context(|| "failed to hash counterfactual replay")?;
+            (
+                ManifestMode::Counterfactual {
+                    overrides: overrides.clone(),
+                },
+                h,
+            )
+        },
+        ManifestMode::Compare {
+            alt_scenario_path,
+            alt_scenario_hash,
+        } => {
+            let alt_path = Path::new(alt_scenario_path);
+            // Reject absolute paths and parent-traversal segments so a
+            // crafted manifest cannot make verify read arbitrary files
+            // (e.g. `/etc/passwd`, `../../secret.toml`). Legitimate
+            // emissions always store a CWD-relative path that descends
+            // into a scenario directory.
+            if alt_path.is_absolute() {
+                anyhow::bail!(
+                    "alt scenario path in manifest is absolute, refusing to read for safety: {}",
+                    alt_scenario_path
+                );
+            }
+            if alt_path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                anyhow::bail!(
+                    "alt scenario path in manifest contains parent traversal, refusing to read for safety: {}",
+                    alt_scenario_path
+                );
+            }
+            let alt_toml = fs::read_to_string(alt_path)
+                .with_context(|| format!("failed to read alt scenario: {}", alt_path.display()))?;
+            let alt_scenario: Scenario =
+                toml::from_str(&alt_toml).with_context(|| "failed to parse alt scenario TOML")?;
+            validate_scenario(&alt_scenario).with_context(|| "alt scenario validation failed")?;
+            let live_alt_hash = manifest::scenario_hash(&alt_scenario)
+                .with_context(|| "failed to hash alt scenario")?;
+            if live_alt_hash != *alt_scenario_hash {
+                anyhow::bail!(
+                    "alt scenario hash mismatch:\n  saved:    {}\n  live:     {}",
+                    alt_scenario_hash,
+                    live_alt_hash
+                );
+            }
+            let alt_label = alt_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("alt")
+                .to_string();
+            let report = faultline_stats::counterfactual::run_compare(
+                scenario,
+                &alt_scenario,
+                &alt_label,
+                &config,
+            )
+            .with_context(|| "compare replay failed")?;
+            let h =
+                manifest::output_hash(&report).with_context(|| "failed to hash compare replay")?;
+            (
+                ManifestMode::Compare {
+                    alt_scenario_path: alt_scenario_path.clone(),
+                    alt_scenario_hash: alt_scenario_hash.clone(),
+                },
+                h,
+            )
+        },
+        ManifestMode::Sensitivity {
+            param,
+            low,
+            high,
+            steps,
+            runs_per_step,
+        } => {
+            // Sensitivity uses its own per-step config: `runs_per_step`
+            // overrides the manifest's `num_runs` for the inner MC,
+            // but the base seed is shared.
+            let inner_config = MonteCarloConfig {
+                num_runs: *runs_per_step,
+                seed: Some(saved.mc_config.base_seed),
+                collect_snapshots: false,
+                parallel: false,
+            };
+            let result = faultline_stats::sensitivity::run_sensitivity(
+                scenario,
+                &inner_config,
+                param,
+                *low,
+                *high,
+                *steps,
+            )
+            .with_context(|| "sensitivity replay failed")?;
+            let h = manifest::output_hash(&result)
+                .with_context(|| "failed to hash sensitivity replay")?;
+            (
+                ManifestMode::Sensitivity {
+                    param: param.clone(),
+                    low: *low,
+                    high: *high,
+                    steps: *steps,
+                    runs_per_step: *runs_per_step,
+                },
+                h,
+            )
+        },
+    };
+
+    manifest::build_manifest(
+        scenario_path,
+        scenario_hash,
+        saved.mc_config.clone(),
+        mode,
+        output_hash,
+    )
+    .with_context(|| "failed to build replay manifest")
+}
+
+// ---------------------------------------------------------------------------
 // Output helpers
 // ---------------------------------------------------------------------------
 
@@ -592,11 +984,16 @@ fn write_result_json(cli: &Cli, result: &RunResult) -> Result<()> {
     Ok(())
 }
 
-fn write_outputs(cli: &Cli, result: &MonteCarloResult, scenario: &Scenario) -> Result<()> {
+fn write_outputs(
+    cli: &Cli,
+    result: &MonteCarloResult,
+    scenario: &Scenario,
+    manifest_obj: Option<&RunManifest>,
+) -> Result<()> {
     match cli.format {
         OutputFormat::Json | OutputFormat::Both => {
             write_json_summary(cli, result)?;
-            write_markdown_report(cli, result, scenario)?;
+            write_markdown_report(cli, result, scenario, manifest_obj)?;
         },
         OutputFormat::Csv => {},
     }
@@ -621,17 +1018,65 @@ fn write_json_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
     Ok(())
 }
 
-fn write_markdown_report(cli: &Cli, result: &MonteCarloResult, scenario: &Scenario) -> Result<()> {
+fn write_markdown_report(
+    cli: &Cli,
+    result: &MonteCarloResult,
+    scenario: &Scenario,
+    manifest_obj: Option<&RunManifest>,
+) -> Result<()> {
     // Only emit the report if there's something Phase-6 to show.
     if result.summary.campaign_summaries.is_empty() && result.summary.feasibility_matrix.is_empty()
     {
         return Ok(());
     }
     let path = cli.output.join("report.md");
-    let md = faultline_stats::report::render_markdown(&result.summary, scenario);
+    let body = faultline_stats::report::render_markdown(&result.summary, scenario);
+    let md = with_manifest_front_matter(&body, manifest_obj);
     fs::write(&path, md).with_context(|| format!("failed to write {}", path.display()))?;
     info!(path = %path.display(), "wrote Markdown analysis report");
     Ok(())
+}
+
+/// Prepend a manifest front-matter block to a rendered markdown body.
+///
+/// Front-matter is an HTML comment plus a one-line "Run manifest:"
+/// note. The HTML comment carries the structured manifest hash for
+/// scripts (`grep -oP 'manifest_hash="[a-f0-9]+"'`); the prose line is
+/// what an analyst sees when scanning the report. When `manifest_obj`
+/// is `None`, returns `body` unchanged.
+fn with_manifest_front_matter(body: &str, manifest_obj: Option<&RunManifest>) -> String {
+    let Some(m) = manifest_obj else {
+        return body.to_string();
+    };
+    let mode_label = match &m.mode {
+        ManifestMode::SingleRun => "single-run".to_string(),
+        ManifestMode::MonteCarlo => "monte-carlo".to_string(),
+        ManifestMode::Counterfactual { .. } => "counterfactual".to_string(),
+        ManifestMode::Compare { .. } => "compare".to_string(),
+        ManifestMode::Sensitivity { .. } => "sensitivity".to_string(),
+    };
+    format!(
+        "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
+        mh = m.manifest_hash,
+        mh_short = short_hash(&m.manifest_hash),
+        oh = m.output_hash,
+        ev = m.engine_version,
+        ml = mode_label,
+        seed = m.mc_config.base_seed,
+        runs = m.mc_config.num_runs,
+        body = body,
+    )
+}
+
+/// Truncate a hex hash for display. Keeps the first 12 characters —
+/// that's 48 bits, well below collision risk for any plausible
+/// scenario library and short enough to read in a sentence.
+fn short_hash(h: &str) -> String {
+    if h.len() <= 12 {
+        h.to_string()
+    } else {
+        h[..12].to_string()
+    }
 }
 
 fn write_csv_summary(cli: &Cli, result: &MonteCarloResult) -> Result<()> {

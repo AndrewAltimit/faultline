@@ -98,6 +98,15 @@ jobs:
       - name: Reference sanitization guard
         run: ./tools/ci/grep-guard.sh
 
+      # -- Reproducibility smoke test (Epic Q) -------------------------------
+      # For every bundled scenario, emits a manifest and replays it via
+      # `--verify` to confirm bit-identical output. Catches regressions
+      # in the determinism contract before they merge.
+      # Detail in tools/ci/verify-bundled-scenarios.sh.
+      - name: Reproducibility smoke test
+        timeout-minutes: 10
+        run: docker compose --profile ci run --rm rust-ci ./tools/ci/verify-bundled-scenarios.sh
+
       # -- JS Tests ----------------------------------------------------------
       # Pure-logic frontend modules (pinned store, comparison deltas, diff
       # renderer, sharing roundtrip, heatmap aggregation) are exercised
