@@ -6,14 +6,17 @@ import { PRESETS } from './presets.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildShareUrl } from './sharing.js';
 import { renderDiff } from './diff.js';
-import { PinnedStore } from './pinned.js';
+/** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 
 export class Editor {
   /**
    * @param {import('./event-bus.js').EventBus} bus
    * @param {object} wasm - WASM module exports
+   * @param {PinnedStore} pinned - Shared pinned store (same instance the
+   *   dashboard gets, so diff baselines reflect pins added during the
+   *   session without a page reload).
    */
-  constructor(bus, wasm) {
+  constructor(bus, wasm, pinned) {
     this.bus = bus;
     this.wasm = wasm;
 
@@ -36,7 +39,7 @@ export class Editor {
 
     // Share the same pinned store the dashboard uses so diff baselines
     // stay in sync with pinned MC results.
-    this.pinned = new PinnedStore();
+    this.pinned = pinned;
 
     // Tab switching.
     document.querySelectorAll('.app-tab').forEach((tab) => {

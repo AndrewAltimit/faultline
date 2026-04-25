@@ -13,6 +13,7 @@ import { mapsToObjects } from './wasm-util.js';
 import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
 import { Tutorial } from './tutorial.js';
 import { TechCardsPanel } from './tech-cards.js';
+import { PinnedStore } from './pinned.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
@@ -63,9 +64,15 @@ async function bootstrap() {
   // Only initialize WASM-dependent modules if WASM is available.
   let controls, editor, dashboard, builder, techCards;
   if (wasm) {
+    // One PinnedStore shared by Dashboard (where pins are added) and
+    // Editor (where pins feed the diff-viewer baselines). Two instances
+    // would only share localStorage, leaving the editor's in-memory pin
+    // list stale until a page reload.
+    const pinned = new PinnedStore();
+
     controls = new SimControls(bus);
-    editor = new Editor(bus, wasm);
-    dashboard = new Dashboard(bus, wasm);
+    editor = new Editor(bus, wasm, pinned);
+    dashboard = new Dashboard(bus, wasm, pinned);
     builder = new FactionBuilder(bus);
     techCards = new TechCardsPanel(bus);
 

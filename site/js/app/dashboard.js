@@ -5,7 +5,7 @@
 import { AppState } from './state.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
-import { PinnedStore } from './pinned.js';
+/** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 import { renderComparison } from './comparison.js';
 
 function escapeHtml(s) {
@@ -61,8 +61,11 @@ export class Dashboard {
   /**
    * @param {import('./event-bus.js').EventBus} bus
    * @param {object} wasm - WASM module exports
+   * @param {PinnedStore} pinned - Shared pinned store (same instance the
+   *   editor gets, so diff baselines pick up pins added here without a
+   *   page reload).
    */
-  constructor(bus, wasm) {
+  constructor(bus, wasm, pinned) {
     this.bus = bus;
     this.wasm = wasm;
 
@@ -77,7 +80,7 @@ export class Dashboard {
     this._mcRequestId = 0;
 
     // Pinned results store + container.
-    this.pinned = new PinnedStore();
+    this.pinned = pinned;
     this.pinnedContainer = document.getElementById('pinned-results');
     this.btnPinResult = document.getElementById('btn-pin-result');
     this.comparisonContainer = document.getElementById('comparison-results');
