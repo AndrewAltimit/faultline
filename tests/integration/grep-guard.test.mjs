@@ -111,14 +111,14 @@ test('grep-guard: catches ETRA-YYYY- document identifiers', () => {
 
 test('grep-guard: does not match "ETRA" inside other words', () => {
   // The \b word boundary in the regex must prevent accidental matches
-  // inside legitimate words like "penetration", "getrandom", etc.
-  // Without the boundary, half the engine would trigger.
+  // when the uppercase substring "ETRA" appears inside another
+  // identifier (the regex is case-sensitive, so lowercase "etra" in
+  // words like "penetration" wouldn't match anyway — the boundary's
+  // job is to reject same-case embeddings).
   //
-  // Fixtures must contain the *uppercase* substring "ETRA" inside
-  // another word — otherwise the test would pass for the wrong reason
-  // (case mismatch alone, since the regex is case-sensitive). The
-  // identifiers below embed ETRA between word characters, which is
-  // exactly what \b should reject.
+  // Fixtures below embed uppercase ETRA between word characters
+  // (SPETRAL, XETRAY, ETRACTION). Without \b, the bare ETRA pattern
+  // would match all three and fail the build.
   plant(
     'src/lib.rs',
     `
@@ -155,9 +155,9 @@ test('grep-guard: ignores file extensions outside the include list', () => {
   // shouldn't fail the build.
   //
   // Note: `.lock` is excluded *by omission* — the guard scans only the
-  // extensions in `INCLUDES` (.rs, .toml, .md, .html, .css, .js, .mjs,
-  // .yml, .yaml, .sh). There is no explicit `--exclude=*.lock`. Adding
-  // `.lock` to the include list would break this test.
+  // extensions in `SCAN_EXTENSIONS` (.rs, .toml, .md, .html, .css, .js,
+  // .mjs, .yml, .yaml, .sh). There is no explicit `--exclude=*.lock`.
+  // Adding `.lock` to the allowlist would break this test.
   plant('Cargo.lock', '# version = "ETRA"');
   const { status } = runGuard();
   assert.equal(status, 0);
