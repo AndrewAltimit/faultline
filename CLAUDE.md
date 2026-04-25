@@ -50,6 +50,10 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --compare scenarios/tutorial_asymmetric.toml
 
+# Replay a saved manifest and assert bit-identical output (Epic Q)
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
+    --verify ./output/manifest.json
+
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
 
@@ -57,7 +61,7 @@ wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/
 node --test tests/integration/*.test.mjs
 ```
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> js-tests**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
 heatmap aggregation, the Pinned MC results store, the comparison-delta
@@ -73,6 +77,12 @@ threat-assessment publication series. The patterns it bans, the
 whitelist, and the rationale are documented inline in the script. To
 run it locally: `./tools/ci/grep-guard.sh` — exit 0 = clean, exit 1 =
 banned-pattern match found.
+
+The verify-bundled stage (`tools/ci/verify-bundled-scenarios.sh`)
+emits a `manifest.json` for every TOML in `scenarios/` and replays
+each one via `faultline-cli --verify` to confirm bit-identical
+output. Catches drift in the determinism contract before it leaks
+into a release. Run locally: `./tools/ci/verify-bundled-scenarios.sh`.
 
 To match CI exactly (containerized):
 ```bash

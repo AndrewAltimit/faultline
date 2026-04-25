@@ -1118,3 +1118,147 @@ fn comparison_omits_optional_subsections_when_empty() {
         "mean-duration line should still render"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Epic Q — Manifest determinism integration tests
+// ---------------------------------------------------------------------------
+
+/// The manifest hash is the citation-grade identity for a Faultline
+/// run. Two runs with the same scenario, seed, and run count must
+/// produce identical scenario_hash, output_hash, and manifest_hash.
+/// If this drifts, every external citation of a Faultline run becomes
+/// invalid.
+#[test]
+fn manifest_hashes_are_deterministic_across_runs() {
+    use faultline_stats::manifest::{
+        ManifestMcConfig, ManifestMode, build_manifest, scenario_hash, summary_hash,
+    };
+
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 25,
+        seed: Some(2026),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let r1 = MonteCarloRunner::run(&config, &scenario).expect("run 1");
+    let r2 = MonteCarloRunner::run(&config, &scenario).expect("run 2");
+
+    let s1 = scenario_hash(&scenario).expect("scenario hash 1");
+    let s2 = scenario_hash(&scenario).expect("scenario hash 2");
+    assert_eq!(s1, s2, "scenario_hash must be deterministic");
+
+    let o1 = summary_hash(&r1.summary).expect("output hash 1");
+    let o2 = summary_hash(&r2.summary).expect("output hash 2");
+    assert_eq!(
+        o1, o2,
+        "output_hash must be identical across two MC runs with the same seed"
+    );
+
+    let mc = ManifestMcConfig::from_config(&config, 2026);
+    let m1 = build_manifest(
+        "test.toml".into(),
+        s1.clone(),
+        mc.clone(),
+        ManifestMode::MonteCarlo,
+        o1.clone(),
+    )
+    .expect("manifest 1");
+    let m2 = build_manifest("test.toml".into(), s2, mc, ManifestMode::MonteCarlo, o2)
+        .expect("manifest 2");
+    assert_eq!(
+        m1.manifest_hash, m2.manifest_hash,
+        "manifest_hash must be identical across two MC runs with the same seed"
+    );
+    assert!(
+        !m1.manifest_hash.is_empty(),
+        "manifest_hash must be a populated hex string"
+    );
+    // Sanity-check the hash is a 64-char SHA-256 hex digest.
+    assert_eq!(
+        m1.manifest_hash.len(),
+        64,
+        "manifest hash should be 64 hex chars"
+    );
+    assert_eq!(s1.len(), 64, "scenario hash should be 64 hex chars");
+    assert_eq!(o1.len(), 64, "output hash should be 64 hex chars");
+}
+
+/// Bumping a parameter must flip the scenario_hash, the output_hash,
+/// AND the manifest_hash. If any one of these doesn't change, the
+/// citation system would silently report "this run is the same as
+/// that one" when the inputs differ.
+#[test]
+fn manifest_hashes_react_to_parameter_changes() {
+    use faultline_stats::manifest::{scenario_hash, summary_hash};
+
+    let scenario_a = flagged_chain_scenario();
+    let mut scenario_b = scenario_a.clone();
+    // Mutate something semantically meaningful.
+    scenario_b.political_climate.tension = 0.99;
+
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(7),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let sh_a = scenario_hash(&scenario_a).expect("hash a");
+    let sh_b = scenario_hash(&scenario_b).expect("hash b");
+    assert_ne!(
+        sh_a, sh_b,
+        "mutating a scenario field must flip scenario_hash"
+    );
+
+    let r_a = MonteCarloRunner::run(&config, &scenario_a).expect("run a");
+    let r_b = MonteCarloRunner::run(&config, &scenario_b).expect("run b");
+    let oh_a = summary_hash(&r_a.summary).expect("output hash a");
+    let oh_b = summary_hash(&r_b.summary).expect("output hash b");
+    assert_ne!(
+        oh_a, oh_b,
+        "different scenarios should produce different output hashes (with this seed)"
+    );
+}
+
+/// `verify_manifest` must accept identical replays (the happy path).
+#[test]
+fn verify_accepts_identical_replay() {
+    use faultline_stats::manifest::{
+        ManifestMcConfig, ManifestMode, VerifyResult, build_manifest, scenario_hash, summary_hash,
+        verify_manifest,
+    };
+
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 12,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let r1 = MonteCarloRunner::run(&config, &scenario).expect("run 1");
+    let r2 = MonteCarloRunner::run(&config, &scenario).expect("run 2");
+    let sh = scenario_hash(&scenario).expect("scenario hash");
+    let mc = ManifestMcConfig::from_config(&config, 42);
+
+    let m1 = build_manifest(
+        "test.toml".into(),
+        sh.clone(),
+        mc.clone(),
+        ManifestMode::MonteCarlo,
+        summary_hash(&r1.summary).expect("oh1"),
+    )
+    .expect("manifest 1");
+    let m2 = build_manifest(
+        "test.toml".into(),
+        sh,
+        mc,
+        ManifestMode::MonteCarlo,
+        summary_hash(&r2.summary).expect("oh2"),
+    )
+    .expect("manifest 2");
+
+    assert_eq!(verify_manifest(&m1, &m2), VerifyResult::Match);
+}

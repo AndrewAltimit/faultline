@@ -56,6 +56,7 @@ approx = "0.5"
 
 # Hashing
 rustc-hash = "2.1"
+sha2 = "0.10"
 
 # Parallelism (CLI only, not WASM)
 rayon = "1.10"

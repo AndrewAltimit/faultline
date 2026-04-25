@@ -483,19 +483,47 @@ result emits a manifest containing the inputs needed to re-derive it
 bit-for-bit, and the CLI can verify a published manifest by re-running
 and comparing.
 
-- [ ] `RunManifest` struct: scenario hash, engine version, MC config,
+- [x] `RunManifest` struct: scenario hash, engine version, MC config,
       RNG seed, output hash, host platform
-- [ ] CLI: every `run` emits `manifest.json` alongside `report.md`
-- [ ] CLI: `faultline-cli verify <manifest>` re-runs and asserts
+- [x] CLI: every `run` emits `manifest.json` alongside `report.md`
+- [x] CLI: `faultline-cli verify <manifest>` re-runs and asserts
       bit-identical output, exits non-zero on mismatch
-- [ ] Engine version pinned in `Cargo.toml` and surfaced via a
+- [x] Engine version pinned in `Cargo.toml` and surfaced via a
       build-script-generated constant
-- [ ] CI: `verify` runs on every bundled scenario at every release tag
-- [ ] Report front-matter includes the manifest's content hash so
+- [x] CI: `verify` runs on every bundled scenario at every release tag
+- [x] Report front-matter includes the manifest's content hash so
       analysts can cite "Faultline run 0xabcd…" stably
 
-**Status:** deferred. Enables external citation of Faultline outputs
-without coupling Faultline to any specific external publication.
+**Status:** Epic Q **closed**. Single PR (branch
+`epic-q-reproducibility`) added the `RunManifest` schema in a new
+`faultline_stats::manifest` module — SHA-256 hashes computed over the
+canonical JSON form of the parsed `Scenario` (so the input identity is
+robust to TOML formatting churn) and the `MonteCarloSummary` /
+`ComparisonReport` / `RunResult` / `SensitivityResult` (so the output
+identity exactly matches what was emitted). Every CLI run mode
+(single-run, monte-carlo, counterfactual, compare, sensitivity)
+emits `manifest.json` alongside its existing artifacts and prepends
+the manifest hash to the rendered report's front-matter both as a
+parseable HTML comment (`<!-- faultline-manifest manifest_hash="…" -->`)
+and as a one-line analyst-facing citation. The `--verify <MANIFEST>`
+flag loads the saved manifest, hashes the live scenario, refuses
+mismatched scenarios early, replays the recorded mode + Monte Carlo
+config, and exits non-zero with a structured field-level diff if any
+replay-bound field drifts. `host_platform` is recorded for diagnostics
+but excluded from the manifest hash so a manifest produced on Linux
+verifies cleanly on macOS — the determinism contract requires
+identical output across platforms for the same seed. Engine version
+is surfaced via `env!("CARGO_PKG_VERSION")` in
+`faultline_stats::manifest::FAULTLINE_ENGINE_VERSION` (no separate
+build script needed because Cargo populates the env var
+automatically). The new `tools/ci/verify-bundled-scenarios.sh` script
+is wired into both CI workflows after `cargo-deny` and the
+reference-sanitization guard, and runs an emit/verify round-trip on
+every TOML in `scenarios/` (currently 9). Library-level tests in
+`crates/faultline-stats/src/manifest.rs` and
+`crates/faultline-stats/tests/report_integration.rs` lock the
+determinism contract — same scenario + seed → same hashes; mutating
+a scenario field flips both `scenario_hash` and `output_hash`.
 
 ---
 

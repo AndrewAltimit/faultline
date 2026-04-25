@@ -8,6 +8,7 @@
 pub mod analysis;
 pub mod counterfactual;
 pub mod delta;
+pub mod manifest;
 pub mod report;
 pub mod sensitivity;
 pub mod uncertainty;
