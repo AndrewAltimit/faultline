@@ -22,7 +22,7 @@ const STEPS = [
   {
     title: 'Load a preset',
     body:
-      'Pick a bundled scenario here. Try "ETRA 1 — Drone Swarm Decapitation" or "Europe — Eastern Flank" for kill-chain outputs. The TOML below will populate with the scenario definition.',
+      'Pick a bundled scenario here. Try "Drone Swarm Destabilization" or "Europe — Eastern Flank" for kill-chain outputs. The TOML below will populate with the scenario definition.',
     target: '#preset-select',
     placement: 'right',
   },

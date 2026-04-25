@@ -46,7 +46,7 @@ pub struct ScenarioMeta {
     pub tags: Vec<String>,
     /// Coarse author-supplied confidence tag for the scenario as a
     /// whole. Signals "this is a conceptual sketch" vs.
-    /// "this is ETRA-candidate rigor" to report readers. Orthogonal
+    /// "this is publication-ready rigor" to report readers. Orthogonal
     /// to the Wilson CIs on individual rates — those measure sampling
     /// uncertainty; this one measures parameter defensibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]

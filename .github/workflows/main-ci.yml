@@ -60,6 +60,13 @@ jobs:
       - name: cargo-deny
         run: docker compose --profile ci run --rm rust-ci cargo deny check
 
+      # -- Reference sanitization guard --------------------------------------
+      # Blocks any commit that re-introduces references coupling Faultline
+      # to a specific external threat-assessment publication. See
+      # tools/ci/grep-guard.sh for the rule and the whitelist.
+      - name: Reference sanitization guard
+        run: ./tools/ci/grep-guard.sh
+
       # -- JS Tests ----------------------------------------------------------
       # Pure-logic frontend modules (pinned store, comparison deltas, diff
       # renderer, sharing roundtrip, heatmap aggregation) are exercised

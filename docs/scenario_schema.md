@@ -432,7 +432,7 @@ Tagged enum (`effect = "..."`):
 
 A kill chain is an ordered, branching sequence of [`CampaignPhase`](#kill_chainsidphasesphase_id) entries modeling an adversary campaign against a target faction. Execution begins at `entry_phase`; subsequent phases are reached by resolving branches at phase completion. The phase graph must terminate — a phase with no branches ends the chain.
 
-Kill chains are the primary analytical signal for ETRA-style defensive wargaming: Monte Carlo runs aggregate per-phase success / failure / detection probabilities, cost asymmetry ratios, attribution confidence, and defensive-domain seam exploitation into the scenario's feasibility matrix and Markdown report.
+Kill chains are the primary analytical signal for structured defensive wargaming: Monte Carlo runs aggregate per-phase success / failure / detection probabilities, cost asymmetry ratios, attribution confidence, and defensive-domain seam exploitation into the scenario's feasibility matrix and Markdown report.
 
 ```toml
 [kill_chains.alpha]

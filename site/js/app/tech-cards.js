@@ -1,5 +1,5 @@
 /**
- * Tech Cards sidebar panel — browses the ETRA-derived tech library and
+ * Tech Cards sidebar panel — browses the OSINT-derived tech library and
  * injects cards into the TOML editor scenario.
  */
 import { AppState } from './state.js';
@@ -55,7 +55,7 @@ export class TechCardsPanel {
       <div class="tech-panel-title">Threat Capability Library</div>
       <div class="tech-panel-subtitle">
         ${total} cards across ${DOMAINS.length} threat domains. Each card encodes an
-        ETRA-derived capability as statistical effects you can grant to
+        OSINT-derived capability as statistical effects you can grant to
         any faction. ${activeMeta ? escapeHtml(activeMeta.description) : 'Showing all domains.'}
       </div>
     </div>`;
@@ -178,7 +178,7 @@ export class TechCardsPanel {
             <span title="Per-tick upkeep">Upkeep ${card.cost_per_tick}/tick</span>
             <span title="Technology readiness level">TRL ${escapeHtml(card.trl)}</span>
           </div>
-          <div class="tech-card-ref">${escapeHtml(card.etra_ref)}</div>
+          <div class="tech-card-ref">${escapeHtml(card.source_ref)}</div>
           <div class="tech-card-rationale">${escapeHtml(card.rationale)}</div>
           <div class="tech-card-effects">${this._renderEffects(card.effects)}</div>
           ${
