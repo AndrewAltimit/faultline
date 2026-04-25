@@ -31,31 +31,15 @@ PATTERN='\bETRA\b|etra_ref|ETRA-[0-9]{4}-'
 
 # File-type allowlist: only scan source files. Skips binaries, build
 # artifacts, vendored deps, and the rendered docs/ output.
-INCLUDES=(
-  --include='*.rs'
-  --include='*.toml'
-  --include='*.md'
-  --include='*.html'
-  --include='*.css'
-  --include='*.js'
-  --include='*.mjs'
-  --include='*.yml'
-  --include='*.yaml'
-  --include='*.sh'
-)
+#
+# Defined as plain extension lists so the same set drives both the
+# `find` enumeration below and any future tooling that wants to know
+# which file types the guard scans.
+SCAN_EXTENSIONS=(rs toml md html css js mjs yml yaml sh)
 
-# Directory excludes: build outputs, generated WASM bundle, git internals.
-# `site/scenarios` is excluded because it's a symlink to `scenarios/`; on
-# BSD/macOS grep, `-r` follows symlinks and would scan every scenario
-# twice (GNU grep `-r` doesn't follow symlinks discovered during
-# recursion, so this is a no-op on Linux but still correct there).
-EXCLUDES=(
-  --exclude-dir=target
-  --exclude-dir=node_modules
-  --exclude-dir=pkg
-  --exclude-dir=.git
-  --exclude-dir=site/scenarios
-)
+# Directory excludes: build outputs, generated WASM bundle, git
+# internals. Pruned by basename in the find traversal below.
+SCAN_PRUNE_DIRS=(target node_modules pkg .git)
 
 # Per-file whitelist (pruned from the match list after scanning).
 #   docs/improvement-plan.md  — Epic G section legitimately mentions
@@ -77,11 +61,61 @@ WHITELIST=(
 # directory without having to plant files in the real tree.
 cd "${FAULTLINE_SCAN_ROOT:-$(dirname "$0")/../..}"
 
-# Capture grep exit explicitly. grep exits 0 on match, 1 on no match, and
-# 2+ on real errors (bad regex, I/O, permission denied). `|| true` would
-# silently swallow those errors and report "clean" on a broken invocation.
+# Build the file list with `find` rather than `grep -r` so symlink
+# behavior is consistent across platforms. GNU grep -r doesn't enter
+# symlinked directories during recursion, but BSD/macOS grep -r does,
+# which would cause `site/scenarios → ../scenarios` to be scanned
+# twice. `find` (without -L) treats symlinks as leaves: the symlink
+# itself is reported with -type l and skipped here by -type f, while
+# the real `scenarios/` directory is enumerated exactly once via its
+# canonical path.
+find_args=(.)
+# Prune block: \( -type d \( -name target -o -name node_modules ... \) -prune \)
+find_args+=(\( -type d \()
+prune_first=1
+for d in "${SCAN_PRUNE_DIRS[@]}"; do
+  if [[ $prune_first -eq 1 ]]; then
+    find_args+=(-name "$d")
+    prune_first=0
+  else
+    find_args+=(-o -name "$d")
+  fi
+done
+find_args+=(\) -prune \))
+# OR
+find_args+=(-o)
+# File-match block: \( -type f \( -name '*.rs' -o ... \) -print0 \)
+find_args+=(\( -type f \()
+ext_first=1
+for ext in "${SCAN_EXTENSIONS[@]}"; do
+  if [[ $ext_first -eq 1 ]]; then
+    find_args+=(-name "*.$ext")
+    ext_first=0
+  else
+    find_args+=(-o -name "*.$ext")
+  fi
+done
+find_args+=(\) -print0 \))
+
+declare -a scan_files=()
+while IFS= read -r -d '' f; do
+  scan_files+=("$f")
+done < <(find "${find_args[@]}")
+
+if [[ ${#scan_files[@]} -eq 0 ]]; then
+  echo "grep-guard: clean — no scannable files found"
+  exit 0
+fi
+
+# Capture grep exit explicitly. grep exits 0 on match, 1 on no match,
+# and 2+ on real errors (bad regex, I/O, permission denied). `|| true`
+# would silently swallow those errors and report "clean" on a broken
+# invocation.
 grep_exit=0
-raw_matches=$(grep -rnEI "${INCLUDES[@]}" "${EXCLUDES[@]}" "$PATTERN" .) || grep_exit=$?
+# -H forces the path prefix even when scan_files has a single entry,
+# so the `path:line:content` format the awk filter below expects is
+# stable regardless of file count.
+raw_matches=$(grep -HnEI "$PATTERN" "${scan_files[@]}") || grep_exit=$?
 if [[ $grep_exit -gt 1 ]]; then
   echo "grep-guard: ERROR — grep failed with exit code $grep_exit" >&2
   exit "$grep_exit"

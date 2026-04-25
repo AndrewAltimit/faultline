@@ -15,7 +15,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,6 +172,32 @@ test('grep-guard: ignores excluded directories', () => {
   plant('node_modules/dep/lib.js', '// ETRA');
   const { status } = runGuard();
   assert.equal(status, 0);
+});
+
+test('grep-guard: does not double-scan symlinked directories', () => {
+  // The real repo has `site/scenarios -> ../scenarios`. A naive
+  // `grep -r` on BSD/macOS follows that symlink and reports every
+  // banned match in scenarios/ twice (once via the canonical path,
+  // once via the symlinked one). The find-based enumeration in the
+  // guard is meant to treat symlinks as leaves so the underlying
+  // directory is scanned exactly once.
+  //
+  // This test plants a violation in scenarios/, points a sibling
+  // symlink at it (mirroring the real layout), and asserts the
+  // violation appears in stdout exactly one time. If the guard
+  // regresses to a recursive-grep approach that follows symlinks,
+  // the match count would be 2 and this test would fail.
+  plant('scenarios/test.toml', '# ETRA-grade scenario\n');
+  mkdirSync(join(fixture, 'site'), { recursive: true });
+  symlinkSync('../scenarios', join(fixture, 'site', 'scenarios'));
+  const { status, stdout } = runGuard();
+  assert.equal(status, 1);
+  const matches = stdout.match(/scenarios\/test\.toml/g) || [];
+  assert.equal(
+    matches.length,
+    1,
+    `expected exactly one match line, got ${matches.length}: ${stdout}`,
+  );
 });
 
 // ---------------------------------------------------------------------------
