@@ -1087,7 +1087,6 @@ export class Dashboard {
       btnClear.addEventListener('click', () => {
         this._compareSelection = { a: null, b: null };
         this._renderPinned();
-        this._renderComparisonPanel();
       });
     }
 
