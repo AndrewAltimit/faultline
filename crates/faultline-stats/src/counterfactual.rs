@@ -4,7 +4,7 @@
 //! "how does scenario A compare to scenario B?" This module produces
 //! [`ComparisonReport`] values that pair a *baseline* Monte Carlo
 //! summary against one or more *variant* summaries and summarise the
-//! deltas in the metrics that matter most for ETRA-style analysis —
+//! deltas in the metrics that matter most for structured threat-assessment analysis —
 //! per-faction win rates, mean duration, mean casualties, and the
 //! kill-chain feasibility cells (success / detection / cost asymmetry).
 //!

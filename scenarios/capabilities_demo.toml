@@ -3,9 +3,9 @@
 # Sandbox scenario demonstrating the Drone Threat Library tech cards.
 # All capabilities are aggregate statistical effects derived from
 # publicly available open-source intelligence (IISS Military Balance,
-# congressional testimony, academic literature, and the Locust ETRA
-# v2.0 threat assessment). No classified or export-controlled
-# information is encoded.
+# congressional testimony, academic literature, and open-source UAS /
+# counter-UAS threat-assessment writing). No classified or
+# export-controlled information is encoded.
 #
 # This scenario is intentionally abstract — its purpose is to give
 # every faction access to the full tech library so you can experiment
@@ -197,7 +197,7 @@ capabilities = []
 
 # -- Technology -------------------------------------------------------------
 # Parameters mirror site/js/app/tech-library.js exactly. Effects are
-# derived from the Locust ETRA v2.0 feasibility assessments.
+# derived from open-source UAS / counter-UAS threat-assessment literature.
 
 [technology]
 

@@ -1,18 +1,17 @@
 # Autonomous Drone Swarm Destabilization Scenario
 #
 # Models a multi-phase covert destabilization campaign using autonomous
-# drone swarms against US government institutions. Based on the Emerging
-# Threat Risk Assessment (ETRA) framework analyzing how non-state actors
-# can leverage commercially-derived drone technology to undermine political
+# drone swarms against US government institutions. Drawn from open-source
+# threat-assessment literature analyzing how non-state actors can
+# leverage commercially-derived drone technology to undermine political
 # stability through compound kill chains.
 #
-# This scenario models Kill Chain Alpha from the ETRA: an intelligence-led
+# This scenario models an intelligence-led compound kill chain: a
 # campaign progressing through sensor emplacement, wireless exploitation,
-# credential harvesting, persistent surveillance, and culminating in either
-# a coercion campaign or executive decapitation attempt.
+# credential harvesting, persistent surveillance, and culminating in
+# either a coercion campaign or executive decapitation attempt.
 #
-# References:
-# - ETRA: "Autonomous Drone Swarms as Instruments of Political Destabilization" (2026)
+# References (open-source, OSINT-only):
 # - RAND RR-3023-DHS: "Small Unmanned Aerial System Adversary Capabilities" (2020)
 # - IISS Military Balance 2025: C-UAS system capabilities and deployment data
 # - CISA: Counter-UAS gap assessments and interagency coordination reports
@@ -360,7 +359,7 @@ detection = 0.6
 [factions.threat_actor]
 id = "threat_actor"
 name = "Disaffected Insider Cell"
-description = "15-person cell of former military/intelligence professionals. Profile A from ETRA. Ideological motivation (constitutional grievance), high operational skill, institutional knowledge of defensive systems. $150K budget from personal savings and crypto."
+description = "15-person cell of former military/intelligence professionals. Disaffected-insider threat-actor profile. Ideological motivation (constitutional grievance), high operational skill, institutional knowledge of defensive systems. $150K budget from personal savings and crypto."
 color = "#c0392b"
 tech_access = ["autonomous_swarm", "rogue_ap_platform", "covert_sensors", "edge_ai_targeting"]
 initial_morale = 0.90

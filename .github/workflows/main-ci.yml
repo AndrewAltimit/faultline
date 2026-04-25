@@ -60,6 +60,13 @@ jobs:
       - name: cargo-deny
         run: docker compose --profile ci run --rm rust-ci cargo deny check
 
+      # -- Reference sanitization guard --------------------------------------
+      # Blocks any commit that re-introduces references coupling Faultline
+      # to a specific external threat-assessment publication. See
+      # tools/ci/grep-guard.sh for the rule and the whitelist.
+      - name: Reference sanitization guard
+        run: ./tools/ci/grep-guard.sh
+
       # -- JS Tests ----------------------------------------------------------
       # Pure-logic frontend modules (pinned store, comparison deltas, diff
       # renderer, sharing roundtrip, heatmap aggregation) are exercised
@@ -114,6 +121,18 @@ jobs:
             --target web \
             --out-dir ../../site/pkg \
             --no-typescript
+
+      # site/scenarios is a symlink to ../scenarios so the source of truth
+      # lives in one place. The Pages artifact only includes site/, so the
+      # symlink target would be missing in the deployed bundle. Replace
+      # the symlink with a real copy here so the deployed site can serve
+      # the scenarios over HTTP.
+      - name: Materialize site/scenarios for deploy
+        run: |
+          if [ -L site/scenarios ]; then
+            rm site/scenarios
+            cp -R scenarios site/scenarios
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

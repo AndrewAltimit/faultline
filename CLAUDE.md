@@ -57,14 +57,22 @@ wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/
 node --test tests/integration/*.test.mjs
 ```
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> js-tests**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
 heatmap aggregation, the Pinned MC results store, the comparison-delta
 computation that mirrors `faultline_stats::counterfactual::compute_delta`,
-and the LCS unified-diff renderer). They run on the host (not in the
+the LCS unified-diff renderer, the grep-guard CI script, and the
+site/scenarios symlink contract). They run on the host (not in the
 rust-ci container) and only depend on `node:test`; CI provisions the
 runtime with `actions/setup-node@v4`.
+
+The grep-guard stage (`tools/ci/grep-guard.sh`) blocks any commit that
+re-introduces references coupling Faultline to a specific external
+threat-assessment publication series. The patterns it bans, the
+whitelist, and the rationale are documented inline in the script. To
+run it locally: `./tools/ci/grep-guard.sh` — exit 0 = clean, exit 1 =
+banned-pattern match found.
 
 To match CI exactly (containerized):
 ```bash
@@ -103,7 +111,8 @@ crates/
 - All IDs are newtypes wrapping `String` (defined via `define_id!` macro in `faultline-types/src/ids.rs`).
 - All config structs derive `Serialize, Deserialize, Clone, Debug`.
 - Technology modifiers are "capability cards" — named bundles of statistical effects derived from OSINT.
-- Scenarios are TOML files in `scenarios/`.
+- Scenarios are TOML files in `scenarios/`. The browser app reads them via `site/scenarios/`, which is a symlink to `../scenarios` so the source of truth lives in one place. The GitHub Pages deploy workflow materializes the symlink (replaces it with a real copy) before uploading the artifact, since the upload only includes `site/`.
+- The browser tech-card library at `site/js/app/tech-library.js` records each card's open-source provenance via `source_ref` (a domain-generic descriptor — *not* a citation to any specific publication). Adding a card with a section-level fingerprint to a specific external document will fail the grep-guard CI stage.
 
 ## Scenario Data Policy
 

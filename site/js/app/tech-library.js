@@ -1,19 +1,19 @@
 /**
- * Bundled technology card library derived from the Locust ETRA
- * threat assessment (v2.0, 2026-04-11).
+ * Bundled technology card library — capability bundles derived from
+ * open-source threat-assessment literature.
  *
  * Each card captures the aggregate statistical effect of a real-world
- * capability described in the ETRA. Parameters are derived from the
- * ETRA's feasibility assessments, cost-of-defense analysis (Section
- * 4.7), and technology readiness reference (Appendix A). No card
- * encodes implementation-level technical detail — only the operational
- * effect on the simulation.
+ * capability described in the public OSINT record (academic literature,
+ * congressional testimony, GAO/CRS reports, vendor specifications,
+ * field-standard cost-of-defense analyses, technology readiness rubrics).
+ * No card encodes implementation-level technical detail — only the
+ * operational effect on the simulation.
  *
  * Card fields are directly compatible with the Faultline TOML schema;
  * see `crates/faultline-types/src/tech.rs` for the authoritative type
  * definitions.
  *
- * Provenance fields (`etra_ref`, `trl`, `profiles`) are metadata only
+ * Provenance fields (`source_ref`, `trl`, `profiles`) are metadata only
  * and are stripped before injection into a scenario.
  */
 
@@ -29,9 +29,9 @@
  * @property {number} [coverage_limit]
  * @property {Array<string>} countered_by
  * @property {boolean} is_offensive       // UI grouping only
- * @property {string} etra_ref            // ETRA section reference
+ * @property {string} source_ref          // open-source provenance descriptor
  * @property {string} trl                 // technology readiness level range
- * @property {Array<string>} profiles     // ETRA threat actor profiles ("A", "B", "C", "D") or defender role
+ * @property {Array<string>} profiles     // threat actor profile codes or defender role
  * @property {string} rationale           // one-line explanation of the mapping from capability → game effect
  */
 
@@ -59,11 +59,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.1, 3.2; Appendix A (Edge AI, multi-drone coordination)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '7–8 (2026) → 9 (2030)',
     profiles: ['A', 'B', 'C'],
     rationale:
-      'Section 3.1 places single-attempt success at 5–15% with high consequence severity; encoded as a combat/attrition multiplier combined with a detection penalty and enemy-morale shock.',
+      'Source literature places single-attempt success at 5–15% with high consequence severity; encoded as a combat/attrition multiplier combined with a detection penalty and enemy-morale shock.',
   },
 
   micro_drone_swarm: {
@@ -83,11 +83,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 4.3 (The Micro-Drone Gap)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '4–5 (2026) → 6–7 (2030)',
     profiles: ['B'],
     rationale:
-      'Section 4.3: no deployed detector reliably finds micro-drones. Encoded as a near-zero detection factor plus modest intel and combat bonuses.',
+      'Open literature: no deployed detector reliably finds micro-drones. Encoded as a near-zero detection factor plus modest intel and combat bonuses.',
   },
 
   rogue_ap_drone_mesh: {
@@ -107,7 +107,7 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.6 (Scenario 6 — Cyber-Physical Network Exploitation)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '8–9 (2026)',
     profiles: ['A', 'B', 'C'],
     rationale:
@@ -130,11 +130,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.7 (Scenario 7 — Persistent Covert Sensor Emplacement)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (2026)',
     profiles: ['A', 'B', 'C', 'D'],
     rationale:
-      'Section 3.7 places steady-state detection probability as "very low" and single-emplacement success at 85–95%. Modeled as the cheapest high-value intel card in the library.',
+      'Source literature places steady-state detection probability as "very low" and single-emplacement success at 85–95%. Modeled as the cheapest high-value intel card in the library.',
   },
 
   pattern_of_life_analysis: {
@@ -153,11 +153,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.5 (Scenario 5 — Counter-Regime Persistent Surveillance)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '8–9 (2026)',
     profiles: ['A', 'B', 'C'],
     rationale:
-      'Section 3.5 flags pattern-of-life intel as the foundation of all targeted ops. Encoded as a high-probability IntelGain effect that amplifies other offensive cards.',
+      'Open literature flags pattern-of-life intel as the foundation of all targeted ops. Encoded as a high-probability IntelGain effect that amplifies other offensive cards.',
   },
 
   ew_jamming_drones: {
@@ -176,11 +176,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.2 (Coup Facilitation); Appendix A',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '8 (2026) → 9 (2030)',
     profiles: ['A', 'B'],
     rationale:
-      'Section 3.2: communications disruption for 2–6 hours is often decisive. Encoded as a heavy CommsDisruption effect with a modest combat bonus.',
+      'Open literature: communications disruption for 2–6 hours is often decisive. Encoded as a heavy CommsDisruption effect with a modest combat bonus.',
   },
 
   remote_id_spoofing: {
@@ -195,11 +195,11 @@ export const TECH_LIBRARY = {
     effects: [{ type: 'DetectionModifier', factor: 0.6 }],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 4.1 (table: Remote ID assumption)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '7 (2026) → 8–9 (2030)',
     profiles: ['A', 'B', 'C', 'D'],
     rationale:
-      'Section 4.1 notes open-source Remote-ID fabrication tools exist since 2023. Encoded as a 40% reduction in own-force detection probability.',
+      'Public reporting notes open-source Remote-ID fabrication tools exist since 2023. Encoded as a 40% reduction in own-force detection probability.',
   },
 
   coercion_proof_campaign: {
@@ -217,11 +217,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.4 (Scenario 4 — Asymmetric Coercion Campaign)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (2026)',
     profiles: ['A', 'B', 'C'],
     rationale:
-      'Section 3.4 calls this the most likely near-term application. Encoded as a sustained civilian-sentiment and enemy-morale drag rather than kinetic damage.',
+      'Open literature calls this the most likely near-term application. Encoded as a sustained civilian-sentiment and enemy-morale drag rather than kinetic damage.',
   },
 
   swarm_delivered_cyber: {
@@ -241,11 +241,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.6; Appendix D Kill Chain Alpha (Phase 3 — Credential Harvest)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '8–9 (2026)',
     profiles: ['A', 'B'],
     rationale:
-      "Appendix D's credential-harvest phase delivers organizational network access; encoded as intel + partial comms disruption + modest civilian trust impact.",
+      "The compound-kill-chain credential-harvest phase delivers organizational network access; encoded as intel + partial comms disruption + modest civilian trust impact.",
   },
 
   insurgent_info_mesh: {
@@ -263,11 +263,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: true,
-    etra_ref: 'Section 3.3 (Scenario 3 — Revolutionary Infrastructure Seizure)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '8–9 (2026)',
     profiles: ['C'],
     rationale:
-      'Section 3.3 identifies information dominance as the decisive factor for revolutionary movements. Encoded as positive civilian sentiment + own-morale boost.',
+      'Open literature identifies information dominance as the decisive factor for revolutionary movements. Encoded as positive civilian sentiment + own-morale boost.',
   },
 
   // ====================================================================
@@ -290,11 +290,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.1, 4.7 (row 4.1); Section 5.1 recommendation 1',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '7 (2026)',
     profiles: ['defender'],
     rationale:
-      '$2M–$10M acquisition + $200K–$500K/year per ETRA Table 4.7. Encoded as a strong detection boost plus a combat damping factor for hostile drones.',
+      '$2M–$10M acquisition + $200K–$500K/year per published cost-of-defense estimates. Encoded as a strong detection boost plus a combat damping factor for hostile drones.',
   },
 
   hpm_area_effect: {
@@ -313,11 +313,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.4, 4.7 (row 4.4)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '5–6 (2026) → 7–8 (2030)',
     profiles: ['defender'],
     rationale:
-      '$5M–$20M per system plus certification bottleneck (Section 4.4). Encoded as strong AreaDenial + direct counter against autonomous_drone_swarm.',
+      '$5M–$20M per system plus certification bottleneck (per published procurement analyses). Encoded as strong AreaDenial + direct counter against autonomous_drone_swarm.',
   },
 
   adversarial_classification_ai: {
@@ -335,11 +335,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.2, 4.7 (row 4.2); Section 5.1 recommendation 3',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '3–4 (2026) → 5–6 (2030)',
     profiles: ['defender'],
     rationale:
-      'Section 4.7 notes "no market solution" — pure R&D. Encoded as moderate DetectionModifier and a specific counter against Remote-ID spoofing.',
+      'Open analyses note "no market solution" — pure R&D. Encoded as moderate DetectionModifier and a specific counter against Remote-ID spoofing.',
   },
 
   distributed_ir_sensor_net: {
@@ -358,11 +358,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.3, 4.7 (row 4.3)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '3 (2026) → 4–5 (2030)',
     profiles: ['defender'],
     rationale:
-      'Section 4.7: $500K–$2M per installation, coverage limited to ~200m radius. Encoded as the dedicated counter to micro_drone_swarm.',
+      'Published estimates: $500K–$2M per installation, coverage limited to ~200m radius. Encoded as the dedicated counter to micro_drone_swarm.',
   },
 
   wids_cuas_fusion: {
@@ -381,11 +381,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.5, 4.7 (row 4.5)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '1–2 (2026) → 3–4 (2030)',
     profiles: ['defender'],
     rationale:
-      '$150K–$500K platform cost per Section 4.7. Lowest-TRL defender capability — modeled with moderate counter strength reflecting implementation maturity.',
+      '$150K–$500K platform cost per published procurement analyses. Lowest-TRL defender capability — modeled with moderate counter strength reflecting implementation maturity.',
   },
 
   rooftop_inspection_program: {
@@ -402,11 +402,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.6, 4.7 (row 4.6 — overhead surface inspection)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (procedural, no technology gap)',
     profiles: ['defender'],
     rationale:
-      '$20K–$80K initial + $30K–$100K/year. ETRA flags this as "the cheapest mitigation closing the newest gap" — encoded as an inexpensive, high-effectiveness counter.',
+      '$20K–$80K initial + $30K–$100K/year. Open literature flags this as "the cheapest mitigation closing the newest gap" — encoded as an inexpensive, high-effectiveness counter.',
   },
 
   device_verification_training: {
@@ -423,11 +423,11 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.6, 4.7 (row — exterior device verification)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (procedural)',
     profiles: ['defender'],
     rationale:
-      '$5K–$15K training cost per ETRA. Section 4.6 notes a single procedural change "defeats the most effective concealment strategy available to the attacker."',
+      '$5K–$15K training cost per published procedural analyses; open literature notes a single procedural change "defeats the most effective concealment strategy available to the attacker."',
   },
 
   cert_pinning_mdm: {
@@ -445,7 +445,7 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.7 (row — cross-cutting: managed devices)',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (2026)',
     profiles: ['defender'],
     rationale:
@@ -468,14 +468,14 @@ export const TECH_LIBRARY = {
     ],
     countered_by: [],
     is_offensive: false,
-    etra_ref: 'Section 4.7, 5.1 recommendation 4',
+    source_ref: 'Open-source UAS / counter-UAS literature',
     trl: '9 (2026)',
     profiles: ['defender'],
     rationale:
       '$100K–$300K hardware + $30K–$80K/year. Encoded as strong counter to EW jamming plus infrastructure protection.',
   },
 // ====================================================================
-// AUTO-INCLUDED: ETRA-derived cards across 5 threat domains.
+// AUTO-INCLUDED: OSINT-derived capability cards across 5 threat domains.
 // ====================================================================
 
 // -- WMD (18 cards) ---------------
@@ -496,7 +496,7 @@ export const TECH_LIBRARY = {
     countered_by: ["dna_synthesis_screening", "sequence_anomaly_detection"],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3"],
-    etra_ref: "Section 5 (Biological Weapons)",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "AI acceleration of iterative synthesis protocols reduces physical barriers; most directly applicable to T1-T3 actors planning pathogen development."
   },
   tacit_knowledge_visionlanguage_bridging: {
@@ -516,7 +516,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2025)",
     profiles: ["T1", "T2"],
-    etra_ref: "Section 3 (Technology Landscape) - Vision-Language Models",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Bridges tacit knowledge gap by transmitting embodied laboratory skills; particularly effective for T1 actors with some foundational training."
   },
   multi_agent_delegation_pathogen_research: {
@@ -536,7 +536,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 3 (Technology Landscape) - Multi-Agent Delegation",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Defeats per-model guardrails by fragmenting harmful requests across agents; individual queries appear innocuous but orchestrate complex capability."
   },
   cloud_laboratory_autonomous_execution: {
@@ -556,7 +556,7 @@ export const TECH_LIBRARY = {
     countered_by: ["cloud_lab_protocol_screening", "customer_kyc_verification"],
     trl: "6 (2026)",
     profiles: ["T1", "T2", "T3"],
-    etra_ref: "Section 5 (Biological Weapons) - Cloud Laboratory Security",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Removes laboratory access barrier by outsourcing execution; combined with protocol optimization AI, enables non-experts to conduct dangerous synthesis."
   },
   precursor_substitution_chemistry: {
@@ -576,7 +576,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 6 (Chemical Weapons) - Precursor Substitution",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Undermines traditional control mechanisms by routing around established precursor lists; moderate sophistication required for implementation."
   },
   gain_of_function_design_optimization: {
@@ -596,7 +596,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 5 (Biological Weapons) - Gain-of-Function",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "High-impact capability with significant execution barriers; primarily affects T2-T3 actors with molecular biology expertise and lab access."
   },
   gene_drive_design_optimization: {
@@ -616,7 +616,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["T3"],
-    etra_ref: "Section 8 (Gene Drives) - AI Role in Gene Drive Development",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Novel threat vector with no existing governance framework; long timescales limit tactical utility for T0-T2; primarily strategic weapon for T3."
   },
   aerosol_delivery_optimization: {
@@ -636,7 +636,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 9 (Deployment Vectors) - Aerosol Systems",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Amplifies impact of even crude agents through optimized delivery; detection mechanisms for delivery platforms remain relatively mature."
   },
   cyber_physical_bsl_facility_compromise: {
@@ -656,7 +656,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 10 (Cyber-Physical Convergence) - BSL Containment Failure",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Sidesteps synthesis barriers by weaponizing existing infrastructure; Stuxnet precedent establishes feasibility; detection depends on ICS security maturity."
   },
   nano_smurfing_procurement: {
@@ -676,7 +676,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 10 (Cyber-Physical Convergence) - Nano-Smurfing at Scale",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "High-impact OPSEC bypass; directly exploits gaps in international financial monitoring; very difficult to detect without advanced behavioral analytics."
   },
   dna_synthesis_screening: {
@@ -696,7 +696,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 15 (Policy Recommendations) - DNA Synthesis Screening",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Chokepoint control mechanism; implements existing IGSC guidelines at regulatory level; primary barrier for T1-T2 actor synthesis capability."
   },
   sequence_anomaly_detection: {
@@ -716,7 +716,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 17 (Signals and Indicators) - Capability Indicators",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Emerging detection mechanism; complements screening by catching novel sequences; requires ongoing model updates as adversary designs evolve."
   },
   cloud_lab_protocol_screening: {
@@ -736,7 +736,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5 (Biological Weapons) - Cloud Laboratory Safeguards",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Chokepoint control; complements identity verification with behavioral monitoring; primary challenge is novel protocol design detection."
   },
   customer_kyc_verification: {
@@ -756,7 +756,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5 (Biological Weapons) - Cloud Laboratory Oversight",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Identity friction mechanism; raises cost for T0-T1 actors; sophisticated T2-T3 actors can generate credible cover identities."
   },
   biodetection_environmental_monitoring: {
@@ -776,7 +776,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 9 (Deployment Vectors) - Infrastructure Protection",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "High-investment response capability; enables containment and medical response window; coverage limitations require strategic deployment."
   },
   attribution_forensic_capability: {
@@ -796,7 +796,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2025)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Attribution Problem) - Synthetic Biology Signatures",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Post-incident deterrence mechanism; enables accountability for successful attacks; deters repeat actors through attribution risk."
   },
   procurement_pattern_correlation: {
@@ -816,7 +816,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 10 (Cyber-Physical Convergence) - Nano-Smurfing Countermeasures",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "Behavioral analysis defense against distributed procurement; requires international data sharing and AI-assisted pattern detection."
   },
   icbm_nuclear_information_aggregation: {
@@ -836,7 +836,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T4"],
-    etra_ref: "Section 7 (Nuclear Weapons) - Information Aggregation Risk",
+    source_ref: 'Open-source WMD-proliferation analysis',
     rationale: "State-level only threat; fissile material barrier remains absolute; AI provides modest acceleration to existing programs."
   },
 
@@ -858,7 +858,7 @@ export const TECH_LIBRARY = {
     countered_by: ["persona_authentication_biometric", "multi_factor_verification"],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 5 (Intelligence Cycle) - Collection Phase HUMINT",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Foundational capability enabling scale of HUMINT operations; eliminates handler bottleneck constraint that historically limited non-state espionage."
   },
   osint_automated_target_dossier: {
@@ -878,7 +878,7 @@ export const TECH_LIBRARY = {
     countered_by: ["osint_footprint_reduction"],
     trl: "7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 3.2 (Biometric Vacuum) - Example Attack Vector",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Democratizes targeting capability; traditional OSINT required months; AI reduces to hours; enables scale targeting previously limited by analyst capacity."
   },
   voice_synthesis_social_engineering: {
@@ -898,7 +898,7 @@ export const TECH_LIBRARY = {
     countered_by: ["voice_authentication_hardening", "out_of_band_verification"],
     trl: "7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.1 (Technology Shift) - Voice Synthesis",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Destroys voice-based identity verification; enables recruitment/credential harvesting through phone channels; relatively accessible to T2+ actors."
   },
   mcp_tool_use_account_takeover: {
@@ -918,7 +918,7 @@ export const TECH_LIBRARY = {
     countered_by: ["behavioral_endpoint_detection", "communication_anomaly_detection"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5 (Current Technological Landscape) - MCP and Computer Use",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Qualitative shift enabling autonomous post-compromise operations; mimics legitimate user behavior through standard interfaces; defeats API-level monitoring."
   },
   reasoning_model_vulnerability_assessment: {
@@ -938,7 +938,7 @@ export const TECH_LIBRARY = {
     countered_by: ["behavioral_threat_hunting"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.1 (Technology Shift) - Reasoning Models",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Enables systematic targeting; reasoning models identify non-obvious attack chains; scales across unlimited targets simultaneously."
   },
   long_context_historical_analysis: {
@@ -958,7 +958,7 @@ export const TECH_LIBRARY = {
     countered_by: ["osint_footprint_reduction"],
     trl: "7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Appendix D (Long-Context Exploitation)",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Enables complete historical profile generation in single pass; previously required months of manual analysis; information already archived remains exploitable."
   },
   recruitment_relationship_automation: {
@@ -978,7 +978,7 @@ export const TECH_LIBRARY = {
     countered_by: ["personnel_counterintelligence_training"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6 (Intelligence Cycle) - Recruitment Phase",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Eliminates handler bottleneck enabling limitless parallel recruitment operations; each target receives individually tailored approach indistinguishable from human."
   },
   polyglot_language_operations: {
@@ -998,7 +998,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6 (Intelligence Cycle) - The Polyglot Advantage",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Removes language barrier limiting human officers; enables targeting in neglected languages with lower defense maturity; scales across linguistic boundaries."
   },
   global_south_linguistic_arbitrage: {
@@ -1018,7 +1018,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 6 (Intelligence Cycle) - The Linguistic Asymmetry Blind Spot",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Exploits defensive gaps where languages lack mature threat detection; high-success targeting of previously overlooked regional actors."
   },
   counter_surveillance_pattern_randomization: {
@@ -1038,7 +1038,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 7 (Counterarguments) - Network Analysis and Counterintelligence",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Defeats traditional CI pattern analysis; requires defenders to shift toward heuristic anomaly detection; computational cost scales with agent sophistication."
   },
   deepfake_credential_harvesting: {
@@ -1058,7 +1058,7 @@ export const TECH_LIBRARY = {
     countered_by: ["media_forensic_authentication"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.1 (Technology Shift) - Vision-Language Integration",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Blurs boundary between fabricated and authentic evidence; enables coercion and false flag operations; detection requires forensic media analysis."
   },
   gpu_intensive_operations_c2: {
@@ -1078,7 +1078,7 @@ export const TECH_LIBRARY = {
     countered_by: ["compute_demand_monitoring"],
     trl: "6-7 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 3 (Technology Landscape) - GPU Demand as SIGINT",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Large-scale operations become detectable through infrastructure signatures; creates monitoring opportunity for counterintelligence; cost-benefit changes at scale."
   },
   persona_authentication_biometric: {
@@ -1098,7 +1098,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive AI) - Persona Authentication",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Raises persona creation cost; requires adversary investment in legend development; complements platform friction mechanisms."
   },
   multi_factor_verification: {
@@ -1118,7 +1118,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 11 (New Limiting Reagents) - KYC / Platform Friction",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Primary chokepoint for persona scaling; platforms can implement without legislation; marginal cost per defended account is minimal."
   },
   osint_footprint_reduction: {
@@ -1138,7 +1138,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3.2 (Defensive Implications) - OSINT Footprint Reduction",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Reduces available targeting data; limited effectiveness due to archive caching; complementary to active CI measures."
   },
   voice_authentication_hardening: {
@@ -1158,7 +1158,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive AI) - Persona Authentication",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Makes voice synthesis less reliable; out-of-band requirements shift social engineering cost; requires user training on protocols."
   },
   out_of_band_verification: {
@@ -1178,7 +1178,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 7.1 (Spearphishing 2.0) - Control Framework",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Procedural defense requiring organizational discipline; effective against social engineering; limited effectiveness against technical compromise."
   },
   behavioral_endpoint_detection: {
@@ -1198,7 +1198,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive AI) - Behavioral Anomaly Detection",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Post-compromise detection; most effective when baseline behavior is well-established; requires integration across access logs and activity streams."
   },
   communication_anomaly_detection: {
@@ -1218,7 +1218,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive AI) - Communication Analysis",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Continuous organizational monitoring; requires email/messaging integration; high false positive rates without careful tuning."
   },
   personnel_counterintelligence_training: {
@@ -1238,7 +1238,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 7.2 (Spearphishing 2.0) - Why Traditional Training Fails",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Foundational defensive layer; effectiveness degrades over time; must be refreshed regularly as adversary tactics evolve."
   },
   compute_demand_monitoring: {
@@ -1258,7 +1258,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3 (Technology Landscape) - GPU Demand as SIGINT",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "SIGINT-adjacent monitoring opportunity; requires provider cooperation; useful for large-scale operations; less effective for well-distributed infrastructure."
   },
   honey_agent_counter_recruitment: {
@@ -1278,7 +1278,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Counter-AI Tradecraft) - Honey-Agents",
+    source_ref: 'Open-source intelligence-tradecraft analysis',
     rationale: "Sophisticated recursive deception layer; high operational complexity; effective for attribution and adversary resource drain."
   },
 
@@ -1301,13 +1301,13 @@ export const TECH_LIBRARY = {
     countered_by: ["algorithmic_radicalization_detection", "narrative_counter_operations"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 7 (Counterarguments) - Algorithmic Radicalization",
+    source_ref: 'Open-source political-violence research',
     rationale: "Democratizes coordinated radicalization infrastructure; near-zero marginal cost per target enables industrial-scale influence operations."
   },
   hyper_personalized_spearphishing_targeting: {
     domain: "political",
     id: "hyper_personalized_spearphishing_targeting",
-    name: "Spearphishing 2.0: Multi-Channel Coordinated Attack",
+    name: "Multi-Channel AI Spearphishing",
     description: "AI-orchestrated simultaneous email, SMS, voice clone, and deepfake video social engineering targeting family and staff of protected figures with psychologically personalized attacks.",
     is_offensive: true,
     category: "InformationWarfare",
@@ -1321,7 +1321,7 @@ export const TECH_LIBRARY = {
     countered_by: ["family_member_security_training"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 7.1 (Spearphishing 2.0) - Expanded Attack Surface",
+    source_ref: 'Open-source political-violence research',
     rationale: "Targets human firewall; each attack uniquely personalized defeating signature-based detection; scales across unlimited targets."
   },
   planning_timeline_compression: {
@@ -1341,7 +1341,7 @@ export const TECH_LIBRARY = {
     countered_by: ["behavioral_threat_hunting"],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 6 (How AI Agents Change Risk Calculus) - Compression of Planning Time",
+    source_ref: 'Open-source political-violence research',
     rationale: "Reduces detection windows; enables previously infeasible attacks by single actors; compounding with reduced coordination signatures."
   },
   coordination_footprint_reduction: {
@@ -1361,7 +1361,7 @@ export const TECH_LIBRARY = {
     countered_by: ["ai_usage_pattern_detection"],
     trl: "7 (2026)",
     profiles: ["T0", "T1", "T2", "T3"],
-    etra_ref: "Section 6 (Barrier Analysis) - Organizational Footprint",
+    source_ref: 'Open-source political-violence research',
     rationale: "Removes detection surface that CI historically relied upon; shifts burden from network analysis to individual behavioral assessment."
   },
   materials_sourcing_optimization: {
@@ -1381,7 +1381,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["T1", "T2", "T3"],
-    etra_ref: "Section 6 (Barrier Analysis) - Materials Acquisition",
+    source_ref: 'Open-source political-violence research',
     rationale: "Moderate assistance; physical barriers remain; most relevant for chemical/explosive devices; detection depends on procurement intelligence."
   },
   reputation_targeting_epistemic_contamination: {
@@ -1401,7 +1401,7 @@ export const TECH_LIBRARY = {
     countered_by: ["media_forensic_authentication"],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 8 (Taxonomy of AI-Enabled Targeting) - Reputational Targeting",
+    source_ref: 'Open-source political-violence research',
     rationale: "Lower barriers than kinetic targeting; psychological impact often exceeds credibility; attribution challenges enable deniability."
   },
   false_flag_intelligence_fabrication: {
@@ -1421,7 +1421,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 7 (Counterarguments) - The False Flag Epidemic",
+    source_ref: 'Open-source political-violence research',
     rationale: "Catalytic war-trigger scenario; highest consequence but requires sophisticated actors; verification erosion increases success probability."
   },
   process_targeting_foia_dos: {
@@ -1441,7 +1441,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["T0", "T1", "T2", "T3"],
-    etra_ref: "Section 8 (Taxonomy) - Process Targeting: FOIA DoS",
+    source_ref: 'Open-source political-violence research',
     rationale: "Low barrier to execution; accessible to T0 actors; demonstrates process targeting capability; limited direct physical impact."
   },
   delegation_defense_plausible_deniability: {
@@ -1461,7 +1461,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T4"],
-    etra_ref: "Section 7 (Counterarguments) - Delegation Defense and Plausible Deniability 2.0",
+    source_ref: 'Open-source political-violence research',
     rationale: "State-level legal strategy; exploits gap between capability and international law; complicates deterrence through attribution ambiguity."
   },
   supply_chain_ai_backdoor_insertion: {
@@ -1481,7 +1481,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 7.1 (Insider Threat TOP-TIER RISK) - Sleeper Agents",
+    source_ref: 'Open-source political-violence research',
     rationale: "Top-tier risk due to privileged access and low detectability; backdoors persist through safety training; requires new detection approaches."
   },
   kinetic_targeting_distributed_execution: {
@@ -1502,7 +1502,7 @@ export const TECH_LIBRARY = {
     countered_by: ["physical_security_hardening"],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 6 (Barrier Analysis) - Kinetic Targeting",
+    source_ref: 'Open-source political-violence research',
     rationale: "Optimization of multi-step sequences; physical security remains primary barrier; compressed timelines reduce detection windows."
   },
   algorithmic_radicalization_detection: {
@@ -1522,7 +1522,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive AI) - Threat Hunting",
+    source_ref: 'Open-source political-violence research',
     rationale: "Emerging capability; ethical/privacy concerns; potential for false positives; requires human intervention before action."
   },
   family_member_security_training: {
@@ -1542,7 +1542,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 7.2 (Spearphishing 2.0) - Control Framework",
+    source_ref: 'Open-source political-violence research',
     rationale: "Procedural defense; requires family engagement; effectiveness depends on retention and updated threat awareness."
   },
   behavioral_threat_hunting: {
@@ -1562,7 +1562,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6 (Detection Challenge) - Behavioral Indicators",
+    source_ref: 'Open-source political-violence research',
     rationale: "Shifts detection burden from network analysis to individual assessment; requires baseline behavior knowledge; privacy implications significant."
   },
   ai_usage_pattern_detection: {
@@ -1582,7 +1582,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6 (Detection Challenge) - Monitoring for AI Agent Activities",
+    source_ref: 'Open-source political-violence research',
     rationale: "Emerging capability; requires platform cooperation; high false positive risk without careful filtering; privacy-invasive."
   },
   physical_security_hardening: {
@@ -1602,7 +1602,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6 (Barrier Analysis) - Physical Access",
+    source_ref: 'Open-source political-violence research',
     rationale: "Primary remaining barrier as CI detection degrades; requires ongoing maintenance; coverage limitations require strategic deployment."
   },
   media_forensic_authentication: {
@@ -1622,7 +1622,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 8 (Taxonomy) - Reputational Targeting",
+    source_ref: 'Open-source political-violence research',
     rationale: "Growing technical capability; media literacy remains essential baseline; requires rapid deployment at scale during crisis."
   },
   narrative_counter_operations: {
@@ -1642,7 +1642,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Counter-Operations) - Narrative Defense",
+    source_ref: 'Open-source political-violence research',
     rationale: "Post-incident mitigation; requires pre-positioning of messaging; effectiveness depends on speed and credibility of response."
   },
   pre_incident_intelligence_capability: {
@@ -1662,7 +1662,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 12 (Defensive Implications) - Pre-Incident Intelligence Capacity",
+    source_ref: 'Open-source political-violence research',
     rationale: "Foundational but resource-intensive; requires long-term investment; traditional strength areas where institutional expertise remains."
   },
 
@@ -1684,7 +1684,7 @@ export const TECH_LIBRARY = {
     countered_by: ["behavioral_transaction_pattern_detection", "cross_bank_correlation"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.1 (Smurfing Swarm) - Automated Transaction Structuring",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Defeats fixed-threshold AML detection; scales to unlimited parallel operations; marginal cost per transaction approaches zero."
   },
   noise_generation_obfuscation_complexity: {
@@ -1704,7 +1704,7 @@ export const TECH_LIBRARY = {
     countered_by: ["network_topology_anomaly_detection"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.2 (Noise Generation) - Obfuscation via Complexity",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Increases analyst workload exponentially; defeats pattern matching through noise overwhelm; requires AI-assisted detection to counter."
   },
   digital_asset_laundering_defi: {
@@ -1724,7 +1724,7 @@ export const TECH_LIBRARY = {
     countered_by: ["defi_transaction_monitoring"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.3 (Digital Asset Laundering)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Emerging threat vector; limited regulatory framework; blockchain immutability complicates reversal; speed exceeds manual analysis."
   },
   automated_layering_shell_networks: {
@@ -1744,7 +1744,7 @@ export const TECH_LIBRARY = {
     countered_by: ["beneficial_ownership_registry_verification", "entity_creation_velocity_monitoring"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.4 (Automated Layering)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Defeats entity-based AML detection; beneficial ownership registries incomplete; low marginal cost enables unlimited layering."
   },
   stochastic_noncompliance_loophole_discovery: {
@@ -1764,7 +1764,7 @@ export const TECH_LIBRARY = {
     countered_by: ["regulatory_framework_harmonization"],
     trl: "5-6 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.6 (Stochastic Non-Compliance) - Hallucinated Loophole",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Targets regulatory complexity; requires sophisticated financial knowledge; enables plausible deniability through technical compliance."
   },
   geopolitical_arbitrage_safe_harbor: {
@@ -1784,7 +1784,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T1", "T2", "T3", "T4"],
-    etra_ref: "Section 5.7 (Geopolitical Arbitrage) - State-Sponsored Safe Harbors",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Systemic vulnerability due to uneven AML enforcement; difficult to address without international coordination; persistent threat."
   },
   sentiment_market_manipulation_discourse: {
@@ -1804,7 +1804,7 @@ export const TECH_LIBRARY = {
     countered_by: ["synthetic_account_detection"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.8 (Sentiment Laundering) - Market Manipulation",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Scalable manipulation capability; requires market monitoring integration; profits disguise money laundering purpose."
   },
   algorithmic_bribery_detection_evasion: {
@@ -1824,7 +1824,7 @@ export const TECH_LIBRARY = {
     countered_by: ["official_conduct_monitoring"],
     trl: "6 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6.1 (Algorithmic Bribery)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Targets government/institutional officials; disguises payments through legitimate contract structures; requires relationship-level verification."
   },
   automated_middleman_corruption: {
@@ -1844,7 +1844,7 @@ export const TECH_LIBRARY = {
     countered_by: ["vendor_authentication"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6.2 (Automated Middleman)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Enables corruption at scale; defeats beneficiary ownership tracking; requires supply chain transparency to counter."
   },
   micro_influence_political_spending: {
@@ -1864,7 +1864,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6.3 (Micro-Influence Operations)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Defeats contribution limit frameworks; enables foreign funding of domestic campaigns; undermines campaign finance transparency."
   },
   procurement_manipulation_government_contracts: {
@@ -1884,7 +1884,7 @@ export const TECH_LIBRARY = {
     countered_by: ["bid_pattern_anomaly_detection"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 6.5 (Procurement Optimizer)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "High-value target; scales to billions in diverted spending; detection depends on pattern analysis across procurement systems."
   },
   behavioral_transaction_pattern_detection: {
@@ -1904,7 +1904,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 17 (Signals and Indicators) - Procurement Pattern Indicators",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Emerging AML capability; high false positive rate without tuning; requires integration across financial institutions."
   },
   cross_bank_correlation: {
@@ -1924,7 +1924,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 10 (Cyber-Physical Convergence) - Nano-Smurfing Countermeasures",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Chokepoint control mechanism; requires international coordination; enables detection of distributed structuring strategies."
   },
   network_topology_anomaly_detection: {
@@ -1944,7 +1944,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.2 (Noise Generation) - Defender-Centric View",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Sophisticated detection approach; requires transaction graph reconstruction; false positive rate depends on baseline definition."
   },
   defi_transaction_monitoring: {
@@ -1964,7 +1964,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.3 (Digital Asset Laundering)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Emerging technical capability; blockchain immutability enables forensic analysis; protocol diversity complicates coverage."
   },
   beneficial_ownership_registry_verification: {
@@ -1984,7 +1984,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3 (Qualitative Shift) - Defender Siloing",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Regulatory compliance mechanism; effectiveness depends on registry completeness and international coordination."
   },
   entity_creation_velocity_monitoring: {
@@ -2004,7 +2004,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 17 (Signals and Indicators) - Entity Creation Velocity",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Behavioral monitoring approach; requires integration of corporate registration and financial data; low cost to implement."
   },
   regulatory_framework_harmonization: {
@@ -2024,7 +2024,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 13 (International Variance) - Regulatory Arbitrage",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Systemic defense requiring international cooperation; high implementation difficulty; addresses root cause of jurisdiction arbitrage."
   },
   synthetic_account_detection: {
@@ -2044,7 +2044,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.3 (Micro-Influence Operations)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Emerging detection capability; requires platform cooperation; false positive rates high without careful tuning."
   },
   official_conduct_monitoring: {
@@ -2064,7 +2064,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.1 (Algorithmic Bribery)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Privacy-invasive monitoring; requires legal framework; complements FININT with behavioral indicators."
   },
   vendor_authentication: {
@@ -2084,7 +2084,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.2 (Automated Middleman)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Supply chain integrity mechanism; requires multi-stakeholder participation; complements fraud detection."
   },
   bid_pattern_anomaly_detection: {
@@ -2104,7 +2104,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.5 (Procurement Optimizer)",
+    source_ref: 'Open-source financial-integrity analysis',
     rationale: "Procurement integrity mechanism; requires government contracting system data access; effective at scale."
   },
 
@@ -2126,7 +2126,7 @@ export const TECH_LIBRARY = {
     countered_by: ["asset_relationship_baseline_analysis", "handler_communication_signature_detection"],
     trl: "6-7 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 5.1 (HUMINT) - Handler Overload and Synthetic Personas",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Foundational IC degradation vector; removes scale constraint; enables non-state actors to operate HUMINT networks."
   },
   osint_epistemic_baseline_erosion: {
@@ -2146,7 +2146,7 @@ export const TECH_LIBRARY = {
     countered_by: ["information_provenance_verification", "source_authenticity_validation"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 3.2 (Collection-to-Verification Pivot)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Undermines OSINT reliability; shifts advantage from information collection to information verification; adversary-friendly dynamic."
   },
   sigint_automated_obfuscation_traffic_shaping: {
@@ -2166,7 +2166,7 @@ export const TECH_LIBRARY = {
     countered_by: ["traffic_pattern_baseline_analysis", "metadata_extraction_capability"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.2 (SIGINT) - Automated Obfuscation",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Counters SIGINT advantage through pattern randomization; arms race dynamic with defender; systematic scaling."
   },
   masint_sensor_spoofing_signature_mimicry: {
@@ -2186,14 +2186,14 @@ export const TECH_LIBRARY = {
     countered_by: ["sensor_fusion_redundancy", "signature_baseline_establishment"],
     trl: "5-6 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 5.4 (MASINT) - Sensor Spoofing",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Emerging threat; physical signatures harder to spoof but AI improving; particularly relevant for non-state threats."
   },
   finint_nano_smurfing_financial_obfuscation: {
     domain: "ic_erosion",
     id: "finint_nano_smurfing_financial_obfuscation",
     name: "AI-Orchestrated Financial Transaction Obfuscation",
-    description: "AI agents conduct financial intelligence evasion through coordinated nano-smurfing, threshold-adjacent transactions, and cryptocurrency mixing.",
+    description: "AI agents conduct financial-intelligence evasion through coordinated sub-threshold transaction structuring, threshold-adjacent transactions, and cryptocurrency mixing.",
     is_offensive: true,
     category: "Logistics",
     deployment_cost: 21,
@@ -2206,13 +2206,13 @@ export const TECH_LIBRARY = {
     countered_by: ["cross_domain_correlation", "behavioral_financial_modeling"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3", "T4"],
-    etra_ref: "Section 5.5 (FININT) - Nano-Smurfing Challenge",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Financial intelligence erosion vector; requires multi-disciplinary defense; scales with adversary computational resources."
   },
   attribution_intent_gap_legal_deniability: {
     domain: "ic_erosion",
     id: "attribution_intent_gap_legal_deniability",
-    name: "Plausible Deniability 2.0: Autonomous Agent Liability Evasion",
+    name: "Autonomous Agent Liability Evasion",
     description: "State actors deploy AI agents optimizing for political outcomes without directed methodology, creating legal ambiguity about principal responsibility under international law.",
     is_offensive: true,
     category: "InformationWarfare",
@@ -2226,7 +2226,7 @@ export const TECH_LIBRARY = {
     countered_by: ["state_responsibility_legal_framework", "agent_intent_analysis_methodology"],
     trl: "6-7 (2026)",
     profiles: ["T4"],
-    etra_ref: "Section 4.1 (Attribution-Intent Gap)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Systemic legal framework vulnerability; enables state action while maintaining plausible deniability; undermines deterrence."
   },
   capability_floor_elevation_nonstate: {
@@ -2246,7 +2246,7 @@ export const TECH_LIBRARY = {
     countered_by: ["non_state_threat_monitoring", "tier_2_actor_intelligence_analysis"],
     trl: "6-7 (2026)",
     profiles: ["T2", "T3"],
-    etra_ref: "Section 3.1 (Capability Floor Elevation)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Proliferation of intelligence capability; T2-T3 actors now capable of sophisticated targeting; institutional advantage eroded."
   },
   institutional_speed_asymmetry: {
@@ -2266,7 +2266,7 @@ export const TECH_LIBRARY = {
     countered_by: ["rapid_decision_authority_delegation", "real_time_threat_response"],
     trl: "6-7 (2026)",
     profiles: ["T3", "T4"],
-    etra_ref: "Section 3.3 (Institutional Speed Asymmetry)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Structural vulnerability due to bureaucratic constraints; affects IC response capability; advantage accrues to adversary."
   },
   ic_workforce_reduction_verification_crisis: {
@@ -2286,7 +2286,7 @@ export const TECH_LIBRARY = {
     countered_by: ["workforce_investment_rebalancing", "automation_adoption_acceleration"],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.1 (IC Workforce Contraction) - Detection Capacity Crisis",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Compound structural vulnerability; capacity-threat mismatch; systemic pressure on IC institutions."
   },
   delegation_defense_state_responsibility_gap: {
@@ -2306,7 +2306,7 @@ export const TECH_LIBRARY = {
     countered_by: ["principal_actor_liability_framework"],
     trl: "6-7 (2026)",
     profiles: ["T4"],
-    etra_ref: "Section 4.2 (Legal Sinkholes in State Responsibility)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Enables state action while evading legal accountability; erodes treaty frameworks; international law lag creates exploitation window."
   },
   asset_relationship_baseline_analysis: {
@@ -2326,7 +2326,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.1 (HUMINT) - New Defensive Methodologies",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Counterintelligence adaptation; requires baseline model training; complements traditional CI tradecraft."
   },
   handler_communication_signature_detection: {
@@ -2346,7 +2346,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.1 (HUMINT) - Network Analysis and Counterintelligence",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Linguistic-based detection; requires training on AI communication patterns; effectiveness depends on model sophistication."
   },
   information_provenance_verification: {
@@ -2366,7 +2366,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3.2 (Collection-to-Verification Pivot)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Foundational verification capability; resource-intensive; shifts IC burden from collection to verification."
   },
   source_authenticity_validation: {
@@ -2386,7 +2386,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.3 (OSINT/GEOINT) - Epistemic Baseline Erosion",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Emerging capability; requires deep learning on source characteristics; false positive rate manageable with tuning."
   },
   traffic_pattern_baseline_analysis: {
@@ -2406,7 +2406,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.2 (SIGINT) - Automated Obfuscation",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Metadata-based detection; requires long observation periods; effective against systematic obfuscation."
   },
   metadata_extraction_capability: {
@@ -2426,7 +2426,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.2 (SIGINT) - Automated Obfuscation",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Metadata-resistant approach; requires passive collection; effectiveness depends on pattern establishment quality."
   },
   sensor_fusion_redundancy: {
@@ -2446,7 +2446,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.4 (MASINT) - Sensor Spoofing",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "MASINT adaptation; computationally intensive; effective against targeted spoofing; requires multi-sensor deployment."
   },
   signature_baseline_establishment: {
@@ -2466,7 +2466,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.4 (MASINT) - Sensor Spoofing",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Signature intelligence adaptation; requires sustained collection effort; enables historical anomaly comparison."
   },
   cross_domain_correlation: {
@@ -2486,7 +2486,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.6 (Summary Risk Matrix)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "IC integration requirement; addresses siloing problem; requires inter-agency data-sharing agreements."
   },
   behavioral_financial_modeling: {
@@ -2506,7 +2506,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 5.5 (FININT) - Nano-Smurfing Challenge",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "FININT modernization; requires historical pattern database; effectiveness depends on pattern stability over time."
   },
   non_state_threat_monitoring: {
@@ -2526,7 +2526,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.3 (Tier 3 Impact Analysis)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "New mission area for IC; requires different targeting philosophy; emerging threat requiring institutionalization."
   },
   tier_2_actor_intelligence_analysis: {
@@ -2546,7 +2546,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.3 (Tier 2-3 Impact Analysis)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Analytical capability supporting emerging threat; requires subject-matter expertise in regional actors."
   },
   rapid_decision_authority_delegation: {
@@ -2566,7 +2566,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3.3 (Institutional Speed Asymmetry)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Organizational adaptation; requires leadership commitment; addresses structural source of speed disadvantage."
   },
   real_time_threat_response: {
@@ -2586,7 +2586,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 3.3 (Institutional Speed Asymmetry)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Operational tempo matching; resource-intensive; essential for credible response capability."
   },
   state_responsibility_legal_framework: {
@@ -2606,7 +2606,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 4.2 (Legal Sinkholes) - State Responsibility",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Legal framework closure; requires international negotiation; establishes deterrence through accountability."
   },
   agent_intent_analysis_methodology: {
@@ -2626,7 +2626,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 4.1 (Attribution-Intent Gap)",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Attribution methodology for AI-era operations; requires log access; enables forensic establishment of intent."
   },
   workforce_investment_rebalancing: {
@@ -2646,7 +2646,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 6.1 (IC Workforce Contraction) - Detection Capacity Crisis",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Foundational institutional measure; requires sustained budget commitment; addresses root cause of capacity crisis."
   },
   automation_adoption_acceleration: {
@@ -2666,7 +2666,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "6-7 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 9 (Policy Recommendations) - Technical Measures",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Defensive automation; enables distributed verification; requires careful implementation to avoid accuracy loss."
   },
   principal_actor_liability_framework: {
@@ -2686,7 +2686,7 @@ export const TECH_LIBRARY = {
     countered_by: [],
     trl: "5-6 (2026)",
     profiles: ["defender"],
-    etra_ref: "Section 4 (Crisis of Intent) - Plausible Deniability 2.0",
+    source_ref: 'Open-source intelligence-community analysis',
     rationale: "Legal framework establishing deterrence through accountability; requires international coordination; foundational for attribution strategy."
   },
 
@@ -2704,37 +2704,37 @@ export const DOMAINS = [
   {
     id: 'drone',
     label: 'Drone',
-    description: 'Locust ETRA — drone swarms, covert sensors, C-UAS.',
+    description: 'Drone swarms, covert sensors, counter-UAS.',
     order: 0,
   },
   {
     id: 'wmd',
     label: 'WMD',
-    description: 'ETRA-2026-WMD-001 — AI agents & WMD proliferation.',
+    description: 'AI agents & WMD proliferation.',
     order: 1,
   },
   {
     id: 'espionage',
     label: 'Espionage',
-    description: 'ETRA-2026-ESP-001 — AI-scaled intelligence operations.',
+    description: 'AI-scaled intelligence operations.',
     order: 2,
   },
   {
     id: 'political',
     label: 'Political',
-    description: 'ETRA-2026-PTR-001 — AI agents & political targeting.',
+    description: 'AI agents & political targeting.',
     order: 3,
   },
   {
     id: 'financial',
     label: 'Financial',
-    description: 'ETRA-2025-FIN-001 — AI agents & financial integrity.',
+    description: 'AI agents & financial integrity.',
     order: 4,
   },
   {
     id: 'ic_erosion',
     label: 'IC Erosion',
-    description: 'ETRA-2026-IC-001 — AI agents & institutional erosion.',
+    description: 'AI agents & institutional erosion.',
     order: 5,
   },
 ];

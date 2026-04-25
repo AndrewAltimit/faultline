@@ -60,7 +60,7 @@ tagging, downstream comparisons are suspect.
       distributions in the report
 - [x] Metadata-level `confidence` on scenario `[meta]` (coarse
       whole-scenario tag — "this scenario is a conceptual sketch" vs
-      "this is ETRA-candidate"); feeds into an at-a-glance report
+      "this is publication-ready"); feeds into an at-a-glance report
       banner
 
 **Status:** Epic A **closed**. Two PRs landed: PR 1 (commit `44d9121`
@@ -225,33 +225,45 @@ with generic vocabulary that is field-standard in published threat-
 assessment writing (RAND, CSIS, IISS, CRS) and removes any structural
 field name (`etra_ref`) that would re-introduce coupling.
 
-- [ ] Rename `etra_ref` → `source_ref` (or just `ref`) in the tech-card
+- [x] Rename `etra_ref` → `source_ref` (or just `ref`) in the tech-card
       schema; update `tech-library.js`, `tech-cards.js`, and any
       consumer
-- [ ] Replace per-card `etra_ref` *values* (e.g. "Section 5.1 (Smurfing
+- [x] Replace per-card `etra_ref` *values* (e.g. "Section 5.1 (Smurfing
       Swarm)") with generic descriptors ("structured threat assessment
       literature", "published OSINT analysis"); remove the unique
       section-number fingerprints
-- [ ] Replace "Locust ETRA" / "ETRA-2026-WMD-001" / etc. domain
+- [x] Replace "Locust ETRA" / "ETRA-2026-WMD-001" / etc. domain
       descriptions with topical labels ("Drone swarms — covert
       sensors, C-UAS", "WMD proliferation")
-- [ ] Replace "ETRA-style" / "ETRA-grade" / "ETRA-candidate" with
+- [x] Replace "ETRA-style" / "ETRA-grade" / "ETRA-candidate" with
       generic equivalents ("structured threat assessment",
       "publication-grade", "high-confidence") in `report.rs`,
       `scenario.rs`, `campaign.rs`, `counterfactual.rs`,
       `improvement-plan.md`, `ROADMAP.md`, `scenario_schema.md`
-- [ ] Drop "ETRA Scenario N" labels from scenario TOML headers and
+- [x] Drop "ETRA Scenario N" labels from scenario TOML headers and
       tutorial strings; reframe as "open-source threat-assessment
       archetype" where the framing is needed at all
-- [ ] Dedupe `site/scenarios/` against `scenarios/` (currently
+- [x] Dedupe `site/scenarios/` against `scenarios/` (currently
       hand-copied byte-identical) — symlink at build time or copy via
       CI step so future drift is impossible
-- [ ] Add a CI grep guard that fails the build if `\bETRA\b`,
+- [x] Add a CI grep guard that fails the build if `\bETRA\b`,
       `etra_ref`, or any `ETRA-YYYY-` document ID re-enters the tree
 
-**Status:** prerequisite for all Round-Two work. Should land before
-any of H–Q so subsequent epics aren't built on the about-to-be-renamed
-schema.
+**Status:** Epic G **closed**. Single PR (branch
+`epic-g-reference-sanitization`) renamed the `etra_ref` field to
+`source_ref` (132 occurrences across `tech-library.js` and
+`tech-cards.js`), replaced 129 per-card section citations with
+domain-generic descriptors ("Open-source UAS / counter-UAS literature"
+etc.), rewrote the 6 `DOMAINS` descriptions to drop document
+identifiers, swept ETRA branding from 4 Rust source files and 3 docs
+files, rewrote the headers of 3 scenario TOMLs to remove direct
+publication citations, replaced `site/scenarios/` (a byte-identical
+hand-copy) with a symlink to `../scenarios`, and added
+`tools/ci/grep-guard.sh` wired into both CI workflows after
+`cargo-deny` to block re-entry of `\bETRA\b`, `etra_ref`, or any
+`ETRA-YYYY-` document ID. The guard whitelists this file (Epic G's
+section legitimately describes the patterns it bans) and itself.
+Prerequisite for the rest of Round Two; H–Q can now proceed.
 
 ### Epic H — Strategy search & adversarial co-evolution
 

@@ -1,12 +1,13 @@
 # Persistent Covert Surveillance Network — Defensive Planning Wargame
 #
-# ETRA Scenario 5 analogue. Research simulation of a long-dwell,
-# low-signature surveillance campaign against a notional integrated
-# federal protective posture. The analytical purpose of the scenario
-# is to quantify how much intelligence a patient adversary can
-# accumulate inside the defender's detection window when the defender
-# relies primarily on episodic physical inspection rather than
-# continuous RF-environment monitoring.
+# Long-dwell, low-signature surveillance archetype drawn from
+# open-source threat-assessment literature. Research simulation of a
+# patient surveillance campaign against a notional integrated federal
+# protective posture. The analytical purpose of the scenario is to
+# quantify how much intelligence a patient adversary can accumulate
+# inside the defender's detection window when the defender relies
+# primarily on episodic physical inspection rather than continuous
+# RF-environment monitoring.
 #
 # The scenario is framed as a defensive wargame: the analytical
 # outputs are the defender's detection window, attribution confidence
@@ -403,7 +404,7 @@ internet_availability = 0.97
 [events]
 
 # ============================================================================
-# Kill Chain — ETRA Scenario 5 archetype
+# Kill Chain — persistent covert surveillance archetype
 # ============================================================================
 #
 # The campaign unfolds as:

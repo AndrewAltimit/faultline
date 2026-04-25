@@ -172,7 +172,7 @@ fn default_attribution() -> f64 {
 /// Attacker costs represent investment required to execute the phase.
 /// Defender costs represent investment required to *close* the gap the
 /// phase exploits. The ratio `defender / attacker` is the cost
-/// asymmetry measurement the ETRA framework targets.
+/// asymmetry measurement the threat-assessment framework targets.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PhaseCost {
     #[serde(default)]

@@ -1,4 +1,4 @@
-//! ETRA-style Markdown report generation from Monte Carlo summaries.
+//! Structured Markdown report generation from Monte Carlo summaries.
 //!
 //! Produces a structured document suitable for pasting into research
 //! write-ups. Consumes only types from
@@ -32,7 +32,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
         // defensibility, not sampling precision. Symbol is intentionally
         // plain ASCII so reports render identically in stripped terminals.
         let (glyph, label) = match conf {
-            ConfidenceLevel::High => ("[H]", "ETRA-candidate rigor"),
+            ConfidenceLevel::High => ("[H]", "publication-ready rigor"),
             ConfidenceLevel::Medium => ("[M]", "working draft"),
             ConfidenceLevel::Low => ("[L]", "conceptual sketch"),
         };
@@ -640,7 +640,7 @@ The optional `[meta].confidence` field tags the scenario as a whole:
 
 | Tag | Intended meaning |
 |---|---|
-| `High` | ETRA-candidate rigor — every capability parameter is backed by a cited open source. |
+| `High` | Publication-ready rigor — every capability parameter is backed by a cited open source. |
 | `Medium` | Working draft — structurally complete but some parameters still rest on expert guess. |
 | `Low` | Conceptual sketch — intended to illustrate a mechanic, not to stand as analysis. |
 
