@@ -1,7 +1,7 @@
 //! Headless CLI for batch Monte Carlo simulation with Faultline.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -355,7 +355,7 @@ fn run_counterfactual_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
     Ok(())
 }
 
-fn run_compare_analysis(cli: &Cli, scenario: &Scenario, alt_path: &PathBuf) -> Result<()> {
+fn run_compare_analysis(cli: &Cli, scenario: &Scenario, alt_path: &Path) -> Result<()> {
     let alt_toml = fs::read_to_string(alt_path)
         .with_context(|| format!("failed to read --compare scenario: {}", alt_path.display()))?;
     let alt_scenario: Scenario = toml::from_str(&alt_toml).with_context(|| {
