@@ -85,21 +85,26 @@ The core analyst workflow: "what if the defender had X?"
       IOC entries (declarative; does not drive the detection roll yet)
 - [x] CLI: `--counterfactual <param>=<value>` mode; also
       `--compare <other.toml>` side-by-side report
-- [ ] Dashboard: "Pin Results" + side-by-side comparison mode
-- [ ] Scenario diff viewer in the TOML editor
+- [x] Dashboard: "Pin Results" + side-by-side comparison mode
+- [x] Scenario diff viewer in the TOML editor
 - [x] Report: "Policy Implications" and "Countermeasure Analysis"
       sections
 
-**Status:** Epic B **mostly complete on the analysis side**. First PR
-landed the three schema extensions (all `#[serde(default)]` for
-backwards compatibility), the `--counterfactual` and `--compare`
-CLI modes built on an extended `set_param` path layer that now reaches
-kill-chain phase parameters, a new `faultline_stats::counterfactual`
-module producing a `ComparisonReport` with per-faction win-rate deltas
-and per-chain feasibility deltas, and the two new report sections.
-The remaining two items are WASM frontend work (pin results,
-side-by-side dashboard, scenario diff viewer in the TOML editor) and
-will ship as a follow-up UI-focused PR.
+**Status:** Epic B **closed**. First PR landed the three schema
+extensions (all `#[serde(default)]` for backwards compatibility), the
+`--counterfactual` and `--compare` CLI modes built on an extended
+`set_param` path layer that now reaches kill-chain phase parameters, a
+new `faultline_stats::counterfactual` module producing a
+`ComparisonReport` with per-faction win-rate deltas and per-chain
+feasibility deltas, and the two new report sections. Second PR
+(branch `epic-b-comparison-ui`) shipped the three frontend pieces:
+`PinnedStore` (localStorage-backed pin manager with quota-aware
+trimming), a side-by-side comparison panel that mirrors the Rust
+`ComparisonReport` delta shape (win-rate deltas with Wilson CIs,
+per-chain success / detection / cost-asymmetry deltas, mean-duration
+delta), and a unified-diff modal in the TOML editor that diffs the
+current text against the last loaded preset/import or any pinned
+scenario.
 
 ### Epic C — Time & attribution dynamics
 

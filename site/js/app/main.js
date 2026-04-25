@@ -113,6 +113,7 @@ async function bootstrap() {
     const sharedToml = await readScenarioFromHash();
     if (sharedToml) {
       editor.setText(sharedToml);
+      editor.setDiffBaseline(sharedToml, 'shared link');
       clearScenarioHash();
       editor.loadAndRun();
     } else {
@@ -124,6 +125,7 @@ async function bootstrap() {
           editor.setText(toml);
           const select = document.getElementById('preset-select');
           if (select) select.value = defaultPath;
+          editor.setDiffBaseline(toml, 'us_institutional_fracture.toml');
           editor.loadAndRun();
         }
       } catch {
