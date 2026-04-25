@@ -47,11 +47,18 @@ struct Cli {
     jobs: Option<usize>,
 
     /// Run a single simulation with replay snapshots.
-    #[arg(long = "single-run")]
+    ///
+    /// Mutually exclusive with the other analysis modes.
+    #[arg(
+        long = "single-run",
+        conflicts_with_all = ["sensitivity", "counterfactual", "compare"]
+    )]
     single_run: bool,
 
     /// Run sensitivity analysis on a parameter.
-    #[arg(long = "sensitivity")]
+    ///
+    /// Mutually exclusive with `--counterfactual` and `--compare`.
+    #[arg(long = "sensitivity", conflicts_with_all = ["counterfactual", "compare"])]
     sensitivity: bool,
 
     /// Parameter path for sensitivity analysis (e.g. "faction.gov.initial_morale").
@@ -81,7 +88,16 @@ struct Cli {
     /// seed and run count so the reported deltas isolate the
     /// parameter change. Supported paths are documented in
     /// `faultline_stats::sensitivity::get_param`.
-    #[arg(long = "counterfactual", value_name = "PATH=VALUE")]
+    ///
+    /// Mutually exclusive with `--compare` — to evaluate a
+    /// counterfactual against an alternative scenario, run two
+    /// separate `--counterfactual` invocations and diff the JSON
+    /// outputs.
+    #[arg(
+        long = "counterfactual",
+        value_name = "PATH=VALUE",
+        conflicts_with = "compare"
+    )]
     counterfactual: Vec<String>,
 
     /// Path to a second scenario TOML for side-by-side comparison.
@@ -380,7 +396,12 @@ fn write_comparison_outputs(
     report: &ComparisonReport,
     scenario: &Scenario,
 ) -> Result<()> {
-    // JSON — always written; it is the machine-readable fan-out.
+    // Comparison mode produces two artifacts and they are always
+    // both written. The standard per-run output formats (JSON / CSV)
+    // describe a single Monte Carlo batch — comparison mode produces
+    // a *delta* between two batches that does not fit the row-by-row
+    // CSV shape, so `--format` does not gate either file. Users who
+    // only want JSON can ignore the markdown file (and vice versa).
     let json_path = cli.output.join("comparison.json");
     let json = serde_json::to_string_pretty(report)
         .with_context(|| "failed to serialize comparison report")?;
@@ -388,15 +409,10 @@ fn write_comparison_outputs(
         .with_context(|| format!("failed to write {}", json_path.display()))?;
     info!(path = %json_path.display(), "wrote comparison JSON");
 
-    // Markdown — emits the standard per-scenario report for the
-    // baseline plus a comparison section at the top.
-    if matches!(cli.format, OutputFormat::Json | OutputFormat::Both) {
-        let md_path = cli.output.join("comparison_report.md");
-        let md = faultline_stats::report::render_comparison_markdown(report, scenario);
-        fs::write(&md_path, md)
-            .with_context(|| format!("failed to write {}", md_path.display()))?;
-        info!(path = %md_path.display(), "wrote comparison Markdown report");
-    }
+    let md_path = cli.output.join("comparison_report.md");
+    let md = faultline_stats::report::render_comparison_markdown(report, scenario);
+    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
+    info!(path = %md_path.display(), "wrote comparison Markdown report");
 
     Ok(())
 }

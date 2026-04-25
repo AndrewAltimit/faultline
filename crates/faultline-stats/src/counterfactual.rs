@@ -119,6 +119,16 @@ pub struct ChainDelta {
 /// observed delta reflects the parameter change rather than sampling
 /// noise. `overrides` is parsed from repeated `--counterfactual` CLI
 /// flags.
+///
+/// **Determinism invariant.** This function relies on
+/// `MonteCarloRunner::run` deriving each per-run seed deterministically
+/// from `config.seed` plus the run index (see `lib.rs::MonteCarloRunner::run`).
+/// If a future refactor introduces non-deterministic seed selection
+/// inside the runner (e.g. parallel iteration that doesn't preserve
+/// run-index ordering), the deltas reported here will become noisy.
+/// The `counterfactual_is_deterministic_under_fixed_seed` test below
+/// pins this contract — re-running the same overrides on the same
+/// scenario must produce a bit-identical `ComparisonReport`.
 pub fn run_counterfactual(
     baseline: &Scenario,
     config: &MonteCarloConfig,

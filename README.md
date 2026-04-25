@@ -27,6 +27,14 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --single-run
 # Run 1000 Monte Carlo simulations
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000
 
+# Counterfactual: re-run with a parameter overridden, get a delta report
+cargo run -p faultline-cli -- scenarios/persistent_covert_surveillance.toml -n 1000 \
+    --counterfactual "kill_chain.covsurv.phase.covsurv_dwell.detection_probability_per_tick=0.05"
+
+# Side-by-side: run two scenarios with the same seed and report deltas
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
+    --compare scenarios/tutorial_asymmetric.toml
+
 # Or run CI pipeline in Docker (matches GitHub Actions exactly)
 docker compose --profile ci run --rm rust-ci cargo fmt --all -- --check
 docker compose --profile ci run --rm rust-ci cargo clippy --all-targets -- -D warnings

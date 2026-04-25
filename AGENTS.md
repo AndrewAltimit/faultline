@@ -42,6 +42,16 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --single-run
 # Run Monte Carlo batch
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000
 
+# Counterfactual override (Epic B): patches a single parameter and reports
+# the delta against baseline using the same seed.
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
+    --counterfactual "faction.alpha.initial_morale=0.3"
+
+# Side-by-side comparison (Epic B): runs two scenarios with matching
+# seed/run-count and emits a delta report.
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
+    --compare scenarios/tutorial_asymmetric.toml
+
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
 ```
