@@ -85,6 +85,7 @@
                     placeholder="Paste or edit TOML scenario here..."></textarea>
           <div class="editor-actions">
             <button class="btn-label" id="btn-validate">Validate</button>
+            <button class="btn-label" id="btn-diff" title="Diff current TOML against the last loaded preset or a pinned scenario">Diff</button>
             <button class="btn-label" id="btn-load" style="background: var(--gradient); border-color: transparent; color: #fff;">
               Load &amp; Run
             </button>
@@ -192,12 +193,24 @@
           <input type="number" class="mc-input" id="mc-runs" value="100" min="1" max="10000" title="Number of runs">
           <span style="font-size: 0.8125rem; color: var(--text-muted);">runs</span>
           <button class="btn-label" id="btn-mc-run" disabled>Run MC</button>
+          <button class="btn-label" id="btn-pin-result" disabled title="Save the current MC result for side-by-side comparison">Pin</button>
         </div>
         <div id="mc-results">
           <div class="empty-state" style="padding: 16px 0;">
             <span style="font-size: 0.8125rem;">Load a scenario first</span>
           </div>
         </div>
+      </div>
+
+      <!-- Pinned results / side-by-side comparison -->
+      <div class="sidebar-section">
+        <div class="sidebar-title">Pinned Results</div>
+        <div id="pinned-results">
+          <div class="empty-state" style="padding: 8px 0;">
+            <span style="font-size: 0.75rem;">Pin a Monte Carlo result above to compare scenarios.</span>
+          </div>
+        </div>
+        <div id="comparison-results"></div>
       </div>
 
       <!-- Sensitivity Analysis -->

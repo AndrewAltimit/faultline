@@ -91,6 +91,19 @@ jobs:
       - name: cargo-deny
         run: docker compose --profile ci run --rm rust-ci cargo deny check
 
+      # -- JS Tests ----------------------------------------------------------
+      # Pure-logic frontend modules (pinned store, comparison deltas, diff
+      # renderer, sharing roundtrip, heatmap aggregation) are exercised
+      # via Node's built-in test runner. No package install needed —
+      # tests/integration/*.test.mjs depends only on `node:test` and
+      # `node:assert`.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JS integration tests
+        run: node --test tests/integration/*.test.mjs
+
       # -- Test Metrics -------------------------------------------------------
       - name: Test metrics summary
         if: always()

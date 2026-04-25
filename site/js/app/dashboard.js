@@ -5,6 +5,8 @@
 import { AppState } from './state.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
+/** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
+import { renderComparison } from './comparison.js';
 
 function escapeHtml(s) {
   if (s == null) return '';
@@ -59,8 +61,11 @@ export class Dashboard {
   /**
    * @param {import('./event-bus.js').EventBus} bus
    * @param {object} wasm - WASM module exports
+   * @param {PinnedStore} pinned - Shared pinned store (same instance the
+   *   editor gets, so diff baselines pick up pins added here without a
+   *   page reload).
    */
-  constructor(bus, wasm) {
+  constructor(bus, wasm, pinned) {
     this.bus = bus;
     this.wasm = wasm;
 
@@ -73,6 +78,17 @@ export class Dashboard {
     this.btnMcRun.addEventListener('click', () => this._runMonteCarlo());
     this._mcWorker = null;
     this._mcRequestId = 0;
+
+    // Pinned results store + container.
+    this.pinned = pinned;
+    this.pinnedContainer = document.getElementById('pinned-results');
+    this.btnPinResult = document.getElementById('btn-pin-result');
+    this.comparisonContainer = document.getElementById('comparison-results');
+    this._compareSelection = { a: null, b: null };
+    if (this.btnPinResult) {
+      this.btnPinResult.addEventListener('click', () => this._pinCurrent());
+    }
+    this.pinned.subscribe(() => this._renderPinned());
 
     // Sensitivity sweep controls.
     this.sensParam = document.getElementById('sens-param');
@@ -103,6 +119,7 @@ export class Dashboard {
     this.eventLogList.innerHTML = '<div class="event-log-empty">No events yet</div>';
     this.stateInspector.innerHTML =
       '<div class="empty-state" style="padding: 16px 0;"><span style="font-size: 0.8125rem;">Run a simulation to inspect state</span></div>';
+    this._setPinButtonEnabled(false);
   }
 
   _onTick(snapshot) {
@@ -225,11 +242,13 @@ export class Dashboard {
       .then((result) => {
         AppState.mcResult = result;
         this._renderMcResults(result.summary);
+        this._setPinButtonEnabled(true);
         this.bus.emit('mc:complete', result);
       })
       .catch((e) => {
         this.mcResultsContainer.innerHTML =
           `<div class="validation-msg error">${this._esc(String(e))}</div>`;
+        this._setPinButtonEnabled(false);
       })
       .finally(() => {
         this.btnMcRun.disabled = false;
@@ -966,5 +985,139 @@ export class Dashboard {
   _safeColor(color) {
     if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
     return '#7c5bf0';
+  }
+
+  // -------------------------------------------------------------------
+  // Pinned results + side-by-side comparison
+  // -------------------------------------------------------------------
+
+  _setPinButtonEnabled(enabled) {
+    if (!this.btnPinResult) return;
+    this.btnPinResult.disabled = !enabled;
+  }
+
+  _pinCurrent() {
+    const summary = AppState.mcResult?.summary;
+    if (!summary) return;
+    const scenarioName = AppState.scenario?.meta?.name || 'scenario';
+    this.pinned.add({
+      scenarioName,
+      toml: AppState.toml || '',
+      summary,
+    });
+  }
+
+  _renderPinned() {
+    if (!this.pinnedContainer) return;
+    const pins = this.pinned.list();
+    if (!pins.length) {
+      this.pinnedContainer.innerHTML =
+        '<div class="empty-state" style="padding: 8px 0;"><span style="font-size: 0.75rem;">Pin a Monte Carlo result above to compare scenarios.</span></div>';
+      this._renderComparisonPanel();
+      return;
+    }
+
+    let html = '<div class="pinned-list">';
+    for (const p of pins) {
+      const winRates = p.summary?.win_rates || {};
+      const top = Object.entries(winRates).sort((a, b) => b[1] - a[1]).slice(0, 2);
+      const winSummary = top.length
+        ? top.map(([fid, rate]) => `<span class="pin-win">${this._esc(fid)} ${(rate * 100).toFixed(0)}%</span>`).join(' · ')
+        : '<span class="pin-win-none">no win rates</span>';
+      const aSel = this._compareSelection.a === p.id ? ' pin-sel-a' : '';
+      const bSel = this._compareSelection.b === p.id ? ' pin-sel-b' : '';
+      const ageMin = Math.max(1, Math.round((Date.now() - p.capturedAt) / 60000));
+      html += `
+        <div class="pinned-card${aSel}${bSel}" data-pin="${this._esc(p.id)}">
+          <div class="pinned-card-head">
+            <div class="pinned-label" title="${this._esc(p.scenarioName)}">${this._esc(p.label)}</div>
+            <button class="pin-x" data-action="remove" title="Remove pin">×</button>
+          </div>
+          <div class="pinned-meta">
+            <span>${p.summary?.total_runs ?? '?'} runs</span>
+            <span>${ageMin}m ago</span>
+          </div>
+          <div class="pinned-winrates">${winSummary}</div>
+          <div class="pinned-actions">
+            <button class="pin-btn" data-action="select-a">Set A</button>
+            <button class="pin-btn" data-action="select-b">Set B</button>
+            <button class="pin-btn" data-action="load">Load TOML</button>
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+    html += '<div class="pinned-compare-row">';
+    html += `<button class="btn-label" id="btn-compare-pins" ${this._canCompare() ? '' : 'disabled'}>Compare A vs B</button>`;
+    html += '<button class="btn-label" id="btn-clear-compare">Clear selection</button>';
+    html += '</div>';
+    this.pinnedContainer.innerHTML = html;
+
+    // Bind per-card actions.
+    this.pinnedContainer.querySelectorAll('.pinned-card').forEach((card) => {
+      const id = card.dataset.pin;
+      card.querySelectorAll('button[data-action]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const action = btn.dataset.action;
+          if (action === 'remove') {
+            this.pinned.remove(id);
+            if (this._compareSelection.a === id) this._compareSelection.a = null;
+            if (this._compareSelection.b === id) this._compareSelection.b = null;
+          } else if (action === 'select-a') {
+            this._compareSelection.a = id;
+            if (this._compareSelection.b === id) this._compareSelection.b = null;
+            this._renderPinned();
+          } else if (action === 'select-b') {
+            this._compareSelection.b = id;
+            if (this._compareSelection.a === id) this._compareSelection.a = null;
+            this._renderPinned();
+          } else if (action === 'load') {
+            this._loadPinIntoEditor(id);
+          }
+        });
+      });
+    });
+
+    const btnCompare = this.pinnedContainer.querySelector('#btn-compare-pins');
+    if (btnCompare) {
+      btnCompare.addEventListener('click', () => this._renderComparisonPanel());
+    }
+    const btnClear = this.pinnedContainer.querySelector('#btn-clear-compare');
+    if (btnClear) {
+      btnClear.addEventListener('click', () => {
+        this._compareSelection = { a: null, b: null };
+        this._renderPinned();
+      });
+    }
+
+    this._renderComparisonPanel();
+  }
+
+  _canCompare() {
+    return !!(this._compareSelection.a && this._compareSelection.b);
+  }
+
+  _renderComparisonPanel() {
+    if (!this.comparisonContainer) return;
+    if (!this._canCompare()) {
+      this.comparisonContainer.innerHTML = '';
+      return;
+    }
+    const a = this.pinned.get(this._compareSelection.a);
+    const b = this.pinned.get(this._compareSelection.b);
+    if (!a || !b) {
+      this.comparisonContainer.innerHTML = '';
+      return;
+    }
+    this.comparisonContainer.innerHTML = renderComparison(
+      { label: a.label, summary: a.summary },
+      { label: b.label, summary: b.summary },
+    );
+  }
+
+  _loadPinIntoEditor(id) {
+    const p = this.pinned.get(id);
+    if (!p || !p.toml) return;
+    this.bus.emit('editor:load-toml', { toml: p.toml, source: `pin:${p.label}` });
   }
 }

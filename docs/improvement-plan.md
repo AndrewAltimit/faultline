@@ -85,21 +85,26 @@ The core analyst workflow: "what if the defender had X?"
       IOC entries (declarative; does not drive the detection roll yet)
 - [x] CLI: `--counterfactual <param>=<value>` mode; also
       `--compare <other.toml>` side-by-side report
-- [ ] Dashboard: "Pin Results" + side-by-side comparison mode
-- [ ] Scenario diff viewer in the TOML editor
+- [x] Dashboard: "Pin Results" + side-by-side comparison mode
+- [x] Scenario diff viewer in the TOML editor
 - [x] Report: "Policy Implications" and "Countermeasure Analysis"
       sections
 
-**Status:** Epic B **mostly complete on the analysis side**. First PR
-landed the three schema extensions (all `#[serde(default)]` for
-backwards compatibility), the `--counterfactual` and `--compare`
-CLI modes built on an extended `set_param` path layer that now reaches
-kill-chain phase parameters, a new `faultline_stats::counterfactual`
-module producing a `ComparisonReport` with per-faction win-rate deltas
-and per-chain feasibility deltas, and the two new report sections.
-The remaining two items are WASM frontend work (pin results,
-side-by-side dashboard, scenario diff viewer in the TOML editor) and
-will ship as a follow-up UI-focused PR.
+**Status:** Epic B **closed**. First PR landed the three schema
+extensions (all `#[serde(default)]` for backwards compatibility), the
+`--counterfactual` and `--compare` CLI modes built on an extended
+`set_param` path layer that now reaches kill-chain phase parameters, a
+new `faultline_stats::counterfactual` module producing a
+`ComparisonReport` with per-faction win-rate deltas and per-chain
+feasibility deltas, and the two new report sections. Second PR
+(branch `epic-b-comparison-ui`) shipped the three frontend pieces:
+`PinnedStore` (localStorage-backed pin manager with quota-aware
+trimming), a side-by-side comparison panel that mirrors the Rust
+`ComparisonReport` delta shape (win-rate deltas with Wilson CIs,
+per-chain success / detection / cost-asymmetry deltas, mean-duration
+delta), and a unified-diff modal in the TOML editor that diffs the
+current text against the last loaded preset/import or any pinned
+scenario.
 
 ### Epic C — Time & attribution dynamics
 
@@ -182,6 +187,303 @@ Make scenarios self-describing and rebalance the tech library.
 - [ ] Metadata form fields in the browser scenario editor
 
 **Status:** deferred.
+
+---
+
+## Round two — engine depth, optimization, optical separation
+
+The Round-One epics (A–F) treat Faultline as a single-shot Monte Carlo
+engine over hand-authored scenarios. Round Two pushes three directions:
+
+1. **Optical separation from external research.** Faultline is a
+   generic statistical-modeling tool. Any in-repo branding, citation,
+   or data field that visibly pairs Faultline with a specific external
+   threat-assessment series creates "looks operational when paired"
+   exposure that the LEGAL.md posture is built to avoid. Round Two
+   opens with the cleanup pass and bakes the rule into all subsequent
+   work.
+2. **Engine depth, not surface polish.** The current engine is a
+   single-pass discrete-tick Lanchester-plus-kill-chains simulator.
+   Round Two adds adaptive actors, capacity/queue dynamics, network
+   primitives, belief-state tracking, and a strategy-search layer on
+   top — moving the engine from "evaluate this fixed scenario" to
+   "explore the strategy space around this scenario."
+3. **Calibration, reproducibility, and authoring discipline.** The
+   tool will only be cited from external research if its outputs can
+   be re-derived bit-for-bit from a published manifest, and only
+   authored well if the editor catches mistakes the analyst would
+   otherwise discover by reading the report.
+
+### Epic G — Reference sanitization
+
+Faultline currently contains ~184 in-repo references to a specific
+external threat-assessment series ("ETRA"), including ~150 of them in
+`site/js/app/tech-library.js` as `etra_ref` fields citing specific
+section numbers, plus prose in `report.rs`, scenario TOML headers,
+docs, and CSS comments. The sanitization pass replaces all of them
+with generic vocabulary that is field-standard in published threat-
+assessment writing (RAND, CSIS, IISS, CRS) and removes any structural
+field name (`etra_ref`) that would re-introduce coupling.
+
+- [ ] Rename `etra_ref` → `source_ref` (or just `ref`) in the tech-card
+      schema; update `tech-library.js`, `tech-cards.js`, and any
+      consumer
+- [ ] Replace per-card `etra_ref` *values* (e.g. "Section 5.1 (Smurfing
+      Swarm)") with generic descriptors ("structured threat assessment
+      literature", "published OSINT analysis"); remove the unique
+      section-number fingerprints
+- [ ] Replace "Locust ETRA" / "ETRA-2026-WMD-001" / etc. domain
+      descriptions with topical labels ("Drone swarms — covert
+      sensors, C-UAS", "WMD proliferation")
+- [ ] Replace "ETRA-style" / "ETRA-grade" / "ETRA-candidate" with
+      generic equivalents ("structured threat assessment",
+      "publication-grade", "high-confidence") in `report.rs`,
+      `scenario.rs`, `campaign.rs`, `counterfactual.rs`,
+      `improvement-plan.md`, `ROADMAP.md`, `scenario_schema.md`
+- [ ] Drop "ETRA Scenario N" labels from scenario TOML headers and
+      tutorial strings; reframe as "open-source threat-assessment
+      archetype" where the framing is needed at all
+- [ ] Dedupe `site/scenarios/` against `scenarios/` (currently
+      hand-copied byte-identical) — symlink at build time or copy via
+      CI step so future drift is impossible
+- [ ] Add a CI grep guard that fails the build if `\bETRA\b`,
+      `etra_ref`, or any `ETRA-YYYY-` document ID re-enters the tree
+
+**Status:** prerequisite for all Round-Two work. Should land before
+any of H–Q so subsequent epics aren't built on the about-to-be-renamed
+schema.
+
+### Epic H — Strategy search & adversarial co-evolution
+
+Today every Monte Carlo run uses the scenario's hand-authored faction
+parameters as static inputs. Faultline can already *evaluate* a
+strategy; it can't *find* one. This epic adds a search layer that
+treats faction parameters (force allocations, tech-card selections,
+event ROE) as decision variables and searches the joint space.
+
+- [ ] `StrategySpace` schema — declare which scenario parameters are
+      "decision variables" for which faction, with allowed ranges /
+      discrete choices
+- [ ] Single-side optimization: given a fixed opponent, search over
+      one faction's strategy space to maximize a user-specified
+      objective (win rate, cost-asymmetry, attribution-difficulty)
+      under constraints
+- [ ] Adversarial co-evolution: alternating best-response loop until
+      both sides' strategies converge (or report cycle / no-equilibrium
+      diagnostics)
+- [ ] Pareto frontier across multi-objective searches (win rate vs.
+      detection vs. attacker cost)
+- [ ] Report section: "best-response strategies under search" with
+      stability diagnostics
+- [ ] Determinism contract: search uses its own seeded sampler
+      independent of MC seed so search-then-evaluate is reproducible
+
+**Status:** deferred. Depends on Epic C (escalation thresholds) for
+multi-objective stability and Epic G (no co-branding leakage into
+search outputs).
+
+### Epic I — Defender-posture optimization
+
+Sub-class of Epic H specialized for the most common analyst workflow:
+"given this offensive scenario, what's the cost-optimal defender
+configuration?" Distinct enough to ship independently.
+
+- [ ] Defender decision space: tech-card selection from a budgeted
+      menu, force-placement across regions, event-ROE choices
+- [ ] Cost / effectiveness Pareto frontier specifically for defender
+      configurations
+- [ ] "Counter-recommendation" report section: ranked list of defender
+      changes, each with `(cost_delta, success_delta, detection_delta,
+      attribution_delta)` and Wilson CIs
+- [ ] Sensitivity of the optimal posture to assumed attacker strategy
+      (robustness analysis — "this defender wins if the attacker is
+      Profile A or C, but not Profile B")
+
+**Status:** deferred — slot after H.
+
+### Epic J — Adaptive faction AI
+
+Current `AiProfile` is shallow — a few aggression / risk-tolerance
+floats. Real factions adapt to observed opponent behavior. This epic
+adds explicit utility functions and Bayesian belief updating so a
+faction can *change strategy mid-run* in response to what it has
+observed.
+
+- [ ] `Faction.utility` schema — multi-term utility (control,
+      casualties, attribution, time-to-objective) with weights
+- [ ] Per-tick decision step: faction selects from its action menu
+      based on argmax-utility under current belief state
+- [ ] Bayesian belief-state over opponent's hidden variables
+      (capability cards not yet observed, intent, force disposition)
+- [ ] Information events update belief states asymmetrically — a
+      detection event raises the defender's confidence about the
+      attacker's location; a successful OPSEC raises the attacker's
+      confidence that the defender is unaware
+- [ ] Determinism: belief updates use scenario seed; same seed and
+      same observations always produce the same belief trajectory
+
+**Status:** deferred. Largest engine change in Round Two; partition
+into 3+ PRs.
+
+### Epic K — Capacity & queue dynamics
+
+Current engine treats defenders as either-detecting-or-not. Real
+defenders have *finite investigative throughput*: alerts queue, leads
+go uninvestigated, FOIA requests pile up. This epic adds capacity as
+a first-class engine primitive and unlocks scenario classes the kill-
+chain primitive can't naturally express ("Process DoS", verification
+overload, alert-fatigue suppression of true positives).
+
+- [ ] `DefenderCapacity` schema — per-defender-role queue depth, mean
+      service rate, and overflow behavior (drop-oldest / drop-random /
+      backlog)
+- [ ] Phase outputs can enqueue defender work (e.g. "this phase
+      generates N synthetic tips per tick")
+- [ ] Queue-depth-dependent detection probability: a saturated queue
+      drops detection rate
+- [ ] Report: per-defender utilization curves, time-to-saturation
+      histograms, "shadow detections" (true positives that arrived
+      while the queue was full and got dropped)
+- [ ] Scenario archetypes: alert-fatigue, FOIA volume attack, forensic
+      inspection backlog under mass-incident response
+
+**Status:** deferred. Bridges the engine into non-kinetic threat
+classes that the projection-style assessments analyze.
+
+### Epic L — Network & graph primitives
+
+Faultline's only graph is the regional adjacency map. Adding general
+network primitives (supply, communications, social, financial) opens
+a large class of scenarios that currently can't be expressed without
+abusing the regional model.
+
+- [ ] `Network` schema — typed graph with nodes, edges, capacities,
+      and per-edge metadata (latency, bandwidth, trust)
+- [ ] Network-aware events: interdiction reduces edge capacity,
+      disruption removes nodes, infiltration adds attacker visibility
+- [ ] Network-aware metrics: connectivity, max-flow / min-cut,
+      betweenness centrality (deterministic implementations)
+- [ ] Multi-network scenarios: a single faction's supply, comms, and
+      social networks tracked simultaneously, with cross-network
+      events (a comms outage degrades supply coordination)
+- [ ] Report: per-network resilience curves and critical-node ranking
+
+**Status:** deferred.
+
+### Epic M — Information warfare & belief asymmetry
+
+A first-class model of *what each faction knows*, distinct from what
+*is true*. Enables modeling deception, false flags, intentional
+misperception, and OPSEC as decision-affecting rather than purely
+narrative.
+
+- [ ] `BeliefState` per faction — distribution over opponent's hidden
+      variables (force disposition, intent, attributed identity)
+- [ ] Deception events update opponent belief without changing world
+      state ("decoy convoy" raises opponent's confidence about a
+      false location)
+- [ ] Attribution rolls use the *believed* attribution distribution,
+      not the true one — so a successful false-flag operation
+      mis-attributes confidently
+- [ ] Report: per-faction "what they thought was happening" trace
+      alongside the actual world trace; flag divergences
+- [ ] Cross-references with Epic J — adaptive AI must act on belief,
+      not truth
+
+**Status:** deferred. Pairs naturally with J.
+
+### Epic N — Validation harness & calibration discipline
+
+Faultline currently has no way to disconnect "the math is internally
+consistent" from "the parameter ranges are defensible." This epic
+adds a back-testing harness that runs scenarios against historical
+analogues with known outcomes and reports calibration metrics. Does
+not claim prediction; disciplines the parameter library.
+
+- [ ] `historical_analogue` field on scenarios — references a public
+      event with documented outcome
+- [ ] Calibration metric: how well did MC outcome distribution shape
+      the historical observation? (KS distance, log-likelihood)
+- [ ] Reference scenario set: 5–10 well-documented historical
+      analogues (e.g. Turkey 2016 coup attempt outcome bands,
+      published Russo-Ukraine drone-engagement statistics) where
+      parameters are constrained by published estimates
+- [ ] Report: per-scenario "calibration confidence" surfaced
+      alongside the methodology appendix
+- [ ] Author guidance: scenarios with no historical analogue tagged
+      as "purely synthetic"; analyst is told what that means for
+      result interpretation
+
+**Status:** deferred. The hardest epic in Round Two — the
+data-availability bottleneck is real and the work is cross-cutting.
+
+### Epic O — Schema versioning & migration
+
+Round Two adds half a dozen new schema sections (StrategySpace,
+DefenderCapacity, Network, BeliefState, historical_analogue). Without
+a versioning story, the existing scenario library will rot as fields
+move. Add a `[meta].schema_version` field and a migrator framework
+*before* we start shipping schema changes that need migrations.
+
+- [ ] `[meta].schema_version` field with current version constant
+- [ ] Migrator framework: `fn migrate(scenario: TomlValue, from: u32,
+      to: u32) -> TomlValue` chain
+- [ ] CLI: `faultline-cli migrate <path> [--in-place]`
+- [ ] Validator: warns when loading a scenario authored against an
+      older schema; offers to migrate
+- [ ] CI gate: every existing bundled scenario loads cleanly under
+      the migrator at every shipped version
+- [ ] Documentation: schema evolution policy ("additive fields land
+      with serde-default; breaking changes bump version and ship a
+      migrator in the same PR")
+
+**Status:** deferred. Should land before J/K/L/M to keep the existing
+scenarios usable.
+
+### Epic P — Authoring depth: editor, linter, explain
+
+The current TOML editor is a textarea with WASM-side validation only.
+For scenarios to be authored reliably as the schema grows, the editor
+needs schema-aware autocomplete, inline validation against the engine
+type system, and a structured "what does this scenario actually model?"
+explainer.
+
+- [ ] Monaco / CodeMirror editor with TOML grammar + JSON-schema-driven
+      autocomplete (schema generated from the Rust types)
+- [ ] Inline validation panel: surfaces engine-side warnings (unreached
+      regions, factions with no objectives, kill chains with
+      unreachable phases) without running a sim
+- [ ] Hover documentation: field docstrings from the Rust types
+      surface as hover tooltips
+- [ ] `faultline-cli explain <scenario>` — produces a structured prose
+      summary: what factions exist, what their objectives are, what
+      kill chains they execute, what the victory conditions are, what
+      parameters are tagged low-confidence
+- [ ] Editor: "Explain" button that renders the same summary in-app
+
+**Status:** deferred. Enables Epic F (scenario library expansion) to
+move faster.
+
+### Epic Q — Reproducibility & artifact provenance
+
+Lets external citers reference exact Faultline runs by manifest. Every
+result emits a manifest containing the inputs needed to re-derive it
+bit-for-bit, and the CLI can verify a published manifest by re-running
+and comparing.
+
+- [ ] `RunManifest` struct: scenario hash, engine version, MC config,
+      RNG seed, output hash, host platform
+- [ ] CLI: every `run` emits `manifest.json` alongside `report.md`
+- [ ] CLI: `faultline-cli verify <manifest>` re-runs and asserts
+      bit-identical output, exits non-zero on mismatch
+- [ ] Engine version pinned in `Cargo.toml` and surfaced via a
+      build-script-generated constant
+- [ ] CI: `verify` runs on every bundled scenario at every release tag
+- [ ] Report front-matter includes the manifest's content hash so
+      analysts can cite "Faultline run 0xabcd…" stably
+
+**Status:** deferred. Enables external citation of Faultline outputs
+without coupling Faultline to any specific external publication.
 
 ---
 

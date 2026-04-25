@@ -52,9 +52,19 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
 
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
+
+# Run frontend JS unit tests (Node 22+; uses node:test, no install required)
+node --test tests/integration/*.test.mjs
 ```
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> js-tests**.
+
+The JS tests cover the pure-logic frontend modules (sharing roundtrip,
+heatmap aggregation, the Pinned MC results store, the comparison-delta
+computation that mirrors `faultline_stats::counterfactual::compute_delta`,
+and the LCS unified-diff renderer). They run on the host (not in the
+rust-ci container) and only depend on `node:test`; CI provisions the
+runtime with `actions/setup-node@v4`.
 
 To match CI exactly (containerized):
 ```bash
