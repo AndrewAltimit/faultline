@@ -179,6 +179,7 @@ fn make_test_scenario() -> Scenario {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         },
     );
     factions.insert(
@@ -202,6 +203,7 @@ fn make_test_scenario() -> Scenario {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         },
     );
 
@@ -296,6 +298,7 @@ fn event_phase_fires_eligible_event() {
         repeatable: false,
         effects: vec![EventEffect::TensionShift { delta: 0.1 }],
         chain: None,
+        defender_options: vec![],
     };
     scenario
         .events

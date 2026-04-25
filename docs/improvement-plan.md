@@ -77,20 +77,29 @@ report stays bit-identical under fixed inputs), and an optional
 
 The core analyst workflow: "what if the defender had X?"
 
-- [ ] Schema: `[events.<id>.defender_options]` — cost/effect
+- [x] Schema: `[events.<id>.defender_options]` — cost/effect
       branches the defender can choose
-- [ ] Schema: `[factions.<id>.escalation_rules]` — doctrine / ROE
-      enforcement
-- [ ] Schema: `[kill_chains.*.phases.*.warning_indicators]` — IWI /
-      IOC entries
-- [ ] CLI: `--counterfactual <param>=<value>` mode; also
+- [x] Schema: `[factions.<id>.escalation_rules]` — doctrine / ROE
+      enforcement (declarative; engine enforcement deferred)
+- [x] Schema: `[kill_chains.*.phases.*.warning_indicators]` — IWI /
+      IOC entries (declarative; does not drive the detection roll yet)
+- [x] CLI: `--counterfactual <param>=<value>` mode; also
       `--compare <other.toml>` side-by-side report
 - [ ] Dashboard: "Pin Results" + side-by-side comparison mode
 - [ ] Scenario diff viewer in the TOML editor
-- [ ] Report: "Policy Implications" and "Countermeasure Analysis"
+- [x] Report: "Policy Implications" and "Countermeasure Analysis"
       sections
 
-**Status:** deferred (PR 2 candidate).
+**Status:** Epic B **mostly complete on the analysis side**. First PR
+landed the three schema extensions (all `#[serde(default)]` for
+backwards compatibility), the `--counterfactual` and `--compare`
+CLI modes built on an extended `set_param` path layer that now reaches
+kill-chain phase parameters, a new `faultline_stats::counterfactual`
+module producing a `ComparisonReport` with per-faction win-rate deltas
+and per-chain feasibility deltas, and the two new report sections.
+The remaining two items are WASM frontend work (pin results,
+side-by-side dashboard, scenario diff viewer in the TOML editor) and
+will ship as a follow-up UI-focused PR.
 
 ### Epic C — Time & attribution dynamics
 

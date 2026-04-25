@@ -9,13 +9,20 @@
 
 use std::collections::BTreeMap;
 
-use faultline_stats::report::render_markdown;
+use faultline_stats::counterfactual::{ParamOverride, run_compare, run_counterfactual};
+use faultline_stats::report::{render_comparison_markdown, render_markdown};
 use faultline_stats::{MonteCarloRunner, compute_summary};
 use faultline_types::campaign::{
-    BranchCondition, CampaignPhase, DefensiveDomain, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+    BranchCondition, CampaignPhase, DefensiveDomain, KillChain, ObservableDiscipline, PhaseBranch,
+    PhaseCost, PhaseOutput, WarningIndicator,
 };
-use faultline_types::faction::{Faction, FactionType, ForceUnit, MilitaryBranch, UnitType};
-use faultline_types::ids::{FactionId, ForceId, KillChainId, PhaseId, RegionId, VictoryId};
+use faultline_types::events::{DefenderOption, EventDefinition, EventEffect};
+use faultline_types::faction::{
+    EscalationRules, EscalationRung, Faction, FactionType, ForceUnit, MilitaryBranch, UnitType,
+};
+use faultline_types::ids::{
+    EventId, FactionId, ForceId, KillChainId, PhaseId, RegionId, VictoryId,
+};
 use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
@@ -62,6 +69,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         intelligence: 0.5,
         diplomacy: vec![],
         doctrine: Doctrine::Conventional,
+        escalation_rules: None,
     }
 }
 
@@ -139,6 +147,7 @@ fn flagged_chain_scenario() -> Scenario {
                 next_phase: strike.clone(),
             }],
             parameter_confidence: Some(ConfidenceLevel::Low),
+            warning_indicators: vec![],
         },
     );
     phases.insert(
@@ -164,6 +173,7 @@ fn flagged_chain_scenario() -> Scenario {
             outputs: vec![PhaseOutput::TensionDelta { delta: 0.1 }],
             branches: vec![],
             parameter_confidence: None,
+            warning_indicators: vec![],
         },
     );
 
@@ -682,5 +692,429 @@ fn continuous_metrics_partial_ci_suppresses_bounds_in_cells() {
     assert!(
         data_rows_checked > 0,
         "expected at least one continuous-metrics data row to inspect; section was:\n{section}"
+    );
+}
+
+// ============================================================================
+// Epic B — Policy Implications, Countermeasure Analysis, comparison report
+//
+// These tests are deliberately driven through the public `render_markdown`
+// surface and the public `run_counterfactual` / `run_compare` entry points
+// rather than the section-level helpers, so they catch wiring breaks the
+// per-section unit tests would miss.
+// ============================================================================
+
+/// Augment the existing flagged-chain scenario with one IWI-tagged
+/// phase, one defender_options-bearing event, and an escalation_rules
+/// block on the attacker. Produces a scenario where every Epic B
+/// section has *some* content.
+fn epic_b_populated_scenario() -> Scenario {
+    let mut scenario = flagged_chain_scenario();
+
+    // Tag every phase with at least one warning indicator.
+    for chain in scenario.kill_chains.values_mut() {
+        for (idx, (_pid, phase)) in chain.phases.iter_mut().enumerate() {
+            phase.warning_indicators.push(WarningIndicator {
+                id: format!("ind_{}", idx),
+                name: format!("Indicator {}", idx),
+                description: "Test observable.".into(),
+                observable: if idx % 2 == 0 {
+                    ObservableDiscipline::SIGINT
+                } else {
+                    ObservableDiscipline::HUMINT
+                },
+                detectability: 0.4,
+                time_to_detect_ticks: Some(7),
+                monitoring_cost_annual: Some(1_500_000.0),
+            });
+        }
+    }
+
+    // Add an event with two defender options — one stand-down, one
+    // costed pre-positioned response.
+    let event_id = EventId::from("tripwire");
+    scenario.events.insert(
+        event_id.clone(),
+        EventDefinition {
+            id: event_id,
+            name: "Adversary Tripwire".into(),
+            description: "Adversary crosses a coalition red line.".into(),
+            earliest_tick: None,
+            latest_tick: None,
+            conditions: vec![],
+            // Force the event probability to zero so adding it does not
+            // perturb the engine's RNG draws / output for runs that are
+            // not exercising the event itself. The Policy Implications
+            // section reads `defender_options` declaratively; it does
+            // not require the event to fire.
+            probability: 0.0,
+            repeatable: false,
+            effects: vec![EventEffect::TensionShift { delta: 0.05 }],
+            chain: None,
+            defender_options: vec![
+                DefenderOption {
+                    key: "stand_down".into(),
+                    name: "Diplomatic De-escalation".into(),
+                    description: "Defender accepts and negotiates.".into(),
+                    preparedness_cost: 0.0,
+                    modifier_effects: vec![],
+                },
+                DefenderOption {
+                    key: "pre_positioned".into(),
+                    name: "Pre-positioned Response".into(),
+                    description: "Costed standing strike package.".into(),
+                    preparedness_cost: 2_500_000.0,
+                    modifier_effects: vec![EventEffect::TensionShift { delta: -0.05 }],
+                },
+            ],
+        },
+    );
+
+    // Tag the attacker with an escalation ladder.
+    if let Some(red) = scenario.factions.get_mut(&FactionId::from("red")) {
+        red.escalation_rules = Some(EscalationRules {
+            posture: "Grey-zone permitted; kinetic strikes need authorization.".into(),
+            de_escalation_floor: Some(0.4),
+            ladder: vec![
+                EscalationRung {
+                    id: "grey_zone".into(),
+                    name: "Grey Zone".into(),
+                    description: "Sabotage, info ops, deniable cyber.".into(),
+                    trigger_tension: None,
+                    permitted_actions: vec!["Disinformation".into(), "Deniable cyber".into()],
+                    prohibited_actions: vec!["Kinetic strikes on coalition soil".into()],
+                },
+                EscalationRung {
+                    id: "kinetic".into(),
+                    name: "Kinetic".into(),
+                    description: "Open military action.".into(),
+                    trigger_tension: Some(0.85),
+                    permitted_actions: vec!["Long-range precision strikes".into()],
+                    prohibited_actions: vec!["Nuclear signalling".into()],
+                },
+            ],
+        });
+    }
+
+    scenario
+}
+
+#[test]
+fn report_renders_policy_implications_section_with_data() {
+    let scenario = epic_b_populated_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 20,
+        seed: Some(123),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("## Policy Implications"),
+        "Policy Implications header missing; got:\n{md}"
+    );
+    assert!(
+        md.contains("### Defender Options on Events"),
+        "defender options subsection missing"
+    );
+    assert!(
+        md.contains("`tripwire`"),
+        "should reference the tripwire event id"
+    );
+    assert!(
+        md.contains("Diplomatic De-escalation"),
+        "first defender option missing"
+    );
+    assert!(
+        md.contains("preparedness cost **$2500000**"),
+        "second option's preparedness cost should render; got:\n{md}"
+    );
+
+    assert!(
+        md.contains("### Escalation Rules"),
+        "escalation rules subsection missing"
+    );
+    assert!(
+        md.contains("De-escalation floor"),
+        "de-escalation floor line should render"
+    );
+    assert!(md.contains("`kinetic`"), "ladder rung id should render");
+    assert!(
+        md.contains("@ tension ≥ **0.85**"),
+        "rung trigger should render with the tension threshold"
+    );
+}
+
+#[test]
+fn report_renders_countermeasure_analysis_section_with_data() {
+    let scenario = epic_b_populated_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 20,
+        seed: Some(123),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        md.contains("## Countermeasure Analysis"),
+        "Countermeasure Analysis header missing; got:\n{md}"
+    );
+    assert!(md.contains("SIGINT"), "SIGINT discipline should render");
+    assert!(md.contains("HUMINT"), "HUMINT discipline should render");
+    // Detectability formats as percentage.
+    assert!(
+        md.contains("40%"),
+        "detectability should render as a percentage"
+    );
+    assert!(md.contains("7 ticks"), "time-to-detect should render");
+    assert!(
+        md.contains("$1500000"),
+        "annual monitoring cost should render"
+    );
+
+    // Table column count check: the indicator rows must have 6 cells
+    // (matching the 6-column header). Each row should have 7 pipes
+    // (6 cells = 7 separators including outer pipes).
+    let section_start = md
+        .find("## Countermeasure Analysis")
+        .expect("section present");
+    let rest = &md[section_start..];
+    let section_end = rest[1..].find("\n## ").map(|i| i + 1).unwrap_or(rest.len());
+    let section = &rest[..section_end];
+    let mut indicator_rows = 0;
+    for line in section.lines() {
+        if line.starts_with("| `") && !line.contains("---") && !line.contains("Phase |") {
+            let pipes = line.chars().filter(|c| *c == '|').count();
+            assert_eq!(
+                pipes, 7,
+                "indicator row should have 7 pipes (6 cells); got {pipes} in:\n{line}"
+            );
+            indicator_rows += 1;
+        }
+    }
+    assert!(
+        indicator_rows >= 2,
+        "should render at least 2 indicator rows; got {indicator_rows}"
+    );
+}
+
+#[test]
+fn report_elides_policy_and_countermeasure_when_empty() {
+    // Stock flagged scenario has no defender_options / escalation_rules /
+    // warning_indicators — both new sections must elide cleanly so we
+    // don't spam empty sections into legacy reports.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 20,
+        seed: Some(7),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC");
+    let md = render_markdown(&result.summary, &scenario);
+
+    assert!(
+        !md.contains("## Policy Implications"),
+        "Policy Implications must elide when no data; got:\n{md}"
+    );
+    assert!(
+        !md.contains("## Countermeasure Analysis"),
+        "Countermeasure Analysis must elide when no data; got:\n{md}"
+    );
+    // Methodology must still render.
+    assert!(md.contains("## Methodology & Confidence"));
+}
+
+#[test]
+fn counterfactual_reports_chain_delta_when_phase_param_changed() {
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 30,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let overrides = vec![
+        ParamOverride::parse("kill_chain.alpha.phase.recon.detection_probability_per_tick=0.5")
+            .expect("parse"),
+    ];
+    let report = run_counterfactual(&scenario, &config, &overrides).expect("counterfactual");
+
+    assert_eq!(report.variants.len(), 1);
+    assert_eq!(report.deltas.len(), 1);
+    let chain_id = KillChainId::from("alpha");
+    let chain_delta = report.deltas[0]
+        .chain_deltas
+        .get(&chain_id)
+        .expect("alpha chain delta present");
+    // Hardening detection from 0.05 → 0.5 should detectably push the
+    // detection rate up. We don't pin the exact magnitude (sampling
+    // dependent at n=30), only the sign.
+    assert!(
+        chain_delta.detection_rate_delta >= 0.0,
+        "detection delta should be non-negative when defender hardens; got {}",
+        chain_delta.detection_rate_delta
+    );
+}
+
+#[test]
+fn counterfactual_is_deterministic_under_fixed_seed() {
+    // Determinism contract — the comparison report (JSON-serialized to
+    // strip any in-memory pointer noise) must be bit-identical across
+    // two calls with the same seed and overrides. If a future refactor
+    // breaks per-run-index seed derivation in MonteCarloRunner, this
+    // test catches it before the comparison reports become noisy.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 15,
+        seed: Some(2026),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let overrides = vec![ParamOverride::parse("political_climate.tension=0.9").expect("parse")];
+
+    let a = run_counterfactual(&scenario, &config, &overrides).expect("a");
+    let b = run_counterfactual(&scenario, &config, &overrides).expect("b");
+
+    let ja = serde_json::to_string(&a).expect("ser a");
+    let jb = serde_json::to_string(&b).expect("ser b");
+    assert_eq!(
+        ja, jb,
+        "two run_counterfactual calls with identical inputs must produce bit-identical JSON"
+    );
+}
+
+#[test]
+fn counterfactual_stacks_multiple_overrides_atomically() {
+    // Stacking two overrides should produce *one* variant scenario
+    // with both applied — not two variants with one override each.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 10,
+        seed: Some(1),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let overrides = vec![
+        ParamOverride::parse("political_climate.tension=0.9").expect("p1"),
+        ParamOverride::parse("kill_chain.alpha.phase.recon.base_success_probability=0.1")
+            .expect("p2"),
+    ];
+    let report = run_counterfactual(&scenario, &config, &overrides).expect("counterfactual");
+    assert_eq!(
+        report.variants.len(),
+        1,
+        "stacked overrides must collapse to a single variant"
+    );
+    assert_eq!(
+        report.variants[0].overrides.len(),
+        2,
+        "the variant's override list should record both overrides"
+    );
+}
+
+#[test]
+fn run_compare_against_self_produces_zero_deltas() {
+    // Sanity check: comparing a scenario against itself with the same
+    // seed/run-count must yield zero deltas everywhere. Anything else
+    // means the engine isn't deterministic across two calls with the
+    // same seed.
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 12,
+        seed: Some(31),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let report = run_compare(&scenario, &scenario, "self", &config).expect("compare against self");
+
+    let delta = &report.deltas[0];
+    assert!(
+        delta.mean_duration_delta.abs() < 1e-9,
+        "self-compare mean-duration delta should be zero; got {}",
+        delta.mean_duration_delta
+    );
+    for (fid, d) in &delta.win_rate_deltas {
+        assert!(
+            d.abs() < 1e-9,
+            "self-compare win-rate delta for {fid} should be zero; got {d}"
+        );
+    }
+    for (cid, cd) in &delta.chain_deltas {
+        assert!(
+            cd.overall_success_rate_delta.abs() < 1e-9
+                && cd.detection_rate_delta.abs() < 1e-9
+                && cd.cost_asymmetry_ratio_delta.abs() < 1e-9
+                && cd.attacker_spend_delta.abs() < 1e-9
+                && cd.defender_spend_delta.abs() < 1e-9,
+            "self-compare chain-delta for {cid} must be all-zero; got {cd:?}"
+        );
+    }
+}
+
+#[test]
+fn render_comparison_markdown_contains_expected_sections() {
+    let scenario = flagged_chain_scenario();
+    let config = MonteCarloConfig {
+        num_runs: 12,
+        seed: Some(13),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let overrides = vec![ParamOverride::parse("political_climate.tension=0.7").expect("parse")];
+    let report = run_counterfactual(&scenario, &config, &overrides).expect("counterfactual");
+
+    let md = render_comparison_markdown(&report, &scenario);
+    assert!(
+        md.contains("# Faultline Counterfactual Report"),
+        "comparison report must carry the expected H1; got:\n{md}"
+    );
+    assert!(
+        md.contains("## Variant: counterfactual"),
+        "variant section header missing"
+    );
+    assert!(
+        md.contains("Applied overrides"),
+        "applied overrides line missing"
+    );
+    assert!(
+        md.contains("`political_climate.tension`"),
+        "applied override must list the path"
+    );
+    assert!(
+        md.contains("# Baseline Full Report"),
+        "must embed the baseline report below the deltas"
+    );
+}
+
+#[test]
+fn comparison_omits_optional_subsections_when_empty() {
+    // The minimal scenario carries no kill chains and no win rates
+    // (it stalemates); the variant section should still render the
+    // mean-duration line but elide both the win-rate-delta and
+    // chain-delta tables instead of emitting empty 0-row tables.
+    let mut scenario = flagged_chain_scenario();
+    scenario.kill_chains.clear();
+    let config = MonteCarloConfig {
+        num_runs: 8,
+        seed: Some(91),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let overrides = vec![ParamOverride::parse("political_climate.tension=0.6").expect("parse")];
+    let report = run_counterfactual(&scenario, &config, &overrides).expect("cf");
+
+    let md = render_comparison_markdown(&report, &scenario);
+    assert!(
+        !md.contains("### Kill-chain deltas"),
+        "kill-chain delta table must elide when no chains; got:\n{md}"
+    );
+    assert!(
+        md.contains("Mean duration delta"),
+        "mean-duration line should still render"
     );
 }

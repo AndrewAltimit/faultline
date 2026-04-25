@@ -1366,3 +1366,210 @@ tags = []
         assert_eq!(m.confidence, Some(variant), "variant mismatch for {repr}");
     }
 }
+
+// ============================================================================
+// Epic B — counterfactual schema
+//
+// `defender_options` on events, `escalation_rules` on factions, and
+// `warning_indicators` on kill-chain phases are all `#[serde(default)]`
+// additions. Tutorial scenarios must still parse unchanged, and
+// scenarios that *do* set these fields must round-trip through TOML.
+// ============================================================================
+
+#[test]
+fn defender_options_on_event_roundtrip() {
+    use crate::events::EventDefinition;
+    use crate::ids::EventId;
+
+    let toml_str = r#"
+id = "russian_tripwire"
+name = "Russian Tripwire"
+description = "Russia crosses a coalition red line."
+conditions = []
+probability = 0.5
+repeatable = false
+effects = []
+
+[[defender_options]]
+key = "stand_down"
+name = "Diplomatic De-escalation"
+description = "Defender accepts the violation and negotiates."
+preparedness_cost = 0.0
+
+[[defender_options]]
+key = "pre_positioned_strike"
+name = "Pre-positioned Strike Package"
+preparedness_cost = 2_500_000.0
+"#;
+
+    let event: EventDefinition = toml::from_str(toml_str).expect("event parses");
+    assert_eq!(event.id, EventId::from("russian_tripwire"));
+    assert_eq!(event.defender_options.len(), 2);
+    assert_eq!(event.defender_options[0].key, "stand_down");
+    assert!((event.defender_options[1].preparedness_cost - 2_500_000.0).abs() < f64::EPSILON);
+
+    // Round-trip through TOML.
+    let serialized = toml::to_string(&event).expect("serialize");
+    let reparsed: EventDefinition = toml::from_str(&serialized).expect("reparse");
+    assert_eq!(reparsed.defender_options.len(), 2);
+    assert_eq!(reparsed.defender_options[0].key, "stand_down");
+
+    // An event without defender_options must still parse (absent field).
+    let plain_toml = r#"
+id = "plain_event"
+name = "Plain"
+description = ""
+conditions = []
+probability = 0.1
+repeatable = false
+effects = []
+"#;
+    let plain: EventDefinition = toml::from_str(plain_toml).expect("plain event parses");
+    assert!(plain.defender_options.is_empty());
+}
+
+#[test]
+fn escalation_rules_on_faction_roundtrip() {
+    use crate::faction::{EscalationRules, EscalationRung, Faction};
+
+    let toml_str = r##"
+id = "red"
+name = "Red"
+description = "Hostile near-peer."
+color = "#cc0000"
+tech_access = []
+initial_morale = 0.9
+logistics_capacity = 100.0
+initial_resources = 500.0
+resource_rate = 10.0
+command_resilience = 0.7
+intelligence = 0.6
+diplomacy = []
+doctrine = "Disruption"
+
+[faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[forces]
+
+[escalation_rules]
+posture = "Grey-zone operations permitted; kinetic strikes require political authorization."
+de_escalation_floor = 0.4
+
+[[escalation_rules.ladder]]
+id = "grey_zone"
+name = "Grey Zone"
+description = "Sabotage, info ops, deniable cyber."
+permitted_actions = ["Disinformation campaigns", "Deniable cyber attacks"]
+prohibited_actions = ["Kinetic strikes on NATO soil"]
+
+[[escalation_rules.ladder]]
+id = "kinetic_standoff"
+name = "Kinetic Standoff"
+trigger_tension = 0.8
+permitted_actions = ["Long-range precision strikes"]
+prohibited_actions = ["Nuclear signalling"]
+"##;
+
+    let faction: Faction = toml::from_str(toml_str).expect("faction parses");
+    let rules: &EscalationRules = faction
+        .escalation_rules
+        .as_ref()
+        .expect("escalation_rules present");
+    assert_eq!(rules.ladder.len(), 2);
+    assert!((rules.de_escalation_floor.expect("floor") - 0.4).abs() < f64::EPSILON);
+    let rung: &EscalationRung = &rules.ladder[1];
+    assert_eq!(rung.id, "kinetic_standoff");
+    assert!((rung.trigger_tension.expect("trigger") - 0.8).abs() < f64::EPSILON);
+
+    let serialized = toml::to_string(&faction).expect("serialize");
+    let reparsed: Faction = toml::from_str(&serialized).expect("reparse");
+    assert!(reparsed.escalation_rules.is_some());
+}
+
+#[test]
+fn warning_indicators_on_phase_roundtrip() {
+    use crate::campaign::{CampaignPhase, ObservableDiscipline};
+
+    let toml_str = r#"
+id = "dwell"
+name = "Long Dwell"
+description = "60-day pattern-of-life aggregation."
+base_success_probability = 0.9
+min_duration = 30
+max_duration = 90
+
+[[warning_indicators]]
+id = "beaconing_rf"
+name = "Beaconing RF emissions"
+description = "Periodic uplink bursts from emplaced sensors."
+observable = "SIGINT"
+detectability = 0.6
+time_to_detect_ticks = 14
+monitoring_cost_annual = 1_800_000.0
+
+[[warning_indicators]]
+id = "tenant_tips"
+name = "Tenant noise reports"
+observable = "HUMINT"
+detectability = 0.15
+"#;
+
+    let phase: CampaignPhase = toml::from_str(toml_str).expect("phase parses");
+    assert_eq!(phase.warning_indicators.len(), 2);
+    assert_eq!(
+        phase.warning_indicators[0].observable,
+        ObservableDiscipline::SIGINT
+    );
+    assert_eq!(
+        phase.warning_indicators[1].observable,
+        ObservableDiscipline::HUMINT
+    );
+    assert_eq!(
+        phase.warning_indicators[0]
+            .time_to_detect_ticks
+            .expect("ticks"),
+        14
+    );
+    assert!(phase.warning_indicators[1].time_to_detect_ticks.is_none());
+
+    let serialized = toml::to_string(&phase).expect("serialize");
+    let reparsed: CampaignPhase = toml::from_str(&serialized).expect("reparse");
+    assert_eq!(reparsed.warning_indicators.len(), 2);
+    assert_eq!(
+        reparsed.warning_indicators[0].observable,
+        ObservableDiscipline::SIGINT
+    );
+
+    // A phase without warning_indicators must parse (field absent).
+    let plain_toml = r#"
+id = "plain"
+name = "Plain"
+base_success_probability = 0.5
+min_duration = 1
+max_duration = 2
+"#;
+    let plain: CampaignPhase = toml::from_str(plain_toml).expect("plain phase parses");
+    assert!(plain.warning_indicators.is_empty());
+}
+
+#[test]
+fn existing_scenarios_still_parse_with_new_fields() {
+    // The tutorial TOML embedded in this file has no defender_options,
+    // no escalation_rules, and no warning_indicators. It must still
+    // parse after the Epic B schema additions.
+    let scenario: Scenario =
+        toml::from_str(TUTORIAL_TOML).expect("tutorial must still parse after Epic B additions");
+    for faction in scenario.factions.values() {
+        assert!(faction.escalation_rules.is_none());
+    }
+    for event in scenario.events.values() {
+        assert!(event.defender_options.is_empty());
+    }
+    for chain in scenario.kill_chains.values() {
+        for phase in chain.phases.values() {
+            assert!(phase.warning_indicators.is_empty());
+        }
+    }
+}

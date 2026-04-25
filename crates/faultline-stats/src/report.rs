@@ -7,13 +7,17 @@
 
 use std::fmt::Write;
 
-use faultline_types::campaign::{CampaignPhase, KillChain};
+use faultline_types::campaign::{CampaignPhase, KillChain, ObservableDiscipline, WarningIndicator};
+use faultline_types::events::{DefenderOption, EventDefinition};
+use faultline_types::faction::{EscalationRules, Faction};
 use faultline_types::ids::PhaseId;
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
     ConfidenceInterval, ConfidenceLevel, DistributionStats, FeasibilityConfidence, FeasibilityRow,
     MetricType, MonteCarloSummary,
 };
+
+use crate::counterfactual::{ComparisonReport, ParamOverride};
 
 /// Render a Markdown feasibility / cost asymmetry / seam analysis
 /// report for a single Monte Carlo run.
@@ -102,7 +106,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
             let _ = writeln!(
                 out,
                 "| **{}** | {} | {} | {} | {} | {} | {:.2} | **{:.0}×** |",
-                row.chain_name,
+                escape_md_cell(&row.chain_name),
                 fmt_cell(
                     row.technology_readiness,
                     row.confidence.technology_readiness.clone(),
@@ -245,10 +249,363 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
         let _ = writeln!(out);
     }
 
+    render_policy_implications(&mut out, scenario);
+    render_countermeasure_analysis(&mut out, scenario);
+
     let _ = writeln!(out, "## Methodology & Confidence");
     let _ = writeln!(out, "{}", METHODOLOGY_APPENDIX.trim_start());
 
     out
+}
+
+// ---------------------------------------------------------------------------
+// Policy Implications (Epic B)
+// ---------------------------------------------------------------------------
+
+/// Render the Policy Implications section: surfaces declarative
+/// defender_options on events and escalation_rules on factions, so
+/// analysts see which counterfactuals the scenario author has
+/// pre-enumerated alongside the doctrine / ROE contract each faction
+/// operates under.
+///
+/// The section is elided when no events carry `defender_options` and
+/// no factions carry `escalation_rules` — we don't want an empty
+/// section cluttering scenarios that pre-date Epic B.
+fn render_policy_implications(out: &mut String, scenario: &Scenario) {
+    let option_events: Vec<&EventDefinition> = scenario
+        .events
+        .values()
+        .filter(|e| !e.defender_options.is_empty())
+        .collect();
+    let ruled_factions: Vec<&Faction> = scenario
+        .factions
+        .values()
+        .filter(|f| f.escalation_rules.is_some())
+        .collect();
+
+    if option_events.is_empty() && ruled_factions.is_empty() {
+        return;
+    }
+
+    let _ = writeln!(out, "## Policy Implications");
+    let _ = writeln!(
+        out,
+        "Declarative counterfactual hooks from the scenario — alternative defender responses and standing escalation doctrine. These are surfaced so analysts can see which branches the author has pre-enumerated and which faction decisions implicitly require crossing a doctrinal red line. Nothing here is consumed by the Monte Carlo roll; use `--counterfactual` to actually evaluate a branch."
+    );
+    let _ = writeln!(out);
+
+    if !option_events.is_empty() {
+        let _ = writeln!(out, "### Defender Options on Events");
+        for event in option_events {
+            let _ = writeln!(out, "- **`{}` — {}**", event.id, event.name);
+            if !event.description.trim().is_empty() {
+                let _ = writeln!(out, "  - _{}_", event.description.trim());
+            }
+            for opt in &event.defender_options {
+                render_defender_option(out, opt);
+            }
+        }
+        let _ = writeln!(out);
+    }
+
+    if !ruled_factions.is_empty() {
+        let _ = writeln!(out, "### Escalation Rules");
+        for faction in ruled_factions {
+            if let Some(rules) = &faction.escalation_rules {
+                render_escalation_rules(out, faction, rules);
+            }
+        }
+        let _ = writeln!(out);
+    }
+}
+
+fn render_defender_option(out: &mut String, opt: &DefenderOption) {
+    let cost = if opt.preparedness_cost > 0.0 {
+        format!(" · preparedness cost **${:.0}**", opt.preparedness_cost)
+    } else {
+        String::new()
+    };
+    let _ = writeln!(out, "  - `option:{}` **{}**{}", opt.key, opt.name, cost);
+    if !opt.description.trim().is_empty() {
+        let _ = writeln!(out, "    - _{}_", opt.description.trim());
+    }
+    if opt.modifier_effects.is_empty() {
+        let _ = writeln!(out, "    - Effect: cancels the event's default effects.");
+    } else {
+        let _ = writeln!(
+            out,
+            "    - Effect: replaces default with {} modifier(s).",
+            opt.modifier_effects.len()
+        );
+    }
+}
+
+fn render_escalation_rules(out: &mut String, faction: &Faction, rules: &EscalationRules) {
+    let _ = writeln!(out, "- **`{}` — {}**", faction.id, faction.name);
+    if !rules.posture.trim().is_empty() {
+        let _ = writeln!(out, "  - _{}_", rules.posture.trim());
+    }
+    if let Some(floor) = rules.de_escalation_floor {
+        let _ = writeln!(
+            out,
+            "  - De-escalation floor: faction will not voluntarily fall below tension **{:.2}** without an external trigger.",
+            floor
+        );
+    }
+    if !rules.ladder.is_empty() {
+        let _ = writeln!(out, "  - Ladder (low → high escalation):");
+        for rung in &rules.ladder {
+            let trigger = rung
+                .trigger_tension
+                .map(|t| format!(" @ tension ≥ **{:.2}**", t))
+                .unwrap_or_default();
+            let _ = writeln!(out, "    - `{}` **{}**{}", rung.id, rung.name, trigger);
+            if !rung.description.trim().is_empty() {
+                let _ = writeln!(out, "      - _{}_", rung.description.trim());
+            }
+            if !rung.permitted_actions.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "      - Permitted: {}",
+                    rung.permitted_actions.join("; ")
+                );
+            }
+            if !rung.prohibited_actions.is_empty() {
+                let _ = writeln!(
+                    out,
+                    "      - Prohibited: {}",
+                    rung.prohibited_actions.join("; ")
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Countermeasure Analysis (Epic B)
+// ---------------------------------------------------------------------------
+
+/// Render the Countermeasure Analysis section: surfaces per-phase
+/// warning indicators (IWI / IOC entries). Each indicator pairs an
+/// observable discipline with a detectability estimate and — when
+/// available — a time-to-detect figure and annual monitoring cost.
+///
+/// Declarative in this iteration: detection probability in the engine
+/// is still driven by `CampaignPhase.detection_probability_per_tick`.
+/// The section exists to make the *monitoring posture* required to
+/// hit that rate concrete, so analysts can reason about whether the
+/// assumed detection rate is credibly achievable.
+fn render_countermeasure_analysis(out: &mut String, scenario: &Scenario) {
+    let chains_with_indicators: Vec<(&KillChain, Vec<(&PhaseId, &CampaignPhase)>)> = scenario
+        .kill_chains
+        .values()
+        .filter_map(|chain| {
+            let phases: Vec<_> = chain
+                .phases
+                .iter()
+                .filter(|(_, p)| !p.warning_indicators.is_empty())
+                .collect();
+            if phases.is_empty() {
+                None
+            } else {
+                Some((chain, phases))
+            }
+        })
+        .collect();
+
+    if chains_with_indicators.is_empty() {
+        return;
+    }
+
+    let _ = writeln!(out, "## Countermeasure Analysis");
+    let _ = writeln!(
+        out,
+        "Warning indicators the scenario author has tagged on each phase, showing the monitoring posture the defender would need in order to catch the operation before completion. Detectability is the probability that an adequately-resourced monitor picks up the observable during the phase; time-to-detect is the expected latency from phase activation. Costs are annual, if the author supplied them."
+    );
+    let _ = writeln!(out);
+
+    for (chain, phases) in chains_with_indicators {
+        let _ = writeln!(out, "### `{}` — {}", chain.id, chain.name);
+        let _ = writeln!(
+            out,
+            "| Phase | Indicator | Observable | Detectability | Time to detect | Annual cost |"
+        );
+        let _ = writeln!(out, "|---|---|---|---|---|---|");
+        for (pid, phase) in phases {
+            for ind in &phase.warning_indicators {
+                render_indicator_row(out, pid, phase, ind);
+            }
+        }
+        let _ = writeln!(out);
+    }
+}
+
+fn render_indicator_row(
+    out: &mut String,
+    pid: &PhaseId,
+    phase: &CampaignPhase,
+    ind: &WarningIndicator,
+) {
+    let ttd = ind
+        .time_to_detect_ticks
+        .map(|t| format!("{} ticks", t))
+        .unwrap_or_else(|| "—".into());
+    let cost = ind
+        .monitoring_cost_annual
+        .map(|c| format!("${:.0}", c))
+        .unwrap_or_else(|| "—".into());
+    // Author-supplied strings (`phase.name`, `ind.name`, `Custom` discipline
+    // labels) are interpolated into a Markdown table cell. A literal `|`
+    // would close the cell early and silently mangle the table; escape it.
+    let _ = writeln!(
+        out,
+        "| `{}` ({}) | `{}` {} | {} | {:.0}% | {} | {} |",
+        pid,
+        escape_md_cell(&phase.name),
+        ind.id,
+        escape_md_cell(&ind.name),
+        escape_md_cell(observable_label(&ind.observable)),
+        ind.detectability * 100.0,
+        ttd,
+        cost
+    );
+}
+
+fn observable_label(d: &ObservableDiscipline) -> &str {
+    match d {
+        ObservableDiscipline::SIGINT => "SIGINT",
+        ObservableDiscipline::HUMINT => "HUMINT",
+        ObservableDiscipline::OSINT => "OSINT",
+        ObservableDiscipline::GEOINT => "GEOINT",
+        ObservableDiscipline::MASINT => "MASINT",
+        ObservableDiscipline::CYBINT => "CYBINT",
+        ObservableDiscipline::FININT => "FININT",
+        ObservableDiscipline::Physical => "Physical",
+        ObservableDiscipline::Custom(s) => s,
+    }
+}
+
+/// Escape user-supplied strings for inclusion in a Markdown table cell.
+///
+/// A literal `|` closes the cell early and breaks table rendering;
+/// `\n` / `\r` would split the row across multiple table rows. Both
+/// can appear in author-supplied scenario fields (phase / indicator
+/// names, custom discipline labels, escalation-rung action lists), so
+/// escape them at the boundary rather than relying on author hygiene.
+fn escape_md_cell(s: &str) -> String {
+    s.replace('\\', r"\\")
+        .replace('|', r"\|")
+        .replace(['\n', '\r'], " ")
+}
+
+// ---------------------------------------------------------------------------
+// Comparison report (Epic B --counterfactual / --compare)
+// ---------------------------------------------------------------------------
+
+/// Render a Markdown report for a counterfactual or `--compare` run.
+///
+/// Prepends a "Counterfactual Comparison" section to the usual
+/// per-scenario report so readers see the deltas first. `scenario` is
+/// the baseline; each variant summary is already included in `report`.
+pub fn render_comparison_markdown(report: &ComparisonReport, scenario: &Scenario) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "# Faultline Counterfactual Report");
+    let _ = writeln!(out, "## Baseline: {}", report.baseline_label);
+    let _ = writeln!(out);
+    let _ = writeln!(out, "- **Baseline runs:** {}", report.baseline.total_runs);
+    let _ = writeln!(
+        out,
+        "- **Baseline mean duration:** {:.1} ticks",
+        report.baseline.average_duration
+    );
+    let _ = writeln!(out);
+
+    for (variant, delta) in report.variants.iter().zip(report.deltas.iter()) {
+        render_variant_section(&mut out, variant, delta, &report.baseline);
+    }
+
+    let _ = writeln!(out, "---");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "# Baseline Full Report");
+    let _ = writeln!(out);
+
+    out.push_str(&render_markdown(&report.baseline, scenario));
+
+    out
+}
+
+fn render_variant_section(
+    out: &mut String,
+    variant: &crate::counterfactual::VariantSummary,
+    delta: &crate::counterfactual::ComparisonDelta,
+    baseline: &MonteCarloSummary,
+) {
+    let _ = writeln!(out, "## Variant: {}", variant.label);
+    if let Some(src) = &variant.source_scenario {
+        let _ = writeln!(out, "- **Source scenario:** {}", src);
+    }
+    if !variant.overrides.is_empty() {
+        let _ = writeln!(out, "- **Applied overrides:**");
+        for ov in &variant.overrides {
+            render_override_line(out, ov);
+        }
+    }
+    let _ = writeln!(
+        out,
+        "- **Mean duration delta:** {:+.2} ticks ({:.1} → {:.1})",
+        delta.mean_duration_delta, baseline.average_duration, variant.summary.average_duration
+    );
+    let _ = writeln!(out);
+
+    if !delta.win_rate_deltas.is_empty() {
+        let _ = writeln!(out, "### Win-rate deltas");
+        let _ = writeln!(out, "| Faction | Baseline | Variant | Δ (pp) |");
+        let _ = writeln!(out, "|---|---|---|---|");
+        for (fid, d) in &delta.win_rate_deltas {
+            let b = baseline.win_rates.get(fid).copied().unwrap_or(0.0);
+            let v = variant.summary.win_rates.get(fid).copied().unwrap_or(0.0);
+            let _ = writeln!(
+                out,
+                "| `{}` | {:.1}% | {:.1}% | **{:+.1}** |",
+                fid,
+                b * 100.0,
+                v * 100.0,
+                d * 100.0
+            );
+        }
+        let _ = writeln!(out);
+    }
+
+    if !delta.chain_deltas.is_empty() {
+        let _ = writeln!(out, "### Kill-chain deltas");
+        let _ = writeln!(
+            out,
+            "| Chain | Success Δ (pp) | Detection Δ (pp) | Cost-ratio Δ | Attacker spend Δ | Defender spend Δ |"
+        );
+        let _ = writeln!(out, "|---|---|---|---|---|---|");
+        for (cid, cd) in &delta.chain_deltas {
+            let _ = writeln!(
+                out,
+                "| `{}` | **{:+.1}** | **{:+.1}** | **{:+.1}×** | **${:+.0}** | **${:+.0}** |",
+                cid,
+                cd.overall_success_rate_delta * 100.0,
+                cd.detection_rate_delta * 100.0,
+                cd.cost_asymmetry_ratio_delta,
+                cd.attacker_spend_delta,
+                cd.defender_spend_delta
+            );
+        }
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
+            "_Positive success Δ = campaign more likely to succeed under the variant; positive detection Δ = defender more likely to catch it; positive cost-ratio Δ = defender paying more per attacker dollar. Both batches share the same seed and run count._"
+        );
+        let _ = writeln!(out);
+    }
+}
+
+fn render_override_line(out: &mut String, ov: &ParamOverride) {
+    let _ = writeln!(out, "  - `{}` = **{}**", ov.path, ov.value);
 }
 
 const METHODOLOGY_APPENDIX: &str = r#"
@@ -600,6 +957,7 @@ mod tests {
                 outputs: vec![],
                 branches: vec![],
                 parameter_confidence: Some(ConfidenceLevel::Low),
+                warning_indicators: vec![],
             },
         );
         scenario.kill_chains.insert(
@@ -633,5 +991,16 @@ mod tests {
             !md.contains("Author-Flagged Low-Confidence Parameters"),
             "section should be elided when nothing is flagged"
         );
+    }
+
+    #[test]
+    fn escape_md_cell_neutralizes_pipes_and_newlines() {
+        // Bare strings: pipe must be escaped, newlines collapsed, backslash
+        // doubled so the escape itself is not ambiguous.
+        assert_eq!(escape_md_cell("a|b"), r"a\|b");
+        assert_eq!(escape_md_cell("line1\nline2"), "line1 line2");
+        assert_eq!(escape_md_cell("line1\r\nline2"), "line1  line2");
+        assert_eq!(escape_md_cell(r"back\slash"), r"back\\slash");
+        assert_eq!(escape_md_cell("clean"), "clean");
     }
 }

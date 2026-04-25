@@ -1,8 +1,15 @@
 //! Sensitivity analysis: sweep one parameter across a range and observe
 //! how Monte Carlo outcomes change.
+//!
+//! The `set_param` / `get_param` path layer is also used by
+//! `--counterfactual <path>=<value>` in the CLI: Epic B's counterfactual
+//! mode patches the same dotted paths documented here, runs a Monte
+//! Carlo batch against the patched scenario, and compares the result
+//! to the baseline.
 
 use tracing::info;
 
+use faultline_types::ids::{KillChainId, PhaseId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{MonteCarloConfig, SensitivityResult};
 
@@ -75,9 +82,10 @@ pub fn run_sensitivity(
 // Parameter access
 // ---------------------------------------------------------------------------
 
-/// Supported parameter paths for sensitivity analysis.
+/// Supported parameter paths for sensitivity analysis and
+/// `--counterfactual` overrides.
 ///
-/// Format: `<section>.<id>.<field>` or `<section>.<field>`
+/// Format: `<section>.<id>[.<sub>...].<field>`
 ///
 /// Supported:
 /// - `faction.<faction_id>.initial_morale`
@@ -90,7 +98,13 @@ pub fn run_sensitivity(
 /// - `political_climate.institutional_trust`
 /// - `political_climate.media.disinformation_susceptibility`
 /// - `political_climate.media.state_control`
-fn get_param(scenario: &Scenario, param: &str) -> Result<f64, StatsError> {
+/// - `kill_chain.<chain_id>.phase.<phase_id>.base_success_probability`
+/// - `kill_chain.<chain_id>.phase.<phase_id>.detection_probability_per_tick`
+/// - `kill_chain.<chain_id>.phase.<phase_id>.attribution_difficulty`
+/// - `kill_chain.<chain_id>.phase.<phase_id>.prerequisite_success_boost`
+/// - `kill_chain.<chain_id>.phase.<phase_id>.cost.attacker_dollars`
+/// - `kill_chain.<chain_id>.phase.<phase_id>.cost.defender_dollars`
+pub fn get_param(scenario: &Scenario, param: &str) -> Result<f64, StatsError> {
     let parts: Vec<&str> = param.split('.').collect();
 
     match parts.as_slice() {
@@ -128,13 +142,36 @@ fn get_param(scenario: &Scenario, param: &str) -> Result<f64, StatsError> {
                 "unknown media field: '{field}'"
             ))),
         },
+        ["kill_chain", chain_id, "phase", phase_id, field] => {
+            let phase = get_phase(scenario, chain_id, phase_id)?;
+            match *field {
+                "base_success_probability" => Ok(phase.base_success_probability),
+                "detection_probability_per_tick" => Ok(phase.detection_probability_per_tick),
+                "attribution_difficulty" => Ok(phase.attribution_difficulty),
+                "prerequisite_success_boost" => Ok(phase.prerequisite_success_boost),
+                _ => Err(StatsError::InvalidConfig(format!(
+                    "unknown phase field '{field}' in kill_chain '{chain_id}' phase '{phase_id}'"
+                ))),
+            }
+        },
+        ["kill_chain", chain_id, "phase", phase_id, "cost", field] => {
+            let phase = get_phase(scenario, chain_id, phase_id)?;
+            match *field {
+                "attacker_dollars" => Ok(phase.cost.attacker_dollars),
+                "defender_dollars" => Ok(phase.cost.defender_dollars),
+                "attacker_resources" => Ok(phase.cost.attacker_resources),
+                _ => Err(StatsError::InvalidConfig(format!(
+                    "unknown phase cost field '{field}' in kill_chain '{chain_id}' phase '{phase_id}'"
+                ))),
+            }
+        },
         _ => Err(StatsError::InvalidConfig(format!(
-            "unsupported sensitivity parameter: '{param}'"
+            "unsupported parameter path: '{param}'"
         ))),
     }
 }
 
-fn set_param(scenario: &mut Scenario, param: &str, value: f64) -> Result<(), StatsError> {
+pub fn set_param(scenario: &mut Scenario, param: &str, value: f64) -> Result<(), StatsError> {
     let parts: Vec<&str> = param.split('.').collect();
 
     match parts.as_slice() {
@@ -182,14 +219,77 @@ fn set_param(scenario: &mut Scenario, param: &str, value: f64) -> Result<(), Sta
                 )));
             },
         },
+        ["kill_chain", chain_id, "phase", phase_id, field] => {
+            let phase = get_phase_mut(scenario, chain_id, phase_id)?;
+            match *field {
+                "base_success_probability" => phase.base_success_probability = value,
+                "detection_probability_per_tick" => phase.detection_probability_per_tick = value,
+                "attribution_difficulty" => phase.attribution_difficulty = value,
+                "prerequisite_success_boost" => phase.prerequisite_success_boost = value,
+                _ => {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "unknown phase field '{field}' in kill_chain '{chain_id}' phase '{phase_id}'"
+                    )));
+                },
+            }
+        },
+        ["kill_chain", chain_id, "phase", phase_id, "cost", field] => {
+            let phase = get_phase_mut(scenario, chain_id, phase_id)?;
+            match *field {
+                "attacker_dollars" => phase.cost.attacker_dollars = value,
+                "defender_dollars" => phase.cost.defender_dollars = value,
+                "attacker_resources" => phase.cost.attacker_resources = value,
+                _ => {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "unknown phase cost field '{field}' in kill_chain '{chain_id}' phase '{phase_id}'"
+                    )));
+                },
+            }
+        },
         _ => {
             return Err(StatsError::InvalidConfig(format!(
-                "unsupported sensitivity parameter: '{param}'"
+                "unsupported parameter path: '{param}'"
             )));
         },
     }
 
     Ok(())
+}
+
+fn get_phase<'a>(
+    scenario: &'a Scenario,
+    chain_id: &str,
+    phase_id: &str,
+) -> Result<&'a faultline_types::campaign::CampaignPhase, StatsError> {
+    let cid = KillChainId::from(chain_id);
+    let chain = scenario
+        .kill_chains
+        .get(&cid)
+        .ok_or_else(|| StatsError::InvalidConfig(format!("kill chain '{chain_id}' not found")))?;
+    let pid = PhaseId::from(phase_id);
+    chain.phases.get(&pid).ok_or_else(|| {
+        StatsError::InvalidConfig(format!(
+            "phase '{phase_id}' not found in kill chain '{chain_id}'"
+        ))
+    })
+}
+
+fn get_phase_mut<'a>(
+    scenario: &'a mut Scenario,
+    chain_id: &str,
+    phase_id: &str,
+) -> Result<&'a mut faultline_types::campaign::CampaignPhase, StatsError> {
+    let cid = KillChainId::from(chain_id);
+    let chain = scenario
+        .kill_chains
+        .get_mut(&cid)
+        .ok_or_else(|| StatsError::InvalidConfig(format!("kill chain '{chain_id}' not found")))?;
+    let pid = PhaseId::from(phase_id);
+    chain.phases.get_mut(&pid).ok_or_else(|| {
+        StatsError::InvalidConfig(format!(
+            "phase '{phase_id}' not found in kill chain '{chain_id}'"
+        ))
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +469,7 @@ mod tests {
             intelligence: 0.5,
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
+            escalation_rules: None,
         }
     }
 
@@ -586,5 +687,203 @@ mod tests {
                 "each step should run 2 Monte Carlo runs"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Epic B kill-chain path tests
+    //
+    // The same `set_param` / `get_param` paths are used by
+    // `--counterfactual` overrides; these tests pin the expanded path
+    // grammar and the error messages that surface when a path is
+    // malformed. The minimal scenario doesn't carry kill chains, so
+    // these tests build a small chain on top of it.
+    // -----------------------------------------------------------------------
+
+    use faultline_types::campaign::{CampaignPhase, KillChain, PhaseCost};
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    fn scenario_with_chain() -> Scenario {
+        let mut scenario = minimal_scenario();
+        let chain_id = KillChainId::from("alpha");
+        let phase_id = PhaseId::from("recon");
+        let mut phases = std::collections::BTreeMap::new();
+        phases.insert(
+            phase_id.clone(),
+            CampaignPhase {
+                id: phase_id.clone(),
+                name: "Recon".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 0.7,
+                min_duration: 1,
+                max_duration: 2,
+                detection_probability_per_tick: 0.05,
+                prerequisite_success_boost: 0.1,
+                attribution_difficulty: 0.6,
+                cost: PhaseCost {
+                    attacker_dollars: 1_000.0,
+                    defender_dollars: 50_000.0,
+                    attacker_resources: 1.5,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+            },
+        );
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id,
+                name: "Alpha".into(),
+                description: String::new(),
+                attacker: FactionId::from("gov"),
+                target: FactionId::from("rebel"),
+                entry_phase: phase_id,
+                phases,
+            },
+        );
+        scenario
+    }
+
+    #[test]
+    fn get_set_kill_chain_phase_fields_roundtrip() {
+        let scenario = scenario_with_chain();
+        let cases = [
+            ("kill_chain.alpha.phase.recon.base_success_probability", 0.7),
+            (
+                "kill_chain.alpha.phase.recon.detection_probability_per_tick",
+                0.05,
+            ),
+            ("kill_chain.alpha.phase.recon.attribution_difficulty", 0.6),
+            (
+                "kill_chain.alpha.phase.recon.prerequisite_success_boost",
+                0.1,
+            ),
+            (
+                "kill_chain.alpha.phase.recon.cost.attacker_dollars",
+                1_000.0,
+            ),
+            (
+                "kill_chain.alpha.phase.recon.cost.defender_dollars",
+                50_000.0,
+            ),
+            ("kill_chain.alpha.phase.recon.cost.attacker_resources", 1.5),
+        ];
+        for (path, expected) in cases {
+            let v = get_param(&scenario, path).unwrap_or_else(|e| panic!("get {path}: {e}"));
+            assert!(
+                (v - expected).abs() < 1e-9,
+                "{path} expected {expected}, got {v}"
+            );
+
+            let mut s = scenario.clone();
+            set_param(&mut s, path, 0.42).unwrap_or_else(|e| panic!("set {path}: {e}"));
+            let v2 = get_param(&s, path).expect("get after set");
+            assert!((v2 - 0.42).abs() < 1e-9, "{path} should roundtrip 0.42");
+        }
+    }
+
+    #[test]
+    fn get_kill_chain_path_errors_include_chain_and_phase_context() {
+        let scenario = scenario_with_chain();
+
+        // Missing chain — error must name the chain we were looking for.
+        let err = get_param(
+            &scenario,
+            "kill_chain.does_not_exist.phase.recon.base_success_probability",
+        )
+        .expect_err("missing chain should error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("does_not_exist"),
+            "error must name the missing chain; got: {msg}"
+        );
+
+        // Missing phase — error must name the phase.
+        let err = get_param(
+            &scenario,
+            "kill_chain.alpha.phase.no_such_phase.base_success_probability",
+        )
+        .expect_err("missing phase should error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no_such_phase"),
+            "error must name the missing phase; got: {msg}"
+        );
+
+        // Unknown phase field — error must name the chain and phase
+        // along with the bad field, so the user knows where to look.
+        let err = get_param(&scenario, "kill_chain.alpha.phase.recon.no_such_field")
+            .expect_err("unknown field should error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no_such_field") && msg.contains("alpha") && msg.contains("recon"),
+            "error must name the chain, phase, and bad field; got: {msg}"
+        );
+
+        // Unknown cost field — same expectation under the .cost.<x> branch.
+        let err = get_param(
+            &scenario,
+            "kill_chain.alpha.phase.recon.cost.no_such_cost_field",
+        )
+        .expect_err("unknown cost field should error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no_such_cost_field") && msg.contains("alpha") && msg.contains("recon"),
+            "error must name chain/phase/field for cost branch; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn set_kill_chain_path_errors_include_chain_and_phase_context() {
+        // Same expectations on the mutating side.
+        let mut scenario = scenario_with_chain();
+
+        let err = set_param(
+            &mut scenario,
+            "kill_chain.alpha.phase.recon.no_such_field",
+            0.5,
+        )
+        .expect_err("unknown field should error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no_such_field") && msg.contains("alpha") && msg.contains("recon"),
+            "set_param error must name the chain, phase, and bad field; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn unsupported_top_level_path_errors() {
+        let scenario = scenario_with_chain();
+        let err = get_param(&scenario, "totally_unknown.path").expect_err("should error");
+        assert!(format!("{err}").contains("unsupported parameter path"));
+    }
+
+    #[test]
+    fn sensitivity_can_sweep_kill_chain_phase_parameter() {
+        // End-to-end: the sensitivity sweeper must accept the new
+        // kill_chain phase paths so the same harness can produce a
+        // detection-probability sweep without code changes.
+        let scenario = scenario_with_chain();
+        let config = MonteCarloConfig {
+            num_runs: 3,
+            seed: Some(42),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        let result = run_sensitivity(
+            &scenario,
+            &config,
+            "kill_chain.alpha.phase.recon.detection_probability_per_tick",
+            0.0,
+            0.5,
+            3,
+        )
+        .expect("sweep should succeed against a kill-chain phase parameter");
+        assert_eq!(result.outcomes.len(), 3);
+        assert!((result.baseline_value - 0.05).abs() < 1e-9);
     }
 }

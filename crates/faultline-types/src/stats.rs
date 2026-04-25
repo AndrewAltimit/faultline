@@ -11,6 +11,14 @@ pub struct MonteCarloConfig {
     pub num_runs: u32,
     pub seed: Option<u64>,
     pub collect_snapshots: bool,
+    /// Reserved for future parallel execution inside `MonteCarloRunner::run`.
+    ///
+    /// Currently unused: the in-crate runner is unconditionally sequential
+    /// (parallelism in the native CLI is handled by `faultline-cli` via a
+    /// rayon pool over `Engine::run` calls, not via this flag), so callers
+    /// should set this to `false`. The field is kept on the struct so that
+    /// a future parallel runner can be wired in without a breaking schema
+    /// change.
     pub parallel: bool,
 }
 

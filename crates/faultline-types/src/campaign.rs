@@ -93,6 +93,70 @@ pub struct CampaignPhase {
     /// stability. `None` = author has not rated it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parameter_confidence: Option<ConfidenceLevel>,
+    /// IWI / IOC library — observable indicators the defender could
+    /// monitor for to detect this phase before completion. Declarative
+    /// in this iteration: not consumed by the detection roll, but
+    /// surfaced in the Countermeasure Analysis report section so
+    /// analysts can reason about which observables a monitoring
+    /// posture would have to cover.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warning_indicators: Vec<WarningIndicator>,
+}
+
+/// An indicator-and-warning entry attached to a campaign phase.
+///
+/// Models a single observable the defender could monitor for to catch
+/// the adversary in this phase. The `detectability` field captures
+/// how reliably the observable is picked up *if* the defender is
+/// actually looking for it; `time_to_detect_ticks` captures the
+/// latency from phase start to reliable detection. Both are aggregate
+/// statistical descriptors expected to be sourceable from OSINT (e.g.
+/// published MTTD figures for a given monitoring discipline).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WarningIndicator {
+    /// Stable identifier (e.g. "beaconing_rf_emissions").
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Collection discipline required to see the observable.
+    pub observable: ObservableDiscipline,
+    /// Probability that an adequately-resourced monitor catches the
+    /// observable *during* the phase, in `[0.0, 1.0]`.
+    #[serde(default)]
+    pub detectability: f64,
+    /// Expected latency from phase activation to reliable detection,
+    /// in simulation ticks. `None` = no published estimate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to_detect_ticks: Option<u32>,
+    /// Rough annual dollar cost of a monitoring posture that covers
+    /// this observable, if the author has a sourceable estimate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monitoring_cost_annual: Option<f64>,
+}
+
+/// Collection discipline a warning indicator requires.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ObservableDiscipline {
+    /// Signals intelligence — RF, network, wireless emissions.
+    SIGINT,
+    /// Human intelligence — sources, tips, insider reports.
+    HUMINT,
+    /// Open-source intelligence — public publications, social media.
+    OSINT,
+    /// Geospatial / imagery intelligence.
+    GEOINT,
+    /// Measurement and signature intelligence — non-imaging sensors,
+    /// chemical / radiological / environmental.
+    MASINT,
+    /// Cyber intelligence — endpoint, network, or cloud telemetry.
+    CYBINT,
+    /// Financial intelligence — funds flow, procurement records.
+    FININT,
+    /// Physical inspection — on-site examination.
+    Physical,
+    /// Anything that does not fit the above.
+    Custom(String),
 }
 
 fn default_attribution() -> f64 {

@@ -25,6 +25,62 @@ pub struct Faction {
     pub diplomacy: Vec<DiplomaticStance>,
     #[serde(default)]
     pub doctrine: Doctrine,
+    /// Declarative doctrine / rules-of-engagement contract describing
+    /// how this faction is *permitted* to escalate. Reports surface the
+    /// ladder in Policy Implications; the engine itself does not
+    /// currently enforce these — they document the decision-maker's
+    /// standing orders so analysts can see when a counterfactual
+    /// assumes the faction would violate its own doctrine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub escalation_rules: Option<EscalationRules>,
+}
+
+/// A scenario-author-asserted escalation ladder for a faction.
+///
+/// Purely declarative in this iteration — the engine does not consult
+/// it when selecting actions. Surfaced in reports so analysts can see
+/// which counterfactuals implicitly require the faction to cross a
+/// doctrinal threshold. A later engine iteration may enforce the
+/// ladder, at which point this type becomes load-bearing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EscalationRules {
+    /// One-line summary of the faction's doctrine / ROE stance.
+    #[serde(default)]
+    pub posture: String,
+    /// Ordered rungs the faction is permitted to climb. Earlier rungs
+    /// are lower escalation; later rungs are higher. `None` on
+    /// `trigger_tension` = rung is a permanent standing posture.
+    #[serde(default)]
+    pub ladder: Vec<EscalationRung>,
+    /// Tension level above which the faction will *not* voluntarily
+    /// de-escalate without an external event. Declarative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub de_escalation_floor: Option<f64>,
+}
+
+/// A single rung on an escalation ladder.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EscalationRung {
+    /// Stable identifier (e.g. "grey_zone", "kinetic", "strategic").
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Political tension at or above which the faction is *authorized*
+    /// to operate at this rung. `None` = always authorized (e.g. a
+    /// peacetime-permitted information-ops posture).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_tension: Option<f64>,
+    /// Actions the faction is permitted to take at this rung. Free
+    /// text — authors describe capabilities (e.g. "kinetic strikes
+    /// against military targets outside own territory").
+    #[serde(default)]
+    pub permitted_actions: Vec<String>,
+    /// Actions explicitly prohibited at this rung. Useful for
+    /// documenting red lines ("no strikes against nuclear
+    /// infrastructure").
+    #[serde(default)]
+    pub prohibited_actions: Vec<String>,
 }
 
 /// What kind of faction this is.
