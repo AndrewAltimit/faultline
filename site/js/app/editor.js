@@ -275,8 +275,12 @@ export class Editor {
   }
 
   _showDiffModal(currentToml, baselines) {
-    // Remove any existing modal so repeated clicks just refresh.
-    document.querySelectorAll('.diff-modal').forEach((el) => el.remove());
+    // If a previous modal is still open, route its dismissal through the
+    // saved close() so its keydown listener gets unregistered. Removing
+    // the DOM node directly would orphan the handler on document.
+    if (this._closeDiffModal) {
+      this._closeDiffModal();
+    }
 
     const modal = document.createElement('div');
     modal.className = 'diff-modal';
@@ -317,15 +321,20 @@ export class Editor {
 
     // Single close path so the document-level keydown listener gets
     // unregistered no matter how the modal is dismissed (X button,
-    // backdrop click, Escape). Without this the listener stayed attached
-    // after modal.remove() and accumulated across repeated open/close.
+    // backdrop click, Escape, or another _showDiffModal call). Without
+    // this the listener stayed attached after modal.remove() and
+    // accumulated across repeated open/close.
     const escHandler = (ev) => {
       if (ev.key === 'Escape') close();
     };
     const close = () => {
       document.removeEventListener('keydown', escHandler);
       modal.remove();
+      if (this._closeDiffModal === close) {
+        this._closeDiffModal = null;
+      }
     };
+    this._closeDiffModal = close;
     modal.querySelector('.diff-modal-close').addEventListener('click', close);
     modal.addEventListener('click', (e) => {
       // Backdrop click closes; clicks inside the card don't.

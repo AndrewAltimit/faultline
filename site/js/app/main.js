@@ -132,7 +132,8 @@ async function bootstrap() {
           editor.setText(toml);
           const select = document.getElementById('preset-select');
           if (select) select.value = defaultPath;
-          editor.setDiffBaseline(toml, 'us_institutional_fracture.toml');
+          const label = select?.selectedOptions?.[0]?.textContent?.trim() || defaultPath;
+          editor.setDiffBaseline(toml, label);
           editor.loadAndRun();
         }
       } catch {
