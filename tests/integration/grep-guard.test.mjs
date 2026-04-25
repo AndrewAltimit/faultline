@@ -113,10 +113,20 @@ test('grep-guard: does not match "ETRA" inside other words', () => {
   // The \b word boundary in the regex must prevent accidental matches
   // inside legitimate words like "penetration", "getrandom", etc.
   // Without the boundary, half the engine would trigger.
-  plant('src/lib.rs', `
-    let social_media_penetration = 0.5;
-    use rand::getrandom;
-  `);
+  //
+  // Fixtures must contain the *uppercase* substring "ETRA" inside
+  // another word — otherwise the test would pass for the wrong reason
+  // (case mismatch alone, since the regex is case-sensitive). The
+  // identifiers below embed ETRA between word characters, which is
+  // exactly what \b should reject.
+  plant(
+    'src/lib.rs',
+    `
+    let SPETRAL_VALUE = 1.0;       // P-E-T-R-A-L: \\b should reject (P|E and A|L are word/word).
+    let XETRAY_FIELD = 2.0;        // X-E-T-R-A-Y: same.
+    const ETRACTION_RATE = 0.42;   // E-T-R-A-C: \\b should reject (A|C is word/word).
+    `,
+  );
   const { status } = runGuard();
   assert.equal(status, 0);
 });
@@ -143,6 +153,11 @@ test('grep-guard: ignores file extensions outside the include list', () => {
   // Binary files, vendored libraries, lockfiles, and the like get
   // skipped by extension. Putting a banned pattern in a `.lock` file
   // shouldn't fail the build.
+  //
+  // Note: `.lock` is excluded *by omission* — the guard scans only the
+  // extensions in `INCLUDES` (.rs, .toml, .md, .html, .css, .js, .mjs,
+  // .yml, .yaml, .sh). There is no explicit `--exclude=*.lock`. Adding
+  // `.lock` to the include list would break this test.
   plant('Cargo.lock', '# version = "ETRA"');
   const { status } = runGuard();
   assert.equal(status, 0);

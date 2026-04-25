@@ -53,6 +53,12 @@ test('every scenario file is byte-identical via symlink and source', () => {
   // If the symlink ever points at a different snapshot of the
   // scenarios directory (e.g. someone deleted and recreated the link
   // pointing somewhere else), per-file byte comparison surfaces it.
+  //
+  // The `.toml` filter is intentional: scenarios are TOML by contract,
+  // and the listing-membership test below is what catches non-TOML
+  // additions. If the scenarios directory grows a different file type
+  // in the future (e.g. JSON, CSV companion data), broaden this filter
+  // accordingly.
   const sourceFiles = readdirSync(sourceDir).filter((f) => f.endsWith('.toml')).sort();
   assert.ok(sourceFiles.length > 0, 'scenarios/ should contain at least one .toml file');
 
