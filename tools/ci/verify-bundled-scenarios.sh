@@ -36,7 +36,16 @@ echo "[verify-bundled] building faultline-cli..."
 cargo build --release -p faultline-cli >/dev/null
 BIN="${REPO_ROOT}/target/release/faultline"
 
+# `nullglob` so an empty `scenarios/` directory yields an empty array
+# instead of the literal string `scenarios/*.toml`. Without this, a
+# sparse checkout would produce a confusing "file not found" error
+# for `*` rather than a clean exit.
+shopt -s nullglob
 scenarios=(scenarios/*.toml)
+if [[ ${#scenarios[@]} -eq 0 ]]; then
+    echo "[verify-bundled] no scenarios found under scenarios/; nothing to verify"
+    exit 0
+fi
 fail=0
 
 for scenario in "${scenarios[@]}"; do
