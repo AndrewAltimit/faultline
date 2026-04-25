@@ -50,7 +50,7 @@ function fmtSignedFloat(d, digits = 2) {
 function fmtCi(ci) {
   if (!ci || !Array.isArray(ci) || ci.length !== 2) return '';
   const [lo, hi] = ci;
-  return `[${(lo * 100).toFixed(1)}–${(hi * 100).toFixed(1)}%]`;
+  return `[${(lo * 100).toFixed(1)}%–${(hi * 100).toFixed(1)}%]`;
 }
 
 function deltaClass(d) {
@@ -207,7 +207,7 @@ export function renderComparison(baseline, variant) {
   if (factionIds.length) {
     html += '<div class="chart-title" style="margin-top: 12px;">Win Rates</div>';
     html += '<table class="cmp-table"><thead><tr>';
-    html += '<th></th>';
+    html += '<th scope="col">Faction</th>';
     html += renderHeaderCell(baseline.label, '95% Wilson CI');
     html += renderHeaderCell(variant.label, '95% Wilson CI');
     html += renderHeaderCell('Δ', 'variant − baseline');

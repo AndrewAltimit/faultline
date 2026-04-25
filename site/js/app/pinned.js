@@ -94,7 +94,14 @@ export class PinnedStore {
   /** Subscribe to changes. Returns an unsubscribe fn. */
   subscribe(fn) {
     this._listeners.add(fn);
-    fn(this._pins.slice());
+    // Mirror the try/catch in _emit so an exception thrown by the
+    // initial fire can't escape to the caller's setup code (which
+    // would otherwise leave the rest of the dashboard half-wired).
+    try {
+      fn(this._pins.slice());
+    } catch (e) {
+      console.error('PinnedStore: initial listener fire threw:', e);
+    }
     return () => this._listeners.delete(fn);
   }
 
@@ -107,8 +114,11 @@ export class PinnedStore {
   }
 
   /**
-   * Add a new pinned result. `label` defaults to the scenario name plus
-   * the pin sequence number. Returns the created pin.
+   * Add a new pinned result. The default label suffix `(N)` is just a
+   * disambiguating hint based on the *current* pin count — it can repeat
+   * across the lifetime of the store if pins are removed in between, so
+   * don't treat it as a stable index. The id field is the only stable
+   * identifier.
    */
   add({ scenarioName, toml, summary, label }) {
     const pin = {

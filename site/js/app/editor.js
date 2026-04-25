@@ -312,21 +312,23 @@ export class Editor {
     select.addEventListener('change', update);
     update();
 
-    const close = () => modal.remove();
+    // Single close path so the document-level keydown listener gets
+    // unregistered no matter how the modal is dismissed (X button,
+    // backdrop click, Escape). Without this the listener stayed attached
+    // after modal.remove() and accumulated across repeated open/close.
+    const escHandler = (ev) => {
+      if (ev.key === 'Escape') close();
+    };
+    const close = () => {
+      document.removeEventListener('keydown', escHandler);
+      modal.remove();
+    };
     modal.querySelector('.diff-modal-close').addEventListener('click', close);
     modal.addEventListener('click', (e) => {
       // Backdrop click closes; clicks inside the card don't.
       if (e.target === modal) close();
     });
-    document.addEventListener(
-      'keydown',
-      function escHandler(ev) {
-        if (ev.key === 'Escape') {
-          close();
-          document.removeEventListener('keydown', escHandler);
-        }
-      },
-    );
+    document.addEventListener('keydown', escHandler);
   }
 
   _switchTab(tab) {

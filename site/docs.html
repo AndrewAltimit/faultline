@@ -58,6 +58,7 @@
         <h4>Interfaces</h4>
         <a href="#cli">CLI Reference</a>
         <a href="#wasm">WASM API</a>
+        <a href="#simulator-ui">Simulator UI</a>
         <h4>More</h4>
         <a href="#ci-cd">CI/CD Pipeline</a>
         <a href="#github">GitHub README</a>
@@ -458,6 +459,36 @@ const results = await run_batch(handle, 500, (done, total) =&gt; {
 console.log(results.outcomes);</code></pre>
         </section>
 
+        <!-- Simulator UI -->
+        <section id="simulator-ui" class="docs-section">
+          <div class="section-label">Interfaces</div>
+          <h2>Simulator UI</h2>
+          <p>The browser app at <a href="app.html">/app.html</a> exposes the same scenarios and Monte Carlo runner as the CLI, plus an analyst workflow for capturing and comparing results without re-loading TOML.</p>
+
+          <h3>Pin Results</h3>
+          <p>After a Monte Carlo batch finishes, click <strong>Pin</strong> next to <em>Run MC</em> to save the result. Pins persist in <code>localStorage</code> (key <code>faultline:pinned-mc:v1</code>) so they survive page reloads. The store caps at 8 pins and drops the oldest when the cap is reached or when the browser quota is hit.</p>
+          <p>Each pin captures the scenario name, the TOML at the time of pinning, and the trimmed Monte Carlo summary (faction win rates, Wilson CIs, kill-chain feasibility, mean duration). Per-run snapshot arrays are stripped before persistence to stay under the storage quota.</p>
+
+          <h3>Side-by-side Comparison</h3>
+          <p>Click <strong>Set A</strong> on one pin and <strong>Set B</strong> on another, then <strong>Compare A vs B</strong>. The panel renders deltas computed exactly the same way as <code>--counterfactual</code> / <code>--compare</code> on the CLI &mdash; <em>variant minus baseline</em>, with factions or chains present on only one side defaulting the missing side to zero so the asymmetry is surfaced rather than silently dropped.</p>
+          <p>Surfaced metrics:</p>
+          <ul>
+            <li>Per-faction win-rate deltas with both sides' 95% Wilson CIs.</li>
+            <li>Per-kill-chain success and detection rate deltas.</li>
+            <li>Per-kill-chain cost-asymmetry ratio deltas.</li>
+            <li>Mean campaign duration delta.</li>
+          </ul>
+          <p>If the two pinned batches were run with different <code>total_runs</code>, a banner warns that the deltas mix scenario and sampling variance &mdash; the analyst should re-pin both at the same run count for a clean comparison.</p>
+
+          <h3>Scenario Diff Viewer</h3>
+          <p>Click <strong>Diff</strong> next to <em>Validate</em> in the editor to open a unified-diff modal. The dropdown picks the baseline:</p>
+          <ul>
+            <li>The <em>last loaded preset / import</em> &mdash; useful for "what have I changed since the scenario was loaded?"</li>
+            <li>Any <em>pinned scenario</em> &mdash; useful for "what's different between this run and the one I pinned earlier?"</li>
+          </ul>
+          <p>The diff is line-oriented with three lines of context, computed via an LCS table walk. Adjacent changes merge into a single hunk; distant changes split into separate hunks with their own <code>@@ -a,b +c,d @@</code> headers. Plain HTML escaping protects against TOML content that happens to contain markup.</p>
+        </section>
+
         <!-- CI/CD -->
         <section id="ci-cd" class="docs-section">
           <div class="section-label">Infrastructure</div>
@@ -474,6 +505,7 @@ console.log(results.outcomes);</code></pre>
                 <tr><td>3. Test</td><td><code>cargo test</code></td><td>Unit, integration, and property tests</td></tr>
                 <tr><td>4. Build</td><td><code>cargo build --release</code></td><td>Release binary compilation</td></tr>
                 <tr><td>5. Audit</td><td><code>cargo deny check</code></td><td>License and advisory checking</td></tr>
+                <tr><td>6. JS Tests</td><td><code>node --test tests/integration/*.test.mjs</code></td><td>Pure-logic frontend modules (pinned store, comparison deltas, diff renderer, share roundtrip, heatmap)</td></tr>
               </tbody>
             </table>
           </div>
