@@ -78,7 +78,10 @@ pub struct VariantSummary {
     /// Applied parameter overrides (empty for `--compare`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overrides: Vec<ParamOverride>,
-    /// Path to the second TOML if this variant came from `--compare`.
+    /// Display name of the second scenario (from its TOML `[meta] name`)
+    /// if this variant came from `--compare`. This is a human-readable
+    /// label, not a filesystem path — consumers scripting against the
+    /// JSON output should not treat it as a path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_scenario: Option<String>,
     pub summary: MonteCarloSummary,

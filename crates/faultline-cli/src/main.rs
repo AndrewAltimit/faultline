@@ -192,8 +192,8 @@ fn main() -> Result<()> {
         return run_counterfactual_analysis(&cli, &scenario);
     }
 
-    if let Some(alt_path) = cli.compare.clone() {
-        return run_compare_analysis(&cli, &scenario, &alt_path);
+    if let Some(ref alt_path) = cli.compare {
+        return run_compare_analysis(&cli, &scenario, alt_path);
     }
 
     // Monte Carlo run.
@@ -412,9 +412,16 @@ fn write_comparison_outputs(
     //   - `csv`  → CSV does not apply here, so we emit both as a fallback
     //              and warn that `--format csv` is a no-op for comparisons
     //   - `both` → emit both (default behaviour)
-    let want_json = matches!(cli.format, OutputFormat::Json | OutputFormat::Both)
-        || matches!(cli.format, OutputFormat::Csv);
-    let want_md = matches!(cli.format, OutputFormat::Both | OutputFormat::Csv);
+    //
+    // JSON is the canonical structured artifact for comparison output and
+    // is emitted unconditionally for every current `OutputFormat`. We use
+    // an exhaustive `match` so adding a new variant forces a deliberate
+    // decision here rather than silently producing no output.
+    let (want_json, want_md) = match cli.format {
+        OutputFormat::Json => (true, false),
+        OutputFormat::Both => (true, true),
+        OutputFormat::Csv => (true, true),
+    };
 
     if matches!(cli.format, OutputFormat::Csv) {
         tracing::warn!(
