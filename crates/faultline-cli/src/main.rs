@@ -743,6 +743,21 @@ fn run_verify(cli: &Cli, scenario: &Scenario, manifest_path: &Path) -> Result<()
         );
     }
 
+    // Self-integrity: re-derive the manifest's own hash before doing
+    // any expensive replay work. Catches silent field tampering
+    // (swapped `output_hash`, inflated `num_runs`) where the replay
+    // would otherwise still match a manipulated `output_hash`.
+    let recomputed_self_hash = manifest::compute_manifest_hash(&saved)
+        .with_context(|| "failed to recompute manifest self-hash")?;
+    if recomputed_self_hash != saved.manifest_hash {
+        anyhow::bail!(
+            "manifest self-hash mismatch:\n  recorded:   {}\n  recomputed: {}\nThe manifest file at {} has been altered after emission.",
+            saved.manifest_hash,
+            recomputed_self_hash,
+            manifest_path.display(),
+        );
+    }
+
     info!(
         manifest_hash = %saved.manifest_hash,
         engine_version = %saved.engine_version,
@@ -845,6 +860,26 @@ fn replay_manifest_mode(
             alt_scenario_hash,
         } => {
             let alt_path = Path::new(alt_scenario_path);
+            // Reject absolute paths and parent-traversal segments so a
+            // crafted manifest cannot make verify read arbitrary files
+            // (e.g. `/etc/passwd`, `../../secret.toml`). Legitimate
+            // emissions always store a CWD-relative path that descends
+            // into a scenario directory.
+            if alt_path.is_absolute() {
+                anyhow::bail!(
+                    "alt scenario path in manifest is absolute, refusing to read for safety: {}",
+                    alt_scenario_path
+                );
+            }
+            if alt_path
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+            {
+                anyhow::bail!(
+                    "alt scenario path in manifest contains parent traversal, refusing to read for safety: {}",
+                    alt_scenario_path
+                );
+            }
             let alt_toml = fs::read_to_string(alt_path)
                 .with_context(|| format!("failed to read alt scenario: {}", alt_path.display()))?;
             let alt_scenario: Scenario =

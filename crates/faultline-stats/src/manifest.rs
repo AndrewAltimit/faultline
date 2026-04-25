@@ -124,8 +124,10 @@ pub struct RunManifest {
     pub manifest_version: u32,
     /// Faultline engine version that produced the run.
     pub engine_version: String,
-    /// Path to the scenario file as invoked. Informational; the
-    /// authoritative identity check is `scenario_hash`.
+    /// Path to the scenario file as invoked. Informational only —
+    /// excluded from `manifest_hash` so the same logical run invoked
+    /// from different working directories produces the same citation
+    /// hash. The authoritative identity check is `scenario_hash`.
     pub scenario_path: String,
     /// SHA-256 hex of the canonical JSON serialization of the parsed
     /// `Scenario`.
@@ -213,17 +215,23 @@ pub fn build_manifest(
 }
 
 /// Compute the manifest's self-hash. Excludes `manifest_hash` (would
-/// be self-referential) and `host_platform` (varies across the
-/// determinism contract's allowed boundary).
-fn compute_manifest_hash(manifest: &RunManifest) -> Result<String, serde_json::Error> {
-    // Strip the two excluded fields by serializing a parallel struct.
-    // Embedding this as a #[serde(skip)] on RunManifest itself would
-    // also skip the field on the wire, defeating the purpose.
+/// be self-referential), `host_platform` (varies across the determinism
+/// contract's allowed boundary), and `scenario_path` (path-sensitive:
+/// the same logical run invoked as `./scenarios/x.toml` vs
+/// `scenarios/x.toml` must produce the same citation hash).
+///
+/// `pub` so the verify path in `faultline-cli` can re-derive the saved
+/// manifest's self-hash before doing an expensive replay — that's the
+/// only check that catches silent tampering of fields like `output_hash`
+/// or `num_runs` before replay.
+pub fn compute_manifest_hash(manifest: &RunManifest) -> Result<String, serde_json::Error> {
+    // Strip the excluded fields by serializing a parallel struct.
+    // Embedding this as #[serde(skip)] on RunManifest itself would
+    // also skip the fields on the wire, defeating the purpose.
     #[derive(Serialize)]
     struct ManifestForHashing<'a> {
         manifest_version: u32,
         engine_version: &'a str,
-        scenario_path: &'a str,
         scenario_hash: &'a str,
         mc_config: &'a ManifestMcConfig,
         mode: &'a ManifestMode,
@@ -232,7 +240,6 @@ fn compute_manifest_hash(manifest: &RunManifest) -> Result<String, serde_json::E
     let view = ManifestForHashing {
         manifest_version: manifest.manifest_version,
         engine_version: &manifest.engine_version,
-        scenario_path: &manifest.scenario_path,
         scenario_hash: &manifest.scenario_hash,
         mc_config: &manifest.mc_config,
         mode: &manifest.mode,
@@ -290,7 +297,7 @@ pub fn verify_manifest(saved: &RunManifest, replayed: &RunManifest) -> VerifyRes
     }
     if saved.mode != replayed.mode {
         return VerifyResult::Mismatch {
-            reason: "mode: saved/replayed differ in run kind or overrides".to_string(),
+            reason: format!("mode: saved={:?} replayed={:?}", saved.mode, replayed.mode),
         };
     }
     if saved.output_hash != replayed.output_hash {
@@ -380,6 +387,37 @@ mod tests {
         )
         .expect("build");
         assert_ne!(m1.manifest_hash, m2.manifest_hash);
+    }
+
+    #[test]
+    fn manifest_hash_independent_of_scenario_path() {
+        // Citation stability: invoking the same scenario via different
+        // paths (`./scenarios/x.toml` vs `scenarios/x.toml` vs an
+        // absolute path) must produce the same `manifest_hash`. The
+        // authoritative identity check is `scenario_hash` over the
+        // parsed contents.
+        let mc = ManifestMcConfig {
+            num_runs: 100,
+            base_seed: 42,
+            collect_snapshots: false,
+        };
+        let m1 = build_manifest(
+            "./scenarios/x.toml".into(),
+            "deadbeef".into(),
+            mc.clone(),
+            ManifestMode::MonteCarlo,
+            "cafebabe".into(),
+        )
+        .expect("build");
+        let m2 = build_manifest(
+            "/abs/path/to/scenarios/x.toml".into(),
+            "deadbeef".into(),
+            mc,
+            ManifestMode::MonteCarlo,
+            "cafebabe".into(),
+        )
+        .expect("build");
+        assert_eq!(m1.manifest_hash, m2.manifest_hash);
     }
 
     #[test]
