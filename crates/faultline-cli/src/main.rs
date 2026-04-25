@@ -93,6 +93,11 @@ struct Cli {
     /// counterfactual against an alternative scenario, run two
     /// separate `--counterfactual` invocations and diff the JSON
     /// outputs.
+    ///
+    /// Note: `--jobs` is currently ignored in this mode; both batches
+    /// run sequentially via `MonteCarloRunner::run` to keep delta
+    /// determinism trivially auditable. Plain Monte Carlo runs (no
+    /// `--counterfactual` / `--compare`) still parallelise via rayon.
     #[arg(
         long = "counterfactual",
         value_name = "PATH=VALUE",
@@ -105,6 +110,9 @@ struct Cli {
     /// Runs baseline and alt scenarios with matching seed / run
     /// count; output includes a comparison report with per-faction
     /// win rate deltas and per-chain feasibility deltas.
+    ///
+    /// Note: `--jobs` is currently ignored in this mode; both batches
+    /// run sequentially. See `--counterfactual` for the rationale.
     #[arg(long = "compare", value_name = "OTHER_SCENARIO")]
     compare: Option<PathBuf>,
 
@@ -396,23 +404,40 @@ fn write_comparison_outputs(
     report: &ComparisonReport,
     scenario: &Scenario,
 ) -> Result<()> {
-    // Comparison mode produces two artifacts and they are always
-    // both written. The standard per-run output formats (JSON / CSV)
-    // describe a single Monte Carlo batch — comparison mode produces
-    // a *delta* between two batches that does not fit the row-by-row
-    // CSV shape, so `--format` does not gate either file. Users who
-    // only want JSON can ignore the markdown file (and vice versa).
-    let json_path = cli.output.join("comparison.json");
-    let json = serde_json::to_string_pretty(report)
-        .with_context(|| "failed to serialize comparison report")?;
-    fs::write(&json_path, json)
-        .with_context(|| format!("failed to write {}", json_path.display()))?;
-    info!(path = %json_path.display(), "wrote comparison JSON");
+    // Comparison mode produces a *delta* between two Monte Carlo batches.
+    // The per-run CSV shape (one row per simulation) does not apply, so
+    // the two artifacts are JSON (the structured delta) and Markdown
+    // (the rendered analyst report). `--format` selects between them:
+    //   - `json` → only `comparison.json`
+    //   - `csv`  → CSV does not apply here, so we emit both as a fallback
+    //              and warn that `--format csv` is a no-op for comparisons
+    //   - `both` → emit both (default behaviour)
+    let want_json = matches!(cli.format, OutputFormat::Json | OutputFormat::Both)
+        || matches!(cli.format, OutputFormat::Csv);
+    let want_md = matches!(cli.format, OutputFormat::Both | OutputFormat::Csv);
 
-    let md_path = cli.output.join("comparison_report.md");
-    let md = faultline_stats::report::render_comparison_markdown(report, scenario);
-    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
-    info!(path = %md_path.display(), "wrote comparison Markdown report");
+    if matches!(cli.format, OutputFormat::Csv) {
+        tracing::warn!(
+            "--format csv is not meaningful for comparison output (per-run CSV shape doesn't apply to a delta); falling back to JSON + Markdown"
+        );
+    }
+
+    if want_json {
+        let json_path = cli.output.join("comparison.json");
+        let json = serde_json::to_string_pretty(report)
+            .with_context(|| "failed to serialize comparison report")?;
+        fs::write(&json_path, json)
+            .with_context(|| format!("failed to write {}", json_path.display()))?;
+        info!(path = %json_path.display(), "wrote comparison JSON");
+    }
+
+    if want_md {
+        let md_path = cli.output.join("comparison_report.md");
+        let md = faultline_stats::report::render_comparison_markdown(report, scenario);
+        fs::write(&md_path, md)
+            .with_context(|| format!("failed to write {}", md_path.display()))?;
+        info!(path = %md_path.display(), "wrote comparison Markdown report");
+    }
 
     Ok(())
 }

@@ -54,6 +54,14 @@ impl ParamOverride {
                 "counterfactual value '{value}' is not a number: {e}"
             ))
         })?;
+        // Rust's `f64::parse` accepts "NaN", "inf", "-inf" without error.
+        // Allowing these through would silently propagate non-finite values
+        // into probability fields and produce garbage deltas with no warning.
+        if !value.is_finite() {
+            return Err(StatsError::InvalidConfig(format!(
+                "counterfactual value '{value}' must be a finite number"
+            )));
+        }
         Ok(ParamOverride {
             path: path.trim().to_string(),
             value,
@@ -303,6 +311,20 @@ mod tests {
     #[test]
     fn parse_override_rejects_non_numeric() {
         assert!(ParamOverride::parse("foo.bar=not_a_number").is_err());
+    }
+
+    #[test]
+    fn parse_override_rejects_nan_and_infinities() {
+        // f64::parse accepts these silently; the override parser must not.
+        // A NaN / inf reaching `set_param` would corrupt downstream
+        // probability fields and produce meaningless deltas.
+        for bad in ["NaN", "nan", "inf", "+inf", "-inf", "infinity", "-infinity"] {
+            let s = format!("foo.bar={bad}");
+            assert!(
+                ParamOverride::parse(&s).is_err(),
+                "expected parse to reject non-finite value `{bad}`"
+            );
+        }
     }
 
     #[test]

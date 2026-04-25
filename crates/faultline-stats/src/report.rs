@@ -106,7 +106,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
             let _ = writeln!(
                 out,
                 "| **{}** | {} | {} | {} | {} | {} | {:.2} | **{:.0}×** |",
-                row.chain_name,
+                escape_md_cell(&row.chain_name),
                 fmt_cell(
                     row.technology_readiness,
                     row.confidence.technology_readiness.clone(),
@@ -454,14 +454,17 @@ fn render_indicator_row(
         .monitoring_cost_annual
         .map(|c| format!("${:.0}", c))
         .unwrap_or_else(|| "—".into());
+    // Author-supplied strings (`phase.name`, `ind.name`, `Custom` discipline
+    // labels) are interpolated into a Markdown table cell. A literal `|`
+    // would close the cell early and silently mangle the table; escape it.
     let _ = writeln!(
         out,
         "| `{}` ({}) | `{}` {} | {} | {:.0}% | {} | {} |",
         pid,
-        phase.name,
+        escape_md_cell(&phase.name),
         ind.id,
-        ind.name,
-        observable_label(&ind.observable),
+        escape_md_cell(&ind.name),
+        escape_md_cell(observable_label(&ind.observable)),
         ind.detectability * 100.0,
         ttd,
         cost
@@ -480,6 +483,19 @@ fn observable_label(d: &ObservableDiscipline) -> &str {
         ObservableDiscipline::Physical => "Physical",
         ObservableDiscipline::Custom(s) => s,
     }
+}
+
+/// Escape user-supplied strings for inclusion in a Markdown table cell.
+///
+/// A literal `|` closes the cell early and breaks table rendering;
+/// `\n` / `\r` would split the row across multiple table rows. Both
+/// can appear in author-supplied scenario fields (phase / indicator
+/// names, custom discipline labels, escalation-rung action lists), so
+/// escape them at the boundary rather than relying on author hygiene.
+fn escape_md_cell(s: &str) -> String {
+    s.replace('\\', r"\\")
+        .replace('|', r"\|")
+        .replace(['\n', '\r'], " ")
 }
 
 // ---------------------------------------------------------------------------
@@ -975,5 +991,16 @@ mod tests {
             !md.contains("Author-Flagged Low-Confidence Parameters"),
             "section should be elided when nothing is flagged"
         );
+    }
+
+    #[test]
+    fn escape_md_cell_neutralizes_pipes_and_newlines() {
+        // Bare strings: pipe must be escaped, newlines collapsed, backslash
+        // doubled so the escape itself is not ambiguous.
+        assert_eq!(escape_md_cell("a|b"), r"a\|b");
+        assert_eq!(escape_md_cell("line1\nline2"), "line1 line2");
+        assert_eq!(escape_md_cell("line1\r\nline2"), "line1  line2");
+        assert_eq!(escape_md_cell(r"back\slash"), r"back\\slash");
+        assert_eq!(escape_md_cell("clean"), "clean");
     }
 }
