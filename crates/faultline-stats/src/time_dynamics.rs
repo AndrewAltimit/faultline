@@ -411,8 +411,9 @@ pub fn pareto_frontier(runs: &[RunResult], scenario: &Scenario) -> Option<Pareto
 /// attacker spend, total defender spend, mean attribution confidence,
 /// max chain detection accumulation. Returns `None` when fewer than
 /// two runs exist (correlation undefined). Entries where one of the
-/// two series has zero variance are emitted as `f64::NAN` rather than
-/// silently zeroed; the report renderer flags those cells.
+/// two series has zero variance are `None` (undefined correlation)
+/// rather than silently zeroed — see [`CorrelationMatrix`] for the
+/// JSON-safety rationale.
 pub fn output_correlation_matrix(
     runs: &[RunResult],
     scenario: &Scenario,
