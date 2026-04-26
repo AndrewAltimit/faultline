@@ -76,6 +76,27 @@ pub enum ScenarioError {
         role: DefenderRoleId,
     },
 
+    #[error(
+        "defender role {role} on faction {faction} has queue_depth = 0; \
+         a zero-capacity queue is permanently saturated and silently \
+         applies the saturated_detection_factor penalty before any noise \
+         arrives"
+    )]
+    ZeroDefenderQueueDepth {
+        faction: FactionId,
+        role: DefenderRoleId,
+    },
+
+    #[error(
+        "defender role table key {key} on faction {faction} does not match \
+         its inner id field {id}"
+    )]
+    DefenderRoleIdMismatch {
+        faction: FactionId,
+        key: DefenderRoleId,
+        id: DefenderRoleId,
+    },
+
     #[error("{0}")]
     Custom(String),
 }

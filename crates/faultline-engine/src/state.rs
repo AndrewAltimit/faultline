@@ -133,7 +133,8 @@ impl DefenderQueueState {
         // Subtract whole-units serviced from the accumulator;
         // never negative because we floored it.
         self.service_accumulator -= to_serve as f64;
-        let to_serve_u32 = u32::try_from(to_serve).unwrap_or(u32::MAX);
+        let to_serve_u32 =
+            u32::try_from(to_serve).expect("to_serve clamped to depth which fits in u32");
         self.depth -= to_serve_u32;
         self.total_serviced += u64::from(to_serve_u32);
         to_serve_u32

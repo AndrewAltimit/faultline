@@ -718,7 +718,7 @@ fn enqueue_with_policy(
             // the rest as effective drops of older items. Net depth
             // never exceeds capacity.
             let new_depth = q.capacity.min(q.depth.saturating_add(count));
-            let dropped_count = (q.depth + count).saturating_sub(new_depth);
+            let dropped_count = q.depth.saturating_add(count).saturating_sub(new_depth);
             q.total_dropped += u64::from(dropped_count);
             q.depth = new_depth;
         },

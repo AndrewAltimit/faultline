@@ -70,6 +70,28 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 });
             }
         }
+        // Defender capacity sanity: a zero-depth queue is permanently
+        // saturated (depth >= capacity at depth 0), which would silently
+        // apply the saturated_detection_factor penalty before any noise
+        // arrives. Reject loudly. Also enforce that the inner `id`
+        // matches its table key — the field is documented as such but
+        // the engine reads only the key, so a mismatch would be a silent
+        // author error.
+        for (rid, cap) in &faction.defender_capacities {
+            if cap.queue_depth == 0 {
+                return Err(ScenarioError::ZeroDefenderQueueDepth {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                });
+            }
+            if cap.id != *rid {
+                return Err(ScenarioError::DefenderRoleIdMismatch {
+                    faction: fid.clone(),
+                    key: rid.clone(),
+                    id: cap.id.clone(),
+                });
+            }
+        }
     }
 
     for vc in scenario.victory_conditions.values() {
