@@ -54,6 +54,11 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
     --verify ./output/manifest.json
 
+# Migrate a scenario forward to the current schema version (Epic O)
+# Prints to stdout by default; --in-place rewrites the source file.
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --migrate
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --migrate --in-place
+
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
 
@@ -61,7 +66,7 @@ wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/
 node --test tests/integration/*.test.mjs
 ```
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> js-tests**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
 heatmap aggregation, the Pinned MC results store, the comparison-delta
@@ -83,6 +88,14 @@ emits a `manifest.json` for every TOML in `scenarios/` and replays
 each one via `faultline-cli --verify` to confirm bit-identical
 output. Catches drift in the determinism contract before it leaks
 into a release. Run locally: `./tools/ci/verify-bundled-scenarios.sh`.
+
+The verify-migration stage (`tools/ci/verify-migration.sh`) runs
+`faultline-cli --migrate` on every TOML in `scenarios/` and
+re-validates the migrated form. Catches drift between the schema
+migration framework and the bundled scenarios. Schema versioning
+lives in `crates/faultline-types/src/migration.rs`; see
+`docs/scenario_schema.md` for the schema-evolution policy. Run
+locally: `./tools/ci/verify-migration.sh`.
 
 To match CI exactly (containerized):
 ```bash

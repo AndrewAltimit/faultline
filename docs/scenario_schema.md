@@ -37,11 +37,40 @@ Free-form descriptive metadata. None of these fields affect simulation outcomes.
 
 | Field | Type | Description |
 |---|---|---|
+| `schema_version` | u32 | Faultline schema version this scenario was authored against. Defaults to `1` when absent. See [Schema evolution](#schema-evolution) |
 | `name` | string | Human-readable scenario name |
 | `description` | string | What the scenario models. Multi-line OK |
 | `author` | string | Scenario author handle |
-| `version` | string | Semver-style version string |
+| `version` | string | Semver-style version string for the scenario itself (distinct from `schema_version`) |
 | `tags` | `[string]` | Free-form tags for indexing |
+| `confidence` | enum? | Optional coarse confidence tag (`high` / `medium` / `low`). Signals "publication-ready" vs. "conceptual sketch" to report readers |
+
+### Schema evolution
+
+`meta.schema_version` is the authoritative version of the scenario *format* this file was authored for. It is distinct from `version`, which is the author's own semver for the scenario's content.
+
+The current schema version is **1**. The migration framework lives in `crates/faultline-types/src/migration.rs`; both the CLI and the WASM frontend route their scenario loading through it.
+
+**For scenario authors:**
+
+- The field defaults to `1` when omitted, so existing scenarios load unchanged.
+- The CLI prints a warning when it loads a scenario authored against an older schema. Persist the upgraded form with:
+  ```
+  faultline scenarios/foo.toml --migrate --in-place
+  ```
+- A scenario authored against a *newer* version than the build supports is rejected with a clear error — upgrade Faultline rather than risk a silent partial parse.
+
+**For schema changes (engine work):**
+
+The policy is encoded in `migration.rs` and enforced by the `verify-migration` CI stage:
+
+1. **Additive fields** (new optional field with a sensible default) ship as `#[serde(default)]` and do *not* require a schema bump. Existing scenarios continue to load.
+2. **Breaking changes** (rename, remove, change semantics, change required-ness) require:
+   - Bumping `CURRENT_SCHEMA_VERSION` in `migration.rs`.
+   - Appending a `MigrationStep` whose `apply` function rewrites the `toml::Value` from the old shape to the new shape.
+   - Updating bundled scenarios under `scenarios/` to the new version (run `--migrate --in-place` against each one).
+   - Adding a fixture that pins the old shape so the migrator's correctness is testable in perpetuity.
+3. CI runs `tools/ci/verify-migration.sh` on every PR, which migrates each bundled scenario and re-validates the result. Drift fails the build.
 
 ---
 

@@ -437,20 +437,41 @@ a versioning story, the existing scenario library will rot as fields
 move. Add a `[meta].schema_version` field and a migrator framework
 *before* we start shipping schema changes that need migrations.
 
-- [ ] `[meta].schema_version` field with current version constant
-- [ ] Migrator framework: `fn migrate(scenario: TomlValue, from: u32,
+- [x] `[meta].schema_version` field with current version constant
+- [x] Migrator framework: `fn migrate(scenario: TomlValue, from: u32,
       to: u32) -> TomlValue` chain
-- [ ] CLI: `faultline-cli migrate <path> [--in-place]`
-- [ ] Validator: warns when loading a scenario authored against an
+- [x] CLI: `faultline-cli migrate <path> [--in-place]`
+- [x] Validator: warns when loading a scenario authored against an
       older schema; offers to migrate
-- [ ] CI gate: every existing bundled scenario loads cleanly under
+- [x] CI gate: every existing bundled scenario loads cleanly under
       the migrator at every shipped version
-- [ ] Documentation: schema evolution policy ("additive fields land
+- [x] Documentation: schema evolution policy ("additive fields land
       with serde-default; breaking changes bump version and ship a
       migrator in the same PR")
 
-**Status:** deferred. Should land before J/K/L/M to keep the existing
-scenarios usable.
+**Status:** Epic O **closed**. Single PR (branch
+`epic-o-schema-versioning`) added the `schema_version: u32` field to
+`ScenarioMeta` (defaulting to 1 via `#[serde(default = ...)]` so all
+pre-existing scenarios load unchanged), introduced the
+`faultline_types::migration` module with `CURRENT_SCHEMA_VERSION = 1`
+and a registry-based chain driver (`apply_chain` lifted out of
+`migrate` so synthetic v0→v1→v2 chains can exercise the loop logic
+even though the production registry is currently empty), and routed
+both CLI and WASM scenario loading through a single `load_scenario_str`
+helper that surfaces a stale-fixture warning when source and current
+versions disagree. The `--migrate` CLI flag (with `--in-place`) emits
+the upgraded TOML via `migrate_scenario_str`; it short-circuits before
+validation because a migration's whole job is to make a stale
+scenario valid. The new `tools/ci/verify-migration.sh` script is
+wired into both CI workflows after `verify-bundled-scenarios.sh`,
+running `--migrate` on every bundled scenario and re-validating the
+emitted form so future migrations can't silently leave bundled
+fixtures behind. All 9 bundled scenarios were backfilled with
+`schema_version = 1`; library-level tests cover the chain driver
+(synthetic multi-step chain, missing-step error, step-failure
+propagation, legacy-fixture without the field, explicit-current
+fixture). Schema-evolution policy documented in
+`docs/scenario_schema.md`. Prerequisite for J/K/L/M now in place.
 
 ### Epic P — Authoring depth: editor, linter, explain
 

@@ -21,6 +21,7 @@
 # - Ukraine conflict OSINT (2022-present): commercial drone weaponization techniques
 
 [meta]
+schema_version = 1
 name = "Drone Swarm Destabilization Campaign"
 description = "Multi-phase autonomous drone swarm campaign against US government institutions. Models compound kill chain from covert sensor emplacement through credential exploitation to coercion or kinetic action."
 author = "faultline-ai"

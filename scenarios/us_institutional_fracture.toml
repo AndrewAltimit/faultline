@@ -14,6 +14,7 @@
 # - Academic: Acemoglu & Robinson (institutional fragility), Turchin (political stress)
 
 [meta]
+schema_version = 1
 name = "US Institutional Fracture"
 description = "Multi-faction institutional crisis with federal, state, militia, and foreign influence actors across 8 US macro-regions"
 author = "faultline-ai"

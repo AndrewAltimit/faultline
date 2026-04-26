@@ -51,4 +51,18 @@ pub struct ScenarioMeta {
     /// uncertainty; this one measures parameter defensibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<ConfidenceLevel>,
+    /// Faultline schema version this scenario was authored against.
+    /// Distinct from `version` (an author-supplied scenario version
+    /// string). Defaults to 1 when absent so legacy scenarios load
+    /// unchanged; the migration framework
+    /// (`faultline_types::migration`) advances older versions forward
+    /// to `CURRENT_SCHEMA_VERSION` at load time. Always serialized so
+    /// downstream hashes are stable regardless of whether the source
+    /// TOML included the field explicitly.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+}
+
+fn default_schema_version() -> u32 {
+    crate::migration::CURRENT_SCHEMA_VERSION
 }
