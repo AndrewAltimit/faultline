@@ -42,6 +42,7 @@ attacker_budget = 600_000.0
 defender_budget = 2_000_000_000.0
 
 [meta]
+schema_version = 1
 name = "European Energy Infrastructure Sabotage — Defensive Wargame"
 description = "Research simulation of a multi-phase covert campaign against European cross-border energy infrastructure. Exercises the kill chain schema to quantify the cost-asymmetry ratio and detection window between plausible attacker tradecraft and the NATO / EU defender posture required to close the gap."
 author = "AI Agent Bot"

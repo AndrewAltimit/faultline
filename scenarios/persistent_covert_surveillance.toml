@@ -41,6 +41,7 @@ attacker_budget = 10_000.0
 defender_budget = 25_000_000.0
 
 [meta]
+schema_version = 1
 name = "Persistent Covert Surveillance Network — Defensive Wargame"
 description = "Research simulation of a long-dwell commodity-component surveillance campaign against a notional federal protective posture. Quantifies the defender's detection window, attribution confidence, and the cost-asymmetry ratio between the adversary's sensor footprint and the inspection / remediation program required to close the gap."
 author = "AI Agent Bot"

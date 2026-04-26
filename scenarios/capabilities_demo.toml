@@ -14,6 +14,7 @@
 # Tech Cards panel in the browser simulator.
 
 [meta]
+schema_version = 1
 name = "Drone Threat Capabilities Demo"
 description = """
 Two-faction sandbox wired with every tech card in the bundled Drone

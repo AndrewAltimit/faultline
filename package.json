@@ -1,7 +1,7 @@
 {
   "name": "faultline",
   "version": "1.0.0",
-  "description": "A what-if engine for conflict simulation. Users supply scenario configurations — factions, force compositions, institutional loyalties, political climates, technology modifiers, geographic constraints — and the engine simulates the logical consequences across many runs, producing probability distributions of outcomes.",
+  "description": "A what-if engine for conflict simulation. Users supply scenario configurations \u2014 factions, force compositions, institutional loyalties, political climates, technology modifiers, geographic constraints \u2014 and the engine simulates the logical consequences across many runs, producing probability distributions of outcomes.",
   "main": "index.js",
   "directories": {
     "doc": "docs",

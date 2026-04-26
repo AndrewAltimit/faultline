@@ -8,6 +8,7 @@
 # See LEGAL.md for sourcing requirements.
 
 [meta]
+schema_version = 1
 name = "Tutorial — Asymmetric Conflict"
 description = """
 Government security forces confront a rural insurgency across six

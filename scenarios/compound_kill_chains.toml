@@ -43,6 +43,7 @@ attacker_budget = 250_000.0
 defender_budget = 50_000_000.0
 
 [meta]
+schema_version = 1
 name = "Compound Kill Chains — Defensive Planning Wargame"
 description = "Research simulation of three concurrent archetypal adversary campaigns (Alpha / Bravo / Charlie) against a notional integrated federal security posture. Exercises the multi-phase campaign schema to quantify doctrinal seams between counter-UAS, cyber, and physical security — a defensive-planning tool, not an operational playbook."
 author = "AI Agent Bot"

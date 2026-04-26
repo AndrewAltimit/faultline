@@ -7,8 +7,36 @@ use wasm_bindgen::prelude::*;
 
 use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::{MonteCarloRunner, sensitivity::run_sensitivity};
+use faultline_types::migration::{CURRENT_SCHEMA_VERSION, LoadedScenario, load_scenario_str};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::MonteCarloConfig;
+
+/// Load a scenario for the browser, surfacing schema migrations as a
+/// console warning.
+///
+/// All wasm exports route through this helper so the migration policy
+/// (warn on stale fixture, accept and migrate, refuse newer-than-build)
+/// stays consistent with the CLI. Returns the in-memory [`Scenario`]
+/// at `CURRENT_SCHEMA_VERSION`.
+fn parse_scenario(toml_str: &str) -> Result<Scenario, JsValue> {
+    let LoadedScenario {
+        scenario,
+        source_version,
+        migrated,
+    } = load_scenario_str(toml_str)
+        .map_err(|e| JsValue::from_str(&format!("scenario load error: {e}")))?;
+    if migrated {
+        web_sys::console::warn_1(
+            &format!(
+                "Faultline: scenario authored against schema v{source_version}; \
+                 migrating in memory to v{CURRENT_SCHEMA_VERSION}. Persist with \
+                 the CLI: `faultline <scenario> --migrate --in-place`."
+            )
+            .into(),
+        );
+    }
+    Ok(scenario)
+}
 
 // ---------------------------------------------------------------------------
 // Initialization
@@ -32,8 +60,7 @@ pub fn init() {
 /// Returns a `JsValue` error string if parsing fails.
 #[wasm_bindgen]
 pub fn load_scenario(toml_str: &str) -> Result<JsValue, JsValue> {
-    let scenario: Scenario = toml::from_str(toml_str)
-        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+    let scenario = parse_scenario(toml_str)?;
 
     serde_wasm_bindgen::to_value(&scenario)
         .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
@@ -49,8 +76,7 @@ pub fn load_scenario(toml_str: &str) -> Result<JsValue, JsValue> {
 /// string describing the first validation failure.
 #[wasm_bindgen]
 pub fn validate_scenario_wasm(toml_str: &str) -> Result<JsValue, JsValue> {
-    let scenario: Scenario = toml::from_str(toml_str)
-        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+    let scenario = parse_scenario(toml_str)?;
 
     validate_scenario(&scenario)
         .map_err(|e| JsValue::from_str(&format!("validation error: {e}")))?;
@@ -72,8 +98,7 @@ pub fn validate_scenario_wasm(toml_str: &str) -> Result<JsValue, JsValue> {
 /// Returns a `JsValue` error string on parse or engine failure.
 #[wasm_bindgen]
 pub fn run_single(toml_str: &str, seed: Option<u64>) -> Result<JsValue, JsValue> {
-    let scenario: Scenario = toml::from_str(toml_str)
-        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+    let scenario = parse_scenario(toml_str)?;
 
     let actual_seed = seed.unwrap_or(42);
 
@@ -107,8 +132,7 @@ pub fn run_monte_carlo(
     seed: Option<u64>,
     collect_snapshots: Option<bool>,
 ) -> Result<JsValue, JsValue> {
-    let scenario: Scenario = toml::from_str(toml_str)
-        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+    let scenario = parse_scenario(toml_str)?;
 
     let config = MonteCarloConfig {
         num_runs,
@@ -144,8 +168,7 @@ pub fn run_sensitivity_wasm(
     runs_per_step: u32,
     seed: Option<u64>,
 ) -> Result<JsValue, JsValue> {
-    let scenario: Scenario = toml::from_str(toml_str)
-        .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+    let scenario = parse_scenario(toml_str)?;
 
     let config = MonteCarloConfig {
         num_runs: runs_per_step,
@@ -181,8 +204,7 @@ impl WasmEngine {
     /// Create a new persistent engine from a TOML scenario string.
     #[wasm_bindgen(constructor)]
     pub fn new(toml_str: &str, seed: Option<u64>) -> Result<WasmEngine, JsValue> {
-        let scenario: Scenario = toml::from_str(toml_str)
-            .map_err(|e| JsValue::from_str(&format!("TOML parse error: {e}")))?;
+        let scenario = parse_scenario(toml_str)?;
 
         let actual_seed = seed.unwrap_or(42);
 

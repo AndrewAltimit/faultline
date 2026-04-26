@@ -213,6 +213,7 @@ fn flagged_chain_scenario() -> Scenario {
             version: "0.0.1".into(),
             tags: vec![],
             confidence: None,
+            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
         },
         map: MapConfig {
             source: MapSource::Grid {

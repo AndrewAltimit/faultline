@@ -11,6 +11,7 @@
 # export-controlled information.
 
 [meta]
+schema_version = 1
 name = "Europe — Eastern Flank"
 description = """
 NATO coalition vs Russian Federation with Ukraine as the contested
@@ -581,4 +582,3 @@ faction = "nato"
 type = "HoldRegions"
 regions = ["central_europe", "poland_baltics"]
 duration = 240
-

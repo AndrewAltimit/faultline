@@ -7,6 +7,7 @@
 # This is the simplest possible scenario for testing the engine.
 
 [meta]
+schema_version = 1
 name = "Tutorial — Symmetric Conflict"
 description = """
 Two equal factions, four regions in a square. Each faction starts

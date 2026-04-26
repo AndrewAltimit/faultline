@@ -107,6 +107,15 @@ jobs:
         timeout-minutes: 10
         run: docker compose --profile ci run --rm rust-ci ./tools/ci/verify-bundled-scenarios.sh
 
+      # -- Schema migration smoke test (Epic O) ------------------------------
+      # For every bundled scenario, runs `--migrate` through the registered
+      # migration chain and re-validates the emitted form. Catches drift
+      # between bundled scenarios and the live schema before they merge.
+      # Detail in tools/ci/verify-migration.sh.
+      - name: Schema migration smoke test
+        timeout-minutes: 10
+        run: docker compose --profile ci run --rm rust-ci ./tools/ci/verify-migration.sh
+
       # -- JS Tests ----------------------------------------------------------
       # Pure-logic frontend modules (pinned store, comparison deltas, diff
       # renderer, sharing roundtrip, heatmap aggregation) are exercised

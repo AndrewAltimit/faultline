@@ -12,6 +12,9 @@ use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::compute_summary;
 use faultline_stats::counterfactual::{ComparisonReport, ParamOverride};
 use faultline_stats::manifest::{self, ManifestMcConfig, ManifestMode, RunManifest, VerifyResult};
+use faultline_types::migration::{
+    self, CURRENT_SCHEMA_VERSION, LoadedScenario, load_scenario_str, migrate_scenario_str,
+};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{MonteCarloConfig, MonteCarloResult, RunResult};
 
@@ -145,6 +148,34 @@ struct Cli {
     #[arg(long = "validate")]
     validate: bool,
 
+    /// Run schema migrations on the scenario and emit the upgraded TOML.
+    ///
+    /// Loads the scenario, advances `meta.schema_version` from
+    /// whatever was authored to the current version, validates the
+    /// result, and prints the upgraded TOML to stdout. Combine with
+    /// `--in-place` to overwrite the source file. Mutually exclusive
+    /// with the run modes — migrate is a pure schema operation that
+    /// does not start the engine.
+    ///
+    /// Caveat: emitted TOML is the canonical form (BTreeMap-sorted
+    /// keys, single-line strings, no comments). Authorial formatting
+    /// is not preserved. For scenarios where formatting matters, diff
+    /// the migrated form against the source and apply changes by
+    /// hand rather than using `--in-place`.
+    #[arg(
+        long = "migrate",
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "verify", "validate"
+        ]
+    )]
+    migrate: bool,
+
+    /// With `--migrate`, overwrite the source scenario file in place
+    /// instead of printing to stdout.
+    #[arg(long = "in-place", requires = "migrate")]
+    in_place: bool,
+
     /// Verbose logging.
     #[arg(short = 'v', long = "verbose")]
     verbose: bool,
@@ -182,8 +213,34 @@ fn main() -> Result<()> {
     let toml_str = fs::read_to_string(&cli.scenario)
         .with_context(|| format!("failed to read scenario file: {}", cli.scenario.display()))?;
 
-    let scenario: Scenario =
-        toml::from_str(&toml_str).with_context(|| "failed to parse scenario TOML")?;
+    // `--migrate` is a pure schema operation: read TOML, advance the
+    // version, write TOML back out. We short-circuit before validation
+    // because a migration's whole job is to make a stale scenario
+    // valid — running validation first would refuse the scenario for
+    // the very reason migration would fix.
+    if cli.migrate {
+        return run_migrate(&cli, &toml_str);
+    }
+
+    let LoadedScenario {
+        scenario,
+        source_version,
+        migrated,
+    } = load_scenario_str(&toml_str)
+        .with_context(|| format!("failed to load scenario {}", cli.scenario.display()))?;
+
+    if migrated {
+        // Surface the silent in-memory upgrade so an analyst notices
+        // their on-disk fixture is stale instead of finding out later
+        // when its hash drifts.
+        tracing::warn!(
+            scenario = %cli.scenario.display(),
+            source_version,
+            current_version = CURRENT_SCHEMA_VERSION,
+            "scenario was authored against an older schema; migrating in memory. Run `faultline {scenario_path} --migrate --in-place` to persist the upgraded form.",
+            scenario_path = cli.scenario.display(),
+        );
+    }
 
     // Validate.
     validate_scenario(&scenario).with_context(|| "scenario validation failed")?;
@@ -439,12 +496,20 @@ fn run_counterfactual_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
 fn run_compare_analysis(cli: &Cli, scenario: &Scenario, alt_path: &Path) -> Result<()> {
     let alt_toml = fs::read_to_string(alt_path)
         .with_context(|| format!("failed to read --compare scenario: {}", alt_path.display()))?;
-    let alt_scenario: Scenario = toml::from_str(&alt_toml).with_context(|| {
-        format!(
-            "failed to parse --compare scenario TOML: {}",
-            alt_path.display()
-        )
-    })?;
+    let LoadedScenario {
+        scenario: alt_scenario,
+        source_version: alt_source_version,
+        migrated: alt_migrated,
+    } = load_scenario_str(&alt_toml)
+        .with_context(|| format!("failed to load --compare scenario: {}", alt_path.display()))?;
+    if alt_migrated {
+        tracing::warn!(
+            scenario = %alt_path.display(),
+            source_version = alt_source_version,
+            current_version = CURRENT_SCHEMA_VERSION,
+            "--compare scenario was authored against an older schema; migrating in memory."
+        );
+    }
     validate_scenario(&alt_scenario).with_context(|| "--compare scenario validation failed")?;
 
     let base_seed = cli
@@ -683,6 +748,105 @@ fn write_sensitivity_output(
 }
 
 // ---------------------------------------------------------------------------
+// Schema migration (Epic O)
+// ---------------------------------------------------------------------------
+
+/// `--migrate` mode: advance a scenario's `meta.schema_version` to
+/// the current build's version. With `--in-place`, overwrite the
+/// source file; otherwise print the migrated TOML to stdout. The
+/// engine never starts — this is a pure schema operation, distinct
+/// from `--validate` (which only checks shape).
+///
+/// The migrator is a no-op when the source is already at the current
+/// version; for that case we still rewrite (or re-emit) so the
+/// `meta.schema_version` field is explicitly present afterward — that
+/// gives an analyst a single canonical form to commit and removes a
+/// silent variant of "the scenario file disagrees with what the
+/// engine actually loads."
+///
+/// Caveat: the emitted TOML is the canonical form of the parsed
+/// scenario — keys are BTreeMap-sorted, multi-line strings get
+/// collapsed, and comments are stripped. That's the cost of going
+/// through the deserialize-then-reserialize migration pipeline. For
+/// scenarios where formatting matters, run `--migrate` to a temp
+/// file, diff against the source, and apply the changes by hand
+/// instead of `--in-place`.
+fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
+    let value: toml::Value = toml::from_str(toml_str)
+        .with_context(|| format!("failed to parse {}", cli.scenario.display()))?;
+    let source_version = migration::extract_schema_version(&value)
+        .with_context(|| "failed to read meta.schema_version")?;
+
+    let migrated_toml = migrate_scenario_str(toml_str)
+        .with_context(|| format!("failed to migrate scenario {}", cli.scenario.display()))?;
+
+    // Sanity-check the migrated form by deserializing AND validating
+    // before we touch stdout or disk. Two layers:
+    //   1. Deserialize: catches a migration that produces structurally
+    //      bad TOML (wrong field types, missing required fields).
+    //   2. validate_scenario: catches a migration that produces a
+    //      scenario the engine would refuse at run time (no factions,
+    //      regions referencing missing borders, etc.).
+    // Stdout-mode also runs both checks before emitting any bytes so
+    // a redirect (`--migrate > new.toml`) never captures broken output.
+    let migrated_scenario: Scenario = toml::from_str(&migrated_toml)
+        .with_context(|| "migrated scenario failed to deserialize; refusing to emit")?;
+    validate_scenario(&migrated_scenario).with_context(|| {
+        "migrated scenario failed engine validation; refusing to emit. \
+         The migration produced a structurally-valid TOML that the engine \
+         would reject — fix the migration step or repair the source \
+         scenario, then retry."
+    })?;
+
+    if cli.in_place {
+        // Atomic in-place rewrite: write to a sibling temp file, then
+        // `rename` (atomic on POSIX as long as both paths share a
+        // filesystem). `fs::write` directly on the target would
+        // truncate-then-write, so a kill mid-write would leave the
+        // scenario file partially written with no recovery path.
+        let mut tmp_os = cli.scenario.clone().into_os_string();
+        tmp_os.push(".tmp");
+        let tmp_path = PathBuf::from(tmp_os);
+        fs::write(&tmp_path, &migrated_toml).with_context(|| {
+            format!(
+                "failed to write migrated scenario to temp file {}",
+                tmp_path.display()
+            )
+        })?;
+        if let Err(rename_err) = fs::rename(&tmp_path, &cli.scenario) {
+            // Best-effort cleanup so a failed rename doesn't leave an
+            // orphan `.tmp` next to the scenario. Ignore the cleanup
+            // error — the rename failure is the real signal.
+            let _ = fs::remove_file(&tmp_path);
+            return Err(rename_err).with_context(|| {
+                format!(
+                    "failed to atomically replace {} with {}",
+                    cli.scenario.display(),
+                    tmp_path.display()
+                )
+            });
+        }
+        info!(
+            scenario = %cli.scenario.display(),
+            from = source_version,
+            to = CURRENT_SCHEMA_VERSION,
+            "scenario migrated in place"
+        );
+    } else {
+        // Print to stdout so the user can pipe it: `faultline foo.toml
+        // --migrate > foo-v2.toml`. We use print! (not info!) so the
+        // bytes appear on stdout regardless of tracing log level. We
+        // deliberately emit no trailing log line — tracing's default
+        // formatter writes to stdout in this binary, so any info!()
+        // here would append a non-TOML line into the redirected file
+        // and break downstream parse. The captured TOML is the entire
+        // user-facing output of the stdout-mode migrate.
+        print!("{migrated_toml}");
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Manifest emission + verify (Epic Q)
 // ---------------------------------------------------------------------------
 
@@ -882,8 +1046,11 @@ fn replay_manifest_mode(
             }
             let alt_toml = fs::read_to_string(alt_path)
                 .with_context(|| format!("failed to read alt scenario: {}", alt_path.display()))?;
-            let alt_scenario: Scenario =
-                toml::from_str(&alt_toml).with_context(|| "failed to parse alt scenario TOML")?;
+            let LoadedScenario {
+                scenario: alt_scenario,
+                ..
+            } = load_scenario_str(&alt_toml)
+                .with_context(|| "failed to load alt scenario for replay")?;
             validate_scenario(&alt_scenario).with_context(|| "alt scenario validation failed")?;
             let live_alt_hash = manifest::scenario_hash(&alt_scenario)
                 .with_context(|| "failed to hash alt scenario")?;
