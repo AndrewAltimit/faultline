@@ -936,6 +936,12 @@ fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenar
     // are surfaced only when present; un-owned variables are listed
     // separately under "(no owner)".
     let owners = collect_decision_owners(scenario);
+    // `owners.len()` counts the `None` bucket (un-owned variables) toward
+    // the length, so this gate also fires when there is exactly one
+    // owner-tagged variable plus one or more un-owned variables — the
+    // subsection then renders a `_(no owner)_` row alongside the faction
+    // entry, which is intentional. Read this as "more than one group",
+    // not "two or more distinct factions".
     if owners.len() > 1 {
         let _ = writeln!(out, "### Decision variables by owner");
         let _ = writeln!(out);
