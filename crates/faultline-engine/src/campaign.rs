@@ -9,12 +9,14 @@ use std::collections::BTreeMap;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use faultline_types::campaign::{BranchCondition, CampaignPhase, KillChain, PhaseOutput};
+use faultline_types::campaign::{
+    BranchCondition, CampaignPhase, EscalationMetric, KillChain, PhaseOutput, ThresholdDirection,
+};
 use faultline_types::ids::{KillChainId, PhaseId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{CampaignReport, PhaseOutcome};
 
-use crate::state::SimulationState;
+use crate::state::{MetricSnapshot, SimulationState};
 
 // ---------------------------------------------------------------------------
 // Phase status
@@ -188,7 +190,14 @@ pub fn campaign_phase(
         };
 
         // Step 1: activate eligible pending phases.
-        activate_ready_phases(campaign, chain, state.tick, rng, scenario.attacker_budget);
+        activate_ready_phases(
+            campaign,
+            chain,
+            state.tick,
+            rng,
+            scenario.attacker_budget,
+            &state.metric_history,
+        );
 
         // Step 2: process active phases — detection + completion.
         let active_phase_ids: Vec<PhaseId> = campaign
@@ -232,6 +241,7 @@ pub fn campaign_phase(
                         state.tick,
                         rng,
                         scenario.attacker_budget,
+                        &state.metric_history,
                     );
                     continue;
                 }
@@ -281,6 +291,7 @@ pub fn campaign_phase(
                     state.tick,
                     rng,
                     scenario.attacker_budget,
+                    &state.metric_history,
                 );
             }
         }
@@ -293,6 +304,7 @@ fn activate_ready_phases(
     tick: u32,
     rng: &mut impl Rng,
     attacker_budget: Option<f64>,
+    metric_history: &[MetricSnapshot],
 ) {
     let mut to_activate: Vec<PhaseId> = Vec::new();
 
@@ -322,7 +334,15 @@ fn activate_ready_phases(
                 campaign
                     .phase_status
                     .insert(pid.clone(), PhaseStatus::Failed { tick });
-                resolve_branches(campaign, chain, &pid, tick, rng, attacker_budget);
+                resolve_branches(
+                    campaign,
+                    chain,
+                    &pid,
+                    tick,
+                    rng,
+                    attacker_budget,
+                    metric_history,
+                );
                 continue;
             }
             let duration = sample_duration(phase, rng);
@@ -351,6 +371,7 @@ fn resolve_branches(
     tick: u32,
     rng: &mut impl Rng,
     attacker_budget: Option<f64>,
+    metric_history: &[MetricSnapshot],
 ) {
     let status = campaign.phase_status[completed_pid].clone();
     let phase = match chain.phases.get(completed_pid) {
@@ -358,7 +379,7 @@ fn resolve_branches(
         None => return,
     };
     for branch in &phase.branches {
-        if branch_matches(&branch.condition, &status, rng)
+        if branch_matches(&branch.condition, &status, rng, metric_history)
             && let Some(PhaseStatus::Pending) = campaign.phase_status.get(&branch.next_phase)
             && let Some(next_phase) = chain.phases.get(&branch.next_phase)
         {
@@ -386,13 +407,69 @@ fn resolve_branches(
     }
 }
 
-fn branch_matches(cond: &BranchCondition, status: &PhaseStatus, rng: &mut impl Rng) -> bool {
+fn branch_matches(
+    cond: &BranchCondition,
+    status: &PhaseStatus,
+    rng: &mut impl Rng,
+    metric_history: &[MetricSnapshot],
+) -> bool {
     match cond {
         BranchCondition::OnSuccess => status.succeeded(),
         BranchCondition::OnFailure => matches!(status, PhaseStatus::Failed { .. }),
         BranchCondition::OnDetection => status.detected(),
         BranchCondition::Probability { p } => rng.r#gen::<f64>() < *p,
         BranchCondition::Always => true,
+        BranchCondition::EscalationThreshold {
+            metric,
+            threshold,
+            direction,
+            sustained_ticks,
+        } => escalation_threshold_satisfied(
+            metric_history,
+            metric,
+            *threshold,
+            *direction,
+            *sustained_ticks,
+        ),
+    }
+}
+
+/// Has `metric` been on `direction` of `threshold` for at least
+/// `sustained_ticks` consecutive end-of-tick snapshots?
+///
+/// `sustained_ticks == 0` is treated as "must currently be on the right
+/// side" — a single tick of crossing is enough. If the history is
+/// shorter than `sustained_ticks` (early in the run), the condition is
+/// false: we can't yet say it has "stayed" on the right side because
+/// we haven't observed long enough.
+fn escalation_threshold_satisfied(
+    history: &[MetricSnapshot],
+    metric: &EscalationMetric,
+    threshold: f64,
+    direction: ThresholdDirection,
+    sustained_ticks: u32,
+) -> bool {
+    let need = (sustained_ticks as usize).max(1);
+    if history.len() < need {
+        return false;
+    }
+    let window = &history[history.len() - need..];
+    window.iter().all(|snap| {
+        let value = read_metric(snap, metric);
+        match direction {
+            ThresholdDirection::Above => value >= threshold,
+            ThresholdDirection::Below => value <= threshold,
+        }
+    })
+}
+
+fn read_metric(snap: &MetricSnapshot, metric: &EscalationMetric) -> f64 {
+    match metric {
+        EscalationMetric::Tension => snap.tension,
+        EscalationMetric::InformationDominance => snap.information_dominance,
+        EscalationMetric::InstitutionalErosion => snap.institutional_erosion,
+        EscalationMetric::CoercionPressure => snap.coercion_pressure,
+        EscalationMetric::PoliticalCost => snap.political_cost,
     }
 }
 
@@ -467,5 +544,123 @@ fn damage_infra_in_region(
         {
             *status = (*status - factor).max(0.0);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests for EscalationThreshold (Epic C)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod escalation_tests {
+    use super::*;
+
+    fn snap(tick: u32, tension: f64) -> MetricSnapshot {
+        MetricSnapshot {
+            tick,
+            tension,
+            information_dominance: 0.0,
+            institutional_erosion: 0.0,
+            coercion_pressure: 0.0,
+            political_cost: 0.0,
+        }
+    }
+
+    #[test]
+    fn threshold_above_satisfied_after_sustained_window() {
+        // Three consecutive ticks ≥ 0.7 satisfies a `sustained_ticks=3`
+        // window — but not a `sustained_ticks=4` window because the
+        // history is only 3 entries deep.
+        let history = vec![snap(0, 0.8), snap(1, 0.85), snap(2, 0.9)];
+        assert!(escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.7,
+            ThresholdDirection::Above,
+            3,
+        ));
+        assert!(!escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.7,
+            ThresholdDirection::Above,
+            4,
+        ));
+    }
+
+    #[test]
+    fn threshold_above_short_dip_breaks_window() {
+        // Tick 1 dipped below 0.7. The most recent 3 ticks are not all
+        // above threshold, so the window is unsatisfied.
+        let history = vec![snap(0, 0.85), snap(1, 0.6), snap(2, 0.85)];
+        assert!(!escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.7,
+            ThresholdDirection::Above,
+            3,
+        ));
+        // …but a 1-tick window only looks at the latest snapshot,
+        // which is back above threshold.
+        assert!(escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.7,
+            ThresholdDirection::Above,
+            1,
+        ));
+    }
+
+    #[test]
+    fn threshold_below_works_symmetrically() {
+        let history = vec![snap(0, 0.05), snap(1, 0.10), snap(2, 0.08)];
+        assert!(escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.15,
+            ThresholdDirection::Below,
+            3,
+        ));
+        // Tick 1 hit 0.10, which is still ≤ 0.10, so satisfied.
+        assert!(escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.10,
+            ThresholdDirection::Below,
+            3,
+        ));
+        // Tighten to 0.09 and tick 1's value of 0.10 breaks it.
+        assert!(!escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.09,
+            ThresholdDirection::Below,
+            3,
+        ));
+    }
+
+    #[test]
+    fn threshold_with_zero_sustained_ticks_checks_latest_only() {
+        // sustained_ticks == 0 is interpreted as "must currently be on
+        // the right side" — equivalent to a 1-tick window.
+        let history = vec![snap(0, 0.1), snap(1, 0.85)];
+        assert!(escalation_threshold_satisfied(
+            &history,
+            &EscalationMetric::Tension,
+            0.7,
+            ThresholdDirection::Above,
+            0,
+        ));
+    }
+
+    #[test]
+    fn threshold_unsatisfied_with_empty_history() {
+        assert!(!escalation_threshold_satisfied(
+            &[],
+            &EscalationMetric::Tension,
+            0.5,
+            ThresholdDirection::Above,
+            1,
+        ));
     }
 }

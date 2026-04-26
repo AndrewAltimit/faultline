@@ -9,8 +9,10 @@ pub mod analysis;
 pub mod counterfactual;
 pub mod delta;
 pub mod manifest;
+pub mod morris;
 pub mod report;
 pub mod sensitivity;
+pub mod time_dynamics;
 pub mod uncertainty;
 
 use std::collections::BTreeMap;
@@ -126,6 +128,8 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             campaign_summaries: BTreeMap::new(),
             feasibility_matrix: Vec::new(),
             seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
         };
     }
 
@@ -271,6 +275,11 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         analysis::compute_feasibility_matrix(runs, scenario, &campaign_summaries);
     let seam_scores = analysis::compute_seam_scores(runs, scenario);
 
+    // Time-dynamics post-processing (Epic C). All operate on the
+    // already-collected campaign reports; none re-runs the engine.
+    let correlation_matrix = time_dynamics::output_correlation_matrix(runs, scenario);
+    let pareto_frontier = time_dynamics::pareto_frontier(runs, scenario);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -282,6 +291,8 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         campaign_summaries,
         feasibility_matrix,
         seam_scores,
+        correlation_matrix,
+        pareto_frontier,
     }
 }
 
@@ -293,6 +304,13 @@ fn compute_campaign_summaries(
     if scenario.kill_chains.is_empty() {
         return BTreeMap::new();
     }
+
+    // Pre-compute the time-dynamics tables for every chain. Doing it
+    // once and indexing per-chain below is O(runs × chains) total
+    // versus O(runs × chains²) if we recomputed inside the per-chain
+    // loop.
+    let mut ttd = time_dynamics::time_to_first_detection(runs, scenario);
+    let mut react = time_dynamics::defender_reaction_time(runs, scenario);
 
     let total = runs.len() as f64;
     let mut out = BTreeMap::new();
@@ -416,6 +434,8 @@ fn compute_campaign_summaries(
             0.0
         };
 
+        let phase_survival = time_dynamics::phase_kaplan_meier(runs, chain_id, chain);
+
         out.insert(
             chain_id.clone(),
             CampaignSummary {
@@ -427,6 +447,9 @@ fn compute_campaign_summaries(
                 mean_defender_spend,
                 cost_asymmetry_ratio,
                 mean_attribution_confidence: attribution_sum / total,
+                time_to_first_detection: ttd.remove(chain_id),
+                defender_reaction_time: react.remove(chain_id),
+                phase_survival,
             },
         );
     }

@@ -118,6 +118,7 @@ fn make_ai_test_state() -> SimulationState {
         events_fired_this_tick: vec![],
         snapshots: vec![],
         non_kinetic: Default::default(),
+        metric_history: vec![],
     }
 }
 

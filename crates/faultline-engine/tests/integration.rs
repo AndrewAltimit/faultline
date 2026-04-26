@@ -2348,6 +2348,265 @@ fn snapshot_infra_status_present_when_infra_exists() {
 }
 
 #[test]
+fn escalation_threshold_branch_fires_after_sustained_window() {
+    // Build a chain whose recon phase has two `OnSuccess` branches:
+    //   1. EscalationThreshold(Tension >= 0.7 for >= 3 ticks) → escalate
+    //   2. Always → de_escalate (terminal fallback)
+    // The simulation seeds tension at 0.95, well above 0.7. The recon
+    // phase takes 5 ticks to complete. By the time it resolves, the
+    // hysteresis counter has been satisfied for at least 5 consecutive
+    // ticks, so branch (1) wins and the chain transitions to the
+    // `escalate` phase. Without the new variant the test would silently
+    // fall through to `de_escalate`.
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, DefensiveDomain, EscalationMetric, KillChain, PhaseBranch,
+        PhaseCost, PhaseOutput, ThresholdDirection,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::stats::PhaseOutcome;
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 50;
+    scenario.political_climate.tension = 0.95;
+
+    let chain_id = KillChainId::from("escalation_chain");
+    let recon = PhaseId::from("recon");
+    let escalate = PhaseId::from("escalate");
+    let de_escalate = PhaseId::from("de_escalate");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 5,
+            max_duration: 5,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![DefensiveDomain::SignalsIntelligence],
+            outputs: vec![PhaseOutput::TensionDelta { delta: 0.0 }],
+            branches: vec![
+                PhaseBranch {
+                    condition: BranchCondition::EscalationThreshold {
+                        metric: EscalationMetric::Tension,
+                        threshold: 0.7,
+                        direction: ThresholdDirection::Above,
+                        sustained_ticks: 3,
+                    },
+                    next_phase: escalate.clone(),
+                },
+                PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: de_escalate.clone(),
+                },
+            ],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+        },
+    );
+    for (id, name) in [
+        (escalate.clone(), "Escalate"),
+        (de_escalate.clone(), "DeEscalate"),
+    ] {
+        phases.insert(
+            id.clone(),
+            CampaignPhase {
+                id: id.clone(),
+                name: name.into(),
+                description: String::new(),
+                prerequisites: vec![recon.clone()],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+            },
+        );
+    }
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Escalation".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+
+    // The escalation branch must have fired — `escalate` should be a
+    // terminal success, and `de_escalate` should remain Pending.
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&escalate),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "escalation branch should fire when tension stays above threshold long enough; got {:?}",
+        report.phase_outcomes
+    );
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&de_escalate),
+            Some(PhaseOutcome::Pending) | None
+        ),
+        "fallback de-escalation branch must not fire when escalation matches first"
+    );
+}
+
+#[test]
+fn escalation_threshold_does_not_fire_below_threshold() {
+    // Same chain shape, but tension is held low. The fallback `Always`
+    // branch should win because the EscalationThreshold predicate is
+    // never satisfied.
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, EscalationMetric, KillChain, PhaseBranch, PhaseCost,
+        ThresholdDirection,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::stats::PhaseOutcome;
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 50;
+    scenario.political_climate.tension = 0.05;
+
+    let chain_id = KillChainId::from("escalation_chain");
+    let recon = PhaseId::from("recon");
+    let escalate = PhaseId::from("escalate");
+    let de_escalate = PhaseId::from("de_escalate");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 5,
+            max_duration: 5,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![],
+            branches: vec![
+                PhaseBranch {
+                    condition: BranchCondition::EscalationThreshold {
+                        metric: EscalationMetric::Tension,
+                        threshold: 0.7,
+                        direction: ThresholdDirection::Above,
+                        sustained_ticks: 3,
+                    },
+                    next_phase: escalate.clone(),
+                },
+                PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: de_escalate.clone(),
+                },
+            ],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+        },
+    );
+    for id in [escalate.clone(), de_escalate.clone()] {
+        phases.insert(
+            id.clone(),
+            CampaignPhase {
+                id: id.clone(),
+                name: id.to_string(),
+                description: String::new(),
+                prerequisites: vec![recon.clone()],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+            },
+        );
+    }
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Escalation".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&de_escalate),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "fallback should fire when escalation threshold is not satisfied"
+    );
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&escalate),
+            Some(PhaseOutcome::Pending) | None
+        ),
+        "escalation branch must not fire below threshold"
+    );
+}
+
+#[test]
 fn fracture_scenario_tick_stepping_consistency() {
     let toml_str = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

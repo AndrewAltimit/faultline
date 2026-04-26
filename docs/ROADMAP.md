@@ -172,22 +172,30 @@ Current state: Phases 1-6 complete. Phase 7 (scenario library) is ongoing — co
 
 Cross-cutting hardening and capability expansion driven by the April 2026 three-angle audit (engine analytics, frontend/UX, scenario content). Sequenced as six epics. See `docs/improvement-plan.md` for the full living tracker.
 
-### 8.A — Uncertainty as a first-class citizen — IN PROGRESS
+### 8.A — Uncertainty as a first-class citizen — COMPLETE
 
 - [x] `faultline_stats::uncertainty` module: Wilson score interval (replaces Wald) and deterministic percentile-bootstrap CI
 - [x] `CampaignPhase.parameter_confidence` and `PhaseCost.confidence` — optional author self-assessments of parameter defensibility
 - [x] `FeasibilityRow.ci_95` + `MonteCarloSummary.win_rate_cis` — Wilson bounds surfaced through report
 - [x] Report methodology appendix + author-flagged low-confidence section
-- [ ] Wilson CIs on per-phase success / detection / failure rates in `PhaseStats`
-- [ ] Bootstrap CIs on continuous metric distributions (duration, casualties, cost) in the report
+- [x] Wilson CIs on per-phase success / detection / failure rates in `PhaseStats`
+- [x] Bootstrap CIs on continuous metric distributions (duration, casualties, cost) in the report
 
-### 8.B — Counterfactual & comparative analysis — DEFERRED
+### 8.B — Counterfactual & comparative analysis — COMPLETE
 
-See `docs/improvement-plan.md` Epic B for the full scope.
+See `docs/improvement-plan.md` Epic B for the closeout note.
 
-### 8.C — Time & attribution dynamics — DEFERRED
+### 8.C — Time & attribution dynamics — COMPLETE
 
-See `docs/improvement-plan.md` Epic C.
+- [x] Per-chain time-to-first-detection with right-censoring
+- [x] Defender-reaction-time distribution (gap from first detection to run end)
+- [x] Per-phase Kaplan-Meier survival + cumulative hazard
+- [x] Output-output Pearson correlation matrix
+- [x] Pareto frontier across (attacker cost, success, stealth)
+- [x] Morris elementary-effects screening (`faultline_stats::morris`)
+- [x] `BranchCondition::EscalationThreshold` with hysteresis (engine + schema)
+
+See `docs/improvement-plan.md` Epic C for the closeout note.
 
 ### 8.D — Engine model depth — DEFERRED
 

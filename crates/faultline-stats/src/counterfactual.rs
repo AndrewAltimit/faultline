@@ -344,6 +344,8 @@ mod tests {
             campaign_summaries: BTreeMap::new(),
             feasibility_matrix: vec![],
             seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
         };
         let mut variant = base.clone();
 

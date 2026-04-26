@@ -66,6 +66,42 @@ wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/
 node --test tests/integration/*.test.mjs
 ```
 
+## Analytics surfaced in `report.md` (Epic C)
+
+Beyond the win-rate / feasibility / kill-chain tables that earlier
+epics shipped, every Monte Carlo run now also emits:
+
+- **Time & Attribution Dynamics** — per-chain time-to-first-detection
+  (right-censored when never detected), defender-reaction-time
+  distribution (gap from first detection to run end), and per-phase
+  Kaplan-Meier survival curves with cumulative hazard. Sections elide
+  when the chain produces no signal.
+- **Pareto Frontier** — non-dominated runs across (attacker cost,
+  success, stealth = `1 - max chain detection`). Surfaces the
+  achievable trade-off envelope before reaching for a sweep.
+- **Output Correlation Matrix** — Pearson correlations across the
+  six built-in per-run scalars (duration, casualties, attacker /
+  defender spend, mean attribution, max detection). Constant series
+  show as `—` (correlation undefined; deliberately not zero).
+
+The schema for all five outputs lives on `MonteCarloSummary` /
+`CampaignSummary` in `crates/faultline-types/src/stats.rs`. The
+producers are pure functions of `RunResult` data and live in
+`crates/faultline-stats/src/time_dynamics.rs` — they never re-run
+the engine. Morris elementary-effects screening (the
+variance-decomposition replacement for pure OAT sensitivity sweeps)
+lives in `crates/faultline-stats/src/morris.rs`; not currently CLI-
+exposed but callable from library consumers.
+
+`BranchCondition::EscalationThreshold` (Epic C) adds hysteresis to
+phase branching — a branch that only fires when a global metric has
+stayed on the requested side of a threshold for `sustained_ticks`
+consecutive end-of-tick snapshots. The engine sizes its rolling
+metric-history buffer to the longest window any branch in the
+scenario asks for; legacy scenarios with no such branch pay zero
+overhead. Schema reference is in `docs/scenario_schema.md` under
+`PhaseBranch`.
+
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,

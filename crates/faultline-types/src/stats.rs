@@ -113,6 +113,73 @@ pub struct MonteCarloSummary {
     /// Doctrinal seam analysis scores per kill chain.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub seam_scores: BTreeMap<KillChainId, SeamScore>,
+    /// Output-output Pearson correlation matrix over per-run scalars
+    /// (duration, casualties, attacker spend, …). `None` when fewer
+    /// than two runs exist or no scalar metric varies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_matrix: Option<CorrelationMatrix>,
+    /// Pareto frontier across runs over (attacker cost, success,
+    /// stealth). Each entry is a non-dominated run; the rest of the
+    /// runs sit "behind" the frontier on at least one axis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pareto_frontier: Option<ParetoFrontier>,
+}
+
+/// Pearson correlation matrix over a fixed list of per-run scalar
+/// outputs. Square and symmetric; the diagonal is always `Some(1.0)`
+/// (modulo floating-point noise on degenerate samples).
+///
+/// Entries are `None` when one of the two series has zero variance —
+/// this is mathematically "undefined correlation" and we surface it
+/// explicitly rather than fudging to 0.0. `Option<f64>` is used over a
+/// raw `f64` because `serde_json` round-trips NaN as `null` then fails
+/// to deserialize back into `f64`, which would break
+/// [`super::manifest::summary_hash`] and any external tooling reading
+/// `summary.json`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CorrelationMatrix {
+    /// Display labels in row / column order.
+    pub labels: Vec<String>,
+    /// Row-major `len() == labels.len() * labels.len()`. Index
+    /// `[i * n + j]` is `corr(labels[i], labels[j])`. `None` means the
+    /// correlation is undefined (zero variance on at least one input).
+    pub values: Vec<Option<f64>>,
+    /// Number of runs the correlations were computed over.
+    pub n: u32,
+}
+
+/// Pareto frontier over per-run (attacker_cost, success, stealth).
+///
+/// For each run we project to a 3-tuple where:
+/// - `attacker_cost` = sum of `attacker_spend` across all chain reports
+///   (analyst minimizes)
+/// - `success` = fraction of chains where any phase succeeded
+///   (analyst maximizes)
+/// - `stealth` = `1 - max chain detection rate per run` — i.e. zero
+///   alerted chains scores 1.0, fully alerted scores 0.0 (analyst
+///   maximizes)
+///
+/// A run dominates another if it is no worse on every axis and
+/// strictly better on at least one. The frontier is the set of
+/// non-dominated runs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ParetoFrontier {
+    /// Frontier entries sorted by ascending `attacker_cost` for stable
+    /// rendering.
+    pub points: Vec<ParetoPoint>,
+    /// Number of runs scanned to build the frontier.
+    pub total_runs: u32,
+}
+
+/// One non-dominated run on the (cost, success, stealth) frontier.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ParetoPoint {
+    pub run_index: u32,
+    pub attacker_cost: f64,
+    /// Fraction of chains in which any phase succeeded. `[0, 1]`.
+    pub success: f64,
+    /// `1 - max(chain detection accumulation)` per run. `[0, 1]`.
+    pub stealth: f64,
 }
 
 /// Aggregate statistics for one kill chain across all runs.
@@ -135,6 +202,97 @@ pub struct CampaignSummary {
     pub cost_asymmetry_ratio: f64,
     /// Mean attribution confidence (0 = unknown, 1 = definitive).
     pub mean_attribution_confidence: f64,
+    /// Distribution of *first-detection time* across runs that detected
+    /// the chain at all. Runs where the defender was never alerted are
+    /// **not** included — they show up as `right_censored` instead, so
+    /// the mean / percentiles are not biased downward by treating
+    /// non-detections as instant detections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to_first_detection: Option<TimeToFirstDetection>,
+    /// Distribution of *defender exposure time* — the gap between the
+    /// first detection event and the run's terminal tick. Captures how
+    /// much uncovered runway the operation kept after being seen.
+    /// `None` when no runs detected the chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defender_reaction_time: Option<DefenderReactionTime>,
+    /// Per-phase Kaplan-Meier survival estimate for time-to-resolution,
+    /// where "event" means any terminal status (success / failure /
+    /// detection) and runs that never reach the phase are right-censored
+    /// at the run's final tick.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub phase_survival: BTreeMap<PhaseId, KaplanMeierCurve>,
+}
+
+/// Time-to-first-detection summary for one kill chain.
+///
+/// Detection time is measured in ticks from the start of the run to the
+/// first phase that transitioned to `PhaseOutcome::Detected`. A run
+/// where the defender was never alerted contributes to `right_censored`
+/// only — it does *not* appear in `samples` or skew the mean.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimeToFirstDetection {
+    /// Number of runs that detected the chain (the support of the
+    /// distribution stats).
+    pub detected_runs: u32,
+    /// Number of runs where the defender was never alerted. These are
+    /// right-censored at the run's `final_tick`.
+    pub right_censored: u32,
+    /// Tick of first detection in each detected run, sorted ascending.
+    pub samples: Vec<u32>,
+    /// Descriptive stats over `samples`. `None` when no runs detected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<DistributionStats>,
+}
+
+/// Defender exposure / reaction-time summary for one kill chain.
+///
+/// "Reaction time" here is the count of ticks between the first
+/// detection event and the run's terminal tick. It is *not* the time
+/// the defender took to *act* (the engine doesn't yet model an explicit
+/// defender response action) — it is the window of post-detection
+/// runway the attacker had to keep operating. A long mean reaction
+/// time means detection arrived too late to be useful; a short one
+/// means the chain was caught near its end either way.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderReactionTime {
+    /// Number of runs that contributed a reaction-time sample.
+    pub detected_runs: u32,
+    /// Per-detected-run gap (ticks) from first detection to run end.
+    pub samples: Vec<u32>,
+    /// Descriptive stats over `samples`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<DistributionStats>,
+}
+
+/// Kaplan-Meier survival curve for time-to-event over Monte Carlo runs.
+///
+/// `S(t)` is the probability that a phase has *not* yet resolved by
+/// tick `t`. Runs that ended without the phase resolving (still
+/// `Pending` or `Active`) contribute as right-censored observations at
+/// the run's final tick — they reduce the at-risk set but do not count
+/// as events. The implicit value before the first event is `S = 1.0`;
+/// `survival[i]` records `S(t_i)` *after* applying the i-th event.
+/// `cumulative_hazard[i]` is `-ln(survival[i])`, or `None` when
+/// `survival[i] == 0` (hazard is mathematically infinite — `Option`
+/// avoids the JSON-roundtrip pitfall where `f64::INFINITY` serializes
+/// as `null` and then fails to deserialize back into `f64`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KaplanMeierCurve {
+    /// Distinct event times where the curve steps, sorted ascending.
+    pub times: Vec<u32>,
+    /// `S(t)` at each event time, *after* the step. The pre-event
+    /// value is implicitly `1.0`.
+    pub survival: Vec<f64>,
+    /// Cumulative hazard `H(t) = -ln(S(t))`. `None` at indices where
+    /// `S` has hit zero (`H` is infinite there).
+    pub cumulative_hazard: Vec<Option<f64>>,
+    /// Number of events (terminal resolutions) at each step.
+    pub events: Vec<u32>,
+    /// Number of runs at risk *just before* each event time.
+    pub at_risk: Vec<u32>,
+    /// Total number of right-censored observations across all event
+    /// times (runs that ended with the phase still pending).
+    pub censored: u32,
 }
 
 /// Aggregate statistics for a single phase across runs.

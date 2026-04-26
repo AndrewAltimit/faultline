@@ -1276,6 +1276,8 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         campaign_summaries: BTreeMap::new(),
         feasibility_matrix: vec![row],
         seam_scores: BTreeMap::new(),
+        correlation_matrix: None,
+        pareto_frontier: None,
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

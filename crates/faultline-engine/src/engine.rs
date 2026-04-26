@@ -7,6 +7,7 @@ use rand_chacha::ChaCha8Rng;
 
 use faultline_events::EventEvaluator;
 use faultline_geo::{self, GameMap};
+use faultline_types::campaign::BranchCondition;
 use faultline_types::ids::{EventId, FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{EventRecord, Outcome, RunResult, StateSnapshot};
@@ -29,6 +30,11 @@ pub struct Engine {
     event_evaluator: EventEvaluator,
     outcome_reached: bool,
     campaigns: BTreeMap<KillChainId, CampaignState>,
+    /// Length of the metric history buffer required to evaluate every
+    /// `BranchCondition::EscalationThreshold` in the scenario. Computed
+    /// once at construction; `0` when no escalation branches exist (the
+    /// hot path skips snapshot capture entirely).
+    metric_history_depth: usize,
 }
 
 impl Engine {
@@ -63,6 +69,7 @@ impl Engine {
 
         let state = initialize_state(&scenario)?;
         let campaigns = campaign::initialize_campaigns(&scenario);
+        let metric_history_depth = max_escalation_window(&scenario);
 
         Ok(Self {
             scenario,
@@ -72,6 +79,7 @@ impl Engine {
             event_evaluator,
             outcome_reached: false,
             campaigns,
+            metric_history_depth,
         })
     }
 
@@ -109,6 +117,12 @@ impl Engine {
 
         // Phase 7: Information warfare.
         tick::information_phase(&mut self.state, &self.scenario);
+
+        // Capture an escalation-metric snapshot *before* the campaign
+        // phase so a phase that resolves this tick reads `sustained_ticks`
+        // counts that include the current tick. The snapshot is dropped
+        // immediately when no scenario branch needs it.
+        self.state.push_metric_snapshot(self.metric_history_depth);
 
         // Phase 7b: Campaigns / kill chains.
         if !self.scenario.kill_chains.is_empty() {
@@ -306,7 +320,43 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         events_fired_this_tick: Vec::new(),
         snapshots: Vec::new(),
         non_kinetic: Default::default(),
+        metric_history: Vec::new(),
     })
+}
+
+/// Walk the scenario's branch graph and return the longest
+/// `sustained_ticks` window any `EscalationThreshold` asks for.
+///
+/// `0` means no escalation-threshold branches exist anywhere — the
+/// engine skips the per-tick metric snapshot in that case to keep the
+/// hot path allocation-free for legacy scenarios.
+///
+/// When at least one `EscalationThreshold` branch exists, the return
+/// value is always `>= 1` even when every branch sets `sustained_ticks
+/// = 0`. This ensures `push_metric_snapshot` always populates the
+/// buffer, which `escalation_threshold_satisfied` requires to evaluate
+/// the "must currently be on the right side" (`need = 1`) contract.
+fn max_escalation_window(scenario: &Scenario) -> usize {
+    let mut max_window: u32 = 0;
+    let mut found_any = false;
+    for chain in scenario.kill_chains.values() {
+        for phase in chain.phases.values() {
+            for branch in &phase.branches {
+                if let BranchCondition::EscalationThreshold {
+                    sustained_ticks, ..
+                } = &branch.condition
+                {
+                    found_any = true;
+                    max_window = max_window.max(*sustained_ticks);
+                }
+            }
+        }
+    }
+    if found_any {
+        (max_window as usize).max(1)
+    } else {
+        0
+    }
 }
 
 /// Take a snapshot of the current simulation state.
