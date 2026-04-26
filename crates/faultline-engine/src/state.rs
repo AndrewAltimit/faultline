@@ -35,6 +35,55 @@ pub struct SimulationState {
     /// them uniformly.
     #[serde(default)]
     pub non_kinetic: NonKineticMetrics,
+    /// Rolling history of escalation-relevant metrics, used to evaluate
+    /// `BranchCondition::EscalationThreshold` with hysteresis. Bounded
+    /// to the longest `sustained_ticks` window any branch in the
+    /// scenario asks for, plus a small safety margin — see
+    /// [`Self::push_metric_snapshot`].
+    #[serde(default)]
+    pub metric_history: Vec<MetricSnapshot>,
+}
+
+/// One row of the rolling metric history. Captured at the end of each
+/// tick (after the political and information phases have updated state)
+/// so that an `EscalationThreshold` evaluated when a campaign phase
+/// resolves on the *next* tick reads stable values.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MetricSnapshot {
+    pub tick: u32,
+    pub tension: f64,
+    pub information_dominance: f64,
+    pub institutional_erosion: f64,
+    pub coercion_pressure: f64,
+    pub political_cost: f64,
+}
+
+impl SimulationState {
+    /// Capture the current escalation-metric values at the end of a tick.
+    ///
+    /// `max_history` is the longest `sustained_ticks` window any
+    /// scenario branch needs to look back over; the buffer is kept just
+    /// large enough to satisfy that window. Passing `0` disables
+    /// retention entirely (the snapshot is dropped immediately) which
+    /// is the no-op default for scenarios with no
+    /// `EscalationThreshold` branches.
+    pub fn push_metric_snapshot(&mut self, max_history: usize) {
+        if max_history == 0 {
+            return;
+        }
+        self.metric_history.push(MetricSnapshot {
+            tick: self.tick,
+            tension: self.political_climate.tension,
+            information_dominance: self.non_kinetic.information_dominance,
+            institutional_erosion: self.non_kinetic.institutional_erosion,
+            coercion_pressure: self.non_kinetic.coercion_pressure,
+            political_cost: self.non_kinetic.political_cost,
+        });
+        if self.metric_history.len() > max_history {
+            let drop = self.metric_history.len() - max_history;
+            self.metric_history.drain(0..drop);
+        }
+    }
 }
 
 /// Non-kinetic outcome metrics.

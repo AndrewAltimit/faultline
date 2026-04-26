@@ -111,16 +111,48 @@ scenario.
 Fills the biggest analytical hole: the tool reports *that* things
 happened but not *when* or *how often over time*.
 
-- [ ] `time_to_first_detection` histogram per chain
-- [ ] Per-phase Kaplan-Meier survival / cumulative hazard curves
-- [ ] Sobol / Morris variance decomposition (replacing pure OAT)
-- [ ] Correlation matrix (inputs ↔ outputs)
-- [ ] Escalation-ladder branch condition with hysteresis:
-      `EscalationThreshold { from, to, duration_ticks }`
-- [ ] Pareto frontier output (cost vs. success vs. detection)
-- [ ] Defender-reaction-time distribution
+- [x] `time_to_first_detection` histogram per chain
+- [x] Per-phase Kaplan-Meier survival / cumulative hazard curves
+- [x] Sobol / Morris variance decomposition (replacing pure OAT)
+- [x] Correlation matrix (inputs ↔ outputs)
+- [x] Escalation-ladder branch condition with hysteresis:
+      `EscalationThreshold { metric, threshold, direction, sustained_ticks }`
+- [x] Pareto frontier output (cost vs. success vs. detection)
+- [x] Defender-reaction-time distribution
 
-**Status:** deferred.
+**Status:** Epic C **closed**. Single PR (branch
+`epic-c-time-attribution`) added a new
+`faultline_stats::time_dynamics` post-processing module — three
+analytics families (time-to-first-detection per chain with
+right-censoring, defender exposure / reaction time per chain, per-phase
+Kaplan-Meier survival with cumulative hazard) hang off the existing
+`CampaignSummary`, and two cross-run summaries (an output-output
+Pearson correlation matrix and a non-dominated Pareto frontier over
+attacker cost / success / stealth) hang off `MonteCarloSummary`. All
+four are pure functions of already-collected `RunResult` data — no
+re-run, no new RNG draws — so determinism is preserved and existing
+manifest hashes only change because the summary schema gained new
+fields. The Morris elementary-effects screening lives in a separate
+`faultline_stats::morris` module: a deterministic, seeded R-trajectory
+design that produces `mu_star` / `mu` / `sigma` per parameter against
+one of three output metrics (duration, first-faction win rate, mean
+chain success). `R(k+1)` MC batches per run versus Sobol's `N(2k+2)`
+keeps it inside an interactive analyst budget while still ranking by
+variance, not just by visible delta — Sobol remains a future follow-up
+for parameters Morris flags. Engine-side, `BranchCondition` gained an
+`EscalationThreshold { metric, threshold, direction, sustained_ticks }`
+variant with hysteresis: the engine captures an escalation-metric
+snapshot at the end of every tick (only when the scenario actually
+references the variant — `max_escalation_window` returns `0` for
+legacy chains and the snapshot is dropped immediately) and the branch
+matcher checks the last `sustained_ticks` snapshots. Two end-to-end
+integration tests pin the high-tension and low-tension paths. The
+report renderer adds three new sections — Time & Attribution Dynamics
+(TTD / reaction / KM tables), Pareto Frontier, and Output Correlation
+Matrix — each elided when no chain produces signal. All 9 bundled
+scenarios still verify bit-identical via the manifest determinism
+contract; cargo deny / clippy / fmt / JS tests / WASM build all
+clean.
 
 ### Epic D — Engine model depth
 

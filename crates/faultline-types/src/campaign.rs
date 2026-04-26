@@ -265,6 +265,44 @@ pub enum BranchCondition {
     Probability { p: f64 },
     /// Always take this branch (used as a terminal fallback).
     Always,
+    /// Branch taken when a global metric (tension, information
+    /// dominance, …) has stayed on the requested side of `threshold`
+    /// for at least `sustained_ticks` consecutive ticks at the time of
+    /// branch evaluation. The `sustained_ticks` requirement supplies
+    /// hysteresis: a single-tick spike will not flip a branch in or
+    /// out, which would otherwise produce extreme MC variance when a
+    /// metric oscillates near a threshold.
+    EscalationThreshold {
+        metric: EscalationMetric,
+        threshold: f64,
+        direction: ThresholdDirection,
+        sustained_ticks: u32,
+    },
+}
+
+/// Global metrics an [`BranchCondition::EscalationThreshold`] can read.
+///
+/// All metrics are clamped to `[0, 1]` by the engine on every tick (or
+/// `[-1, 1]` for `InformationDominance`), so threshold values are
+/// interpreted in those ranges. `Tension` reads
+/// `political_climate.tension`; the rest read the corresponding
+/// `non_kinetic` accumulator.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum EscalationMetric {
+    Tension,
+    InformationDominance,
+    InstitutionalErosion,
+    CoercionPressure,
+    PoliticalCost,
+}
+
+/// Which side of the threshold the metric must be on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ThresholdDirection {
+    /// Metric must be `>= threshold`.
+    Above,
+    /// Metric must be `<= threshold`.
+    Below,
 }
 
 // ---------------------------------------------------------------------------
