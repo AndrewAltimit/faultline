@@ -149,6 +149,18 @@ pub fn run_morris(
         // trajectory.
         let _ = get_param(base_scenario, path)?;
     }
+    // Validate bounds: reversed (lo >= hi), zero-span, non-finite, or NaN
+    // bounds would silently zero out the trajectory loop's `if span <= 0.0`
+    // guard for that parameter, producing `n_effects = 0` indistinguishable
+    // from a genuinely zero-effect parameter. Surface the misconfiguration.
+    for (path, &(lo, hi)) in config.params.iter().zip(config.bounds.iter()) {
+        if !lo.is_finite() || !hi.is_finite() || lo >= hi {
+            return Err(StatsError::InvalidConfig(format!(
+                "morris: bounds for '{path}' must satisfy lo < hi with finite \
+                 values (got [{lo}, {hi}])"
+            )));
+        }
+    }
 
     let k = config.params.len();
     let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
@@ -584,6 +596,54 @@ mod tests {
             assert!((x.mu_star - y.mu_star).abs() < 1e-12);
             assert!((x.sigma - y.sigma).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn morris_rejects_reversed_bounds() {
+        let scenario = scenario_for_morris();
+        let mc = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(1),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        let cfg = MorrisConfig {
+            params: vec!["faction.a.initial_morale".into()],
+            bounds: vec![(0.9, 0.1)],
+            trajectories: 1,
+            delta_fraction: 0.5,
+            seed: 0,
+        };
+        let err = run_morris(&scenario, &mc, &cfg, MorrisMetric::Duration)
+            .expect_err("reversed bounds must be rejected");
+        match err {
+            StatsError::InvalidConfig(msg) => {
+                assert!(msg.contains("lo < hi"), "got: {msg}");
+            },
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn morris_rejects_zero_span_bounds() {
+        let scenario = scenario_for_morris();
+        let mc = MonteCarloConfig {
+            num_runs: 1,
+            seed: Some(1),
+            collect_snapshots: false,
+            parallel: false,
+        };
+        let cfg = MorrisConfig {
+            params: vec!["faction.a.initial_morale".into()],
+            bounds: vec![(0.5, 0.5)],
+            trajectories: 1,
+            delta_fraction: 0.5,
+            seed: 0,
+        };
+        assert!(matches!(
+            run_morris(&scenario, &mc, &cfg, MorrisMetric::Duration),
+            Err(StatsError::InvalidConfig(_))
+        ));
     }
 
     #[test]
