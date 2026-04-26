@@ -150,21 +150,23 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                         role: noise.role.clone(),
                     });
                 }
-                // NaN never satisfies `< 0.0` or `> 700.0`, so explicit
-                // `!is_finite()` is required to catch it (and ±∞).
-                if !noise.items_per_tick.is_finite() {
-                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
+                // A negative rate is silently clamped to 0.0 in
+                // `enqueue_phase_noise` via `.max(0.0)`, masking
+                // authoring errors (sign flip / typo). Same fail-loud
+                // pattern as `NegativeServiceRate`. Check before the
+                // `!is_finite()` guard so `f64::NEG_INFINITY` reaches
+                // the diagnostic that names the actual failure mode.
+                if noise.items_per_tick < 0.0 {
+                    return Err(ScenarioError::NegativeDefenderNoiseRate {
                         chain: cid.clone(),
                         phase: pid.clone(),
                         value: noise.items_per_tick,
                     });
                 }
-                // A negative rate is silently clamped to 0.0 in
-                // `enqueue_phase_noise` via `.max(0.0)`, masking
-                // authoring errors (sign flip / typo). Same fail-loud
-                // pattern as `NegativeServiceRate`.
-                if noise.items_per_tick < 0.0 {
-                    return Err(ScenarioError::NegativeDefenderNoiseRate {
+                // NaN never satisfies `< 0.0` or `> 700.0`, so explicit
+                // `!is_finite()` is required to catch it (and +∞).
+                if !noise.items_per_tick.is_finite() {
+                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
                         chain: cid.clone(),
                         phase: pid.clone(),
                         value: noise.items_per_tick,
