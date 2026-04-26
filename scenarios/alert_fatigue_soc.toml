@@ -1,0 +1,475 @@
+# Alert Fatigue — SOC Capacity Saturation Wargame
+#
+# Demonstrates the Epic K defender-capacity model: a multi-phase
+# intrusion in which the attacker's first phase deliberately floods
+# the defender's tier-1 SOC alert queue with low-quality noise, so
+# that the genuinely interesting later phases slip past detection
+# rolls the defender would have caught at idle.
+#
+# The analytical purpose is to quantify how much real-detection
+# capability is lost to volume, not to skill. The published SOC-
+# effectiveness literature (Mandiant M-Trends, IBM X-Force, Verizon
+# DBIR, ESG SOC modernization surveys) consistently reports a
+# 50–80% drop in true-positive rates under sustained queue
+# saturation; the `saturated_detection_factor = 0.3` value below
+# sits in the middle of that range.
+#
+# Parameters are aggregate statistical descriptors derived from
+# publicly available sources:
+#
+#   - Mandiant M-Trends (median dwell time, MTTD distribution)
+#   - IBM X-Force Threat Intelligence Index (alert-volume metrics)
+#   - Verizon DBIR (intrusion phase progression)
+#   - ESG / Ponemon SOC surveys (analyst throughput, ticket capacity)
+#   - CISA / NIST SP 800-61 (incident response process timing)
+#
+# No specific operational tooling is modeled; all values are aggregate
+# statistical descriptors expected to be sourceable from open
+# literature. The scenario is descriptive, not prescriptive.
+
+attacker_budget = 250_000.0
+defender_budget = 50_000_000.0
+
+[meta]
+schema_version = 1
+name = "Alert Fatigue — SOC Capacity Saturation Wargame"
+description = "Multi-phase intrusion campaign that exploits a finite-throughput SOC. The attacker's enumeration phase floods the tier-1 alert queue, suppressing detection of the credential-harvest and lateral-movement phases the defender would otherwise have caught. Quantifies how much true-positive rate the defender loses to volume saturation — Epic K's canonical archetype for the new defender-capacity primitive."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["soc", "alert-fatigue", "defender-capacity", "epic-k", "intrusion"]
+confidence = "Medium"
+
+# ============================================================================
+# Map
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 1
+
+[map.regions.enterprise_dmz]
+id = "enterprise_dmz"
+name = "Enterprise DMZ"
+population = 50_000
+urbanization = 0.95
+initial_control = "blue_soc"
+strategic_value = 6.0
+borders = ["enterprise_core"]
+
+[map.regions.enterprise_core]
+id = "enterprise_core"
+name = "Enterprise Core Network"
+population = 50_000
+urbanization = 0.95
+initial_control = "blue_soc"
+strategic_value = 10.0
+borders = ["enterprise_dmz"]
+
+[map.infrastructure.identity_provider]
+id = "identity_provider"
+name = "Identity Provider Cluster"
+region = "enterprise_core"
+infra_type = "Internet"
+criticality = 0.95
+initial_status = 1.0
+
+[map.infrastructure.crown_jewel_db]
+id = "crown_jewel_db"
+name = "Crown-Jewel Customer Database"
+region = "enterprise_core"
+infra_type = "Internet"
+criticality = 0.98
+initial_status = 1.0
+
+[[map.terrain]]
+region = "enterprise_dmz"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "enterprise_core"
+terrain_type = "Urban"
+movement_modifier = 0.6
+defense_modifier = 1.6
+visibility = 0.85
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+# -- Defender: a finite-throughput SOC --------------------------------------
+
+[factions.blue_soc]
+id = "blue_soc"
+name = "Enterprise SOC"
+description = "Notional defender posture: tier-1 alert triage cell plus a smaller tier-2 intrusion-analyst team. Capacity values reflect published SOC-throughput surveys for a mid-sized enterprise security operations function."
+color = "#1f4e79"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 200.0
+initial_resources = 5000.0
+resource_rate = 50.0
+command_resilience = 0.7
+intelligence = 0.65
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.blue_soc.faction_type]
+kind = "Government"
+
+[factions.blue_soc.faction_type.institutions.soc_command]
+id = "soc_command"
+name = "SOC Command"
+institution_type = "Intelligence"
+loyalty = 0.85
+effectiveness = 0.75
+personnel = 80
+fracture_threshold = 0.30
+
+[factions.blue_soc.forces.soc_analysts]
+id = "soc_analysts"
+name = "SOC Analyst Pool"
+unit_type = "CyberUnit"
+region = "enterprise_core"
+strength = 80.0
+mobility = 0.0
+upkeep = 8.0
+morale_modifier = 0.0
+capabilities = []
+
+# Tier-1 alert triage queue: ~10 alerts/tick service, depth 100.
+# Per published SOC surveys (ESG SOC modernization, Ponemon SOC cost),
+# a mid-sized enterprise tier-1 cell triages roughly 8–15 alerts per
+# analyst-shift; capacity is deliberately set below the noisy
+# enumeration phase's burst rate so the queue accumulates a backlog
+# during phase 1, which then persists into the (sequential) phase 2
+# and 3 detection windows. That persistence is what produces the
+# alert-fatigue effect — once a noise burst lands, it takes the
+# defender a real number of ticks to dig out, and during the dig-out
+# the real intrusion is rolling its detection rolls against a still-
+# saturated queue.
+[factions.blue_soc.defender_capacities.tier1_alerts]
+id = "tier1_alerts"
+name = "Tier-1 Alert Triage"
+description = "Initial alert pipeline: high volume, low context, bounded analyst throughput. Saturated tier-1 means real signal sits in queue and ages out before being looked at — the canonical alert-fatigue mechanism. Overflow policy is `Backlog` because real SOC ticketing systems do not drop alerts — they accumulate them; the alert-fatigue cost is that the analyst working through a 300-deep backlog is rolling against impaired catch rates the entire time, not that the next page got dropped."
+queue_depth = 100
+service_rate = 10.0
+overflow = "Backlog"
+saturated_detection_factor = 0.30
+
+# Tier-2 intrusion analysts: deeper investigation, much smaller queue
+# but also much smaller volume of work — only escalated incidents
+# arrive here. Backlog policy because forensic investigation never
+# truly drops cases — they age in queue, modeling the published
+# median dwell-time numbers (Mandiant M-Trends ~24 days for missed
+# intrusions in mid-sized enterprises).
+[factions.blue_soc.defender_capacities.tier2_intrusion]
+id = "tier2_intrusion"
+name = "Tier-2 Intrusion Analysis"
+description = "Forensic investigation cell. Receives only escalated incidents. Smaller capacity matches the published median IR-team size for a mid-sized enterprise; lower service rate captures the deeper analytic effort each incident requires."
+queue_depth = 5
+service_rate = 0.8
+overflow = "Backlog"
+saturated_detection_factor = 0.40
+
+# -- Attacker: a 4-phase intrusion -------------------------------------------
+
+[factions.red_intrusion]
+id = "red_intrusion"
+name = "External Intrusion Set"
+description = "Notional adversary running a multi-phase intrusion with deliberate enumeration noise as a defender-capacity attack. Composite profile from open-source intrusion analyses (Mandiant, Crowdstrike public reports, FIRST.org case studies) — not a model of any specific named threat actor."
+color = "#8e2a2a"
+tech_access = []
+initial_morale = 0.9
+logistics_capacity = 30.0
+initial_resources = 200.0
+resource_rate = 5.0
+command_resilience = 0.6
+intelligence = 0.7
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.red_intrusion.faction_type]
+kind = "Insurgent"
+
+[factions.red_intrusion.forces.operator_cell]
+id = "operator_cell"
+name = "Operator Cell"
+unit_type = "CyberUnit"
+region = "enterprise_dmz"
+strength = 12.0
+mobility = 1.0
+upkeep = 0.5
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Tech, climate, events — minimal referential-integrity set
+# ============================================================================
+
+[technology]
+
+[political_climate]
+tension = 0.30
+institutional_trust = 0.65
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.7
+disinformation_susceptibility = 0.5
+state_control = 0.1
+social_media_penetration = 0.9
+internet_availability = 0.99
+
+[events]
+
+# ============================================================================
+# Kill Chain — flooded SOC intrusion archetype
+# ============================================================================
+#
+# Four phases:
+#
+#   noisy_enumeration  → credential_harvest  → lateral_movement  → exfiltration
+#
+# Phase 1 emits ~25 alerts/tick into tier-1 — well above the 12/tick
+# service rate — so tier-1 saturates within the first few ticks of the
+# run. While saturated, every detection roll on phases 2 and 3 is
+# multiplied by tier-1's `saturated_detection_factor = 0.3`, dropping
+# the *catch* rate from a baseline 8% to 2.4% per tick. The MC
+# distribution surfaces how often that ~3× suppression turns a
+# would-be detection into a successful exfil.
+#
+# Phase 4 (exfiltration) is gated by tier-2, which has smaller capacity
+# and a backlog policy — it tracks ticks-to-saturation rather than
+# dropping alerts, modeling forensic investigation backlog rather than
+# alert fatigue per se.
+
+[kill_chains.flooded_soc]
+id = "flooded_soc"
+name = "Flooded-SOC Intrusion Campaign"
+description = "Multi-phase intrusion paired with a deliberate enumeration-noise attack against the defender's tier-1 alert pipeline. Quantifies the detection-rate suppression caused by SOC capacity saturation — the alert-fatigue effect measured in published SOC surveys."
+attacker = "red_intrusion"
+target = "blue_soc"
+entry_phase = "noisy_enumeration"
+
+# -- Phase 1: noisy enumeration ---------------------------------------------
+
+[kill_chains.flooded_soc.phases.noisy_enumeration]
+id = "noisy_enumeration"
+name = "Noisy External Enumeration"
+description = "Massively parallel external scanning, brute-force credential spraying, and login-failure probes. Each tick emits ~25 alerts into tier-1; well above the 12/tick service rate. The phase itself is loud (high detection_probability_per_tick), but its purpose is to saturate the queue and shadow the later phases — the defender catches *this* phase but pays the throughput cost."
+base_success_probability = 0.95
+min_duration = 6
+max_duration = 12
+detection_probability_per_tick = 0.10
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.85
+targets_domains = ["NetworkSecurity"]
+
+[kill_chains.flooded_soc.phases.noisy_enumeration.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 800_000.0
+attacker_resources = 1.0
+
+[[kill_chains.flooded_soc.phases.noisy_enumeration.defender_noise]]
+defender = "blue_soc"
+role = "tier1_alerts"
+items_per_tick = 60.0
+
+[[kill_chains.flooded_soc.phases.noisy_enumeration.outputs]]
+type = "IntelligenceGain"
+amount = 0.10
+
+[[kill_chains.flooded_soc.phases.noisy_enumeration.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "credential_harvest"
+
+# Detection here doesn't end the campaign — the noise IS the point.
+# The OnDetection branch routes back to credential_harvest anyway,
+# so the saturation effect persists for downstream phases.
+[[kill_chains.flooded_soc.phases.noisy_enumeration.branches]]
+condition = { type = "OnDetection" }
+next_phase = "credential_harvest"
+
+# -- Phase 2: credential harvest --------------------------------------------
+
+[kill_chains.flooded_soc.phases.credential_harvest]
+id = "credential_harvest"
+name = "Credential Harvest via Phishing"
+description = "Targeted phishing against a small set of identified privileged accounts. Generates only 2 alerts/tick — entirely buried in the tier-1 backlog the noisy_enumeration phase created. `gated_by_defender` says: this phase's detection probability is multiplied by the tier-1 saturated factor while the queue is full."
+prerequisites = ["noisy_enumeration"]
+base_success_probability = 0.70
+min_duration = 4
+max_duration = 9
+detection_probability_per_tick = 0.08
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.80
+targets_domains = ["NetworkSecurity", "InsiderThreat"]
+gated_by_defender = { faction = "blue_soc", role = "tier1_alerts" }
+
+[kill_chains.flooded_soc.phases.credential_harvest.cost]
+attacker_dollars = 8_000.0
+defender_dollars = 2_000_000.0
+attacker_resources = 1.5
+
+[[kill_chains.flooded_soc.phases.credential_harvest.defender_noise]]
+defender = "blue_soc"
+role = "tier1_alerts"
+items_per_tick = 2.0
+
+[[kill_chains.flooded_soc.phases.credential_harvest.outputs]]
+type = "IntelligenceGain"
+amount = 0.20
+
+[[kill_chains.flooded_soc.phases.credential_harvest.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "lateral_movement"
+
+[[kill_chains.flooded_soc.phases.credential_harvest.branches]]
+condition = { type = "OnDetection" }
+next_phase = "intrusion_blocked"
+
+# -- Phase 3: lateral movement ----------------------------------------------
+
+[kill_chains.flooded_soc.phases.lateral_movement]
+id = "lateral_movement"
+name = "Lateral Movement to Crown-Jewel Network"
+description = "Stolen credentials used to pivot from DMZ into the enterprise core. Each pivot generates 1 alert/tick into tier-1 — also gated by the saturated tier-1 queue, also therefore mostly missed under load."
+prerequisites = ["credential_harvest"]
+base_success_probability = 0.78
+min_duration = 5
+max_duration = 12
+detection_probability_per_tick = 0.06
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.75
+targets_domains = ["NetworkSecurity"]
+gated_by_defender = { faction = "blue_soc", role = "tier1_alerts" }
+
+[kill_chains.flooded_soc.phases.lateral_movement.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 3_500_000.0
+attacker_resources = 2.0
+
+[[kill_chains.flooded_soc.phases.lateral_movement.defender_noise]]
+defender = "blue_soc"
+role = "tier1_alerts"
+items_per_tick = 1.0
+
+[[kill_chains.flooded_soc.phases.lateral_movement.outputs]]
+type = "IntelligenceGain"
+amount = 0.20
+
+[[kill_chains.flooded_soc.phases.lateral_movement.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "exfiltration"
+
+[[kill_chains.flooded_soc.phases.lateral_movement.branches]]
+condition = { type = "OnDetection" }
+next_phase = "intrusion_blocked"
+
+# -- Phase 4: exfiltration --------------------------------------------------
+
+[kill_chains.flooded_soc.phases.exfiltration]
+id = "exfiltration"
+name = "Bulk Data Exfiltration"
+description = "Bulk transfer of crown-jewel customer database. This phase is gated by tier-2 intrusion analysis (deeper forensic capability), not tier-1: large outbound transfers are escalated to tier-2 directly. Tier-2 has a tiny queue and a backlog overflow policy — it never drops, just ages out."
+prerequisites = ["lateral_movement"]
+base_success_probability = 0.85
+min_duration = 3
+max_duration = 8
+detection_probability_per_tick = 0.12
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.70
+targets_domains = ["NetworkSecurity"]
+gated_by_defender = { faction = "blue_soc", role = "tier2_intrusion" }
+
+[kill_chains.flooded_soc.phases.exfiltration.cost]
+attacker_dollars = 6_000.0
+defender_dollars = 8_000_000.0
+attacker_resources = 1.5
+
+[[kill_chains.flooded_soc.phases.exfiltration.defender_noise]]
+defender = "blue_soc"
+role = "tier2_intrusion"
+items_per_tick = 0.4
+
+[[kill_chains.flooded_soc.phases.exfiltration.outputs]]
+type = "InfraDamage"
+region = "enterprise_core"
+factor = 0.30
+
+[[kill_chains.flooded_soc.phases.exfiltration.outputs]]
+type = "InstitutionalErosion"
+delta = 0.12
+
+[[kill_chains.flooded_soc.phases.exfiltration.outputs]]
+type = "CoercionPressure"
+delta = 0.20
+
+[[kill_chains.flooded_soc.phases.exfiltration.branches]]
+condition = { type = "OnDetection" }
+next_phase = "intrusion_blocked"
+
+# -- Terminal: defender intercepts ------------------------------------------
+
+[kill_chains.flooded_soc.phases.intrusion_blocked]
+id = "intrusion_blocked"
+name = "Intrusion Detected & Contained"
+description = "Terminal phase taken when the defender catches any phase. Models incident response, credential rotation, and forensic recovery."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.55
+targets_domains = []
+
+[kill_chains.flooded_soc.phases.intrusion_blocked.cost]
+attacker_dollars = 1_000.0
+defender_dollars = 1_500_000.0
+attacker_resources = 0.2
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 60
+monte_carlo_runs = 500
+seed = 20260426
+fog_of_war = false
+snapshot_interval = 10
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+LanchesterSquare = {}
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+[victory_conditions.blue_holds]
+id = "blue_holds"
+name = "Network Held"
+faction = "blue_soc"
+
+[victory_conditions.blue_holds.condition]
+type = "StrategicControl"
+threshold = 1.0
+
+[victory_conditions.red_extracts]
+id = "red_extracts"
+name = "Crown-Jewel Data Exfiltrated"
+faction = "red_intrusion"
+
+[victory_conditions.red_extracts.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.15

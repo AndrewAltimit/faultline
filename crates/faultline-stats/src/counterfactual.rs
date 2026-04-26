@@ -346,6 +346,7 @@ mod tests {
             seam_scores: BTreeMap::new(),
             correlation_matrix: None,
             pareto_frontier: None,
+            defender_capacity: Vec::new(),
         };
         let mut variant = base.clone();
 

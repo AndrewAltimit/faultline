@@ -85,6 +85,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         diplomacy: vec![],
         doctrine: Doctrine::Conventional,
         escalation_rules: None,
+        defender_capacities: BTreeMap::new(),
     }
 }
 
@@ -155,6 +156,8 @@ fn chain_scenario(detection_per_tick: f64, success: f64) -> Scenario {
             branches: vec![],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     let mut kill_chains = BTreeMap::new();
@@ -309,6 +312,7 @@ fn make_run(
         snapshots: vec![],
         event_log: vec![],
         campaign_reports,
+        defender_queue_reports: Vec::new(),
     }
 }
 
@@ -836,6 +840,8 @@ fn escalation_threshold_unsatisfiable_when_window_exceeds_max_ticks() {
             ],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     for id in [escalate.clone(), de_escalate.clone()] {
@@ -863,6 +869,8 @@ fn escalation_threshold_unsatisfiable_when_window_exceeds_max_ticks() {
                 branches: vec![],
                 parameter_confidence: None,
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
     }

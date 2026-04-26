@@ -70,6 +70,55 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 });
             }
         }
+        // Defender capacity sanity: a zero-depth queue is permanently
+        // saturated (depth >= capacity at depth 0), which would silently
+        // apply the saturated_detection_factor penalty before any noise
+        // arrives. Reject loudly. Also enforce that the inner `id`
+        // matches its table key — the field is documented as such but
+        // the engine reads only the key, so a mismatch would be a silent
+        // author error.
+        for (rid, cap) in &faction.defender_capacities {
+            if cap.queue_depth == 0 {
+                return Err(ScenarioError::ZeroDefenderQueueDepth {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                });
+            }
+            if cap.id != *rid {
+                return Err(ScenarioError::DefenderRoleIdMismatch {
+                    faction: fid.clone(),
+                    key: rid.clone(),
+                    id: cap.id.clone(),
+                });
+            }
+            // `initialize_defender_queues` clamps service_rate via
+            // `.max(0.0)`, but a negative value almost always means an
+            // authoring error (typo / sign flip) — fail loudly instead
+            // of silently freezing the queue. NaN is also rejected here
+            // since `< 0.0` is false for NaN; we use `!is_finite()` to
+            // catch it. f64::NEG_INFINITY satisfies `value < 0.0`.
+            if !cap.service_rate.is_finite() || cap.service_rate < 0.0 {
+                return Err(ScenarioError::NegativeServiceRate {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                    value: cap.service_rate,
+                });
+            }
+            // saturated_detection_factor is a multiplier on detection
+            // probability; the gating path clamps to [0, 1] silently,
+            // which would turn an authoring error like -0.5 into
+            // complete detection suppression with no diagnostic.
+            if !cap.saturated_detection_factor.is_finite()
+                || cap.saturated_detection_factor < 0.0
+                || cap.saturated_detection_factor > 1.0
+            {
+                return Err(ScenarioError::SaturatedDetectionFactorOutOfRange {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                    value: cap.saturated_detection_factor,
+                });
+            }
+        }
     }
 
     for vc in scenario.victory_conditions.values() {
@@ -78,7 +127,82 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Defender capacity references (Epic K): every (faction, role)
+    // named by `gated_by_defender` or `defender_noise` on a kill-chain
+    // phase must resolve to a declared `defender_capacities` entry.
+    // Catching this at load time turns a silent "queue not found, no
+    // gating, no enqueue" runtime no-op into a loud configuration
+    // error.
+    for (cid, chain) in &scenario.kill_chains {
+        for (pid, phase) in &chain.phases {
+            if let Some(rr) = &phase.gated_by_defender
+                && !defender_role_exists(scenario, &rr.faction, &rr.role)
+            {
+                return Err(ScenarioError::UnknownDefenderRole {
+                    faction: rr.faction.clone(),
+                    role: rr.role.clone(),
+                });
+            }
+            for noise in &phase.defender_noise {
+                if !defender_role_exists(scenario, &noise.defender, &noise.role) {
+                    return Err(ScenarioError::UnknownDefenderRole {
+                        faction: noise.defender.clone(),
+                        role: noise.role.clone(),
+                    });
+                }
+                // A negative rate is silently clamped to 0.0 in
+                // `enqueue_phase_noise` via `.max(0.0)`, masking
+                // authoring errors (sign flip / typo). Same fail-loud
+                // pattern as `NegativeServiceRate`. Check before the
+                // `!is_finite()` guard so `f64::NEG_INFINITY` reaches
+                // the diagnostic that names the actual failure mode.
+                if noise.items_per_tick < 0.0 {
+                    return Err(ScenarioError::NegativeDefenderNoiseRate {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                        value: noise.items_per_tick,
+                    });
+                }
+                // NaN never satisfies `< 0.0` or `> 700.0`, so explicit
+                // `!is_finite()` is required to catch it (and +∞).
+                if !noise.items_per_tick.is_finite() {
+                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                        value: noise.items_per_tick,
+                    });
+                }
+                // `sample_poisson` uses Knuth's inverse-transform method,
+                // which relies on `(-mean).exp()`. For `mean > ~709` this
+                // underflows to 0.0 in f64 and the loop falls through to
+                // the 100,000-iteration cap, returning `mean as u32` with
+                // a degenerate (non-Poisson) distribution. Cap well
+                // below the underflow threshold so the sampler stays in
+                // its accurate regime; authors who genuinely need higher
+                // rates can split across multiple noise streams.
+                if noise.items_per_tick > 700.0 {
+                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                        value: noise.items_per_tick,
+                    });
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn defender_role_exists(
+    scenario: &Scenario,
+    faction: &faultline_types::ids::FactionId,
+    role: &faultline_types::ids::DefenderRoleId,
+) -> bool {
+    scenario
+        .factions
+        .get(faction)
+        .is_some_and(|f| f.defender_capacities.contains_key(role))
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +264,7 @@ mod tests {
                 diplomacy: vec![],
                 doctrine: Doctrine::Conventional,
                 escalation_rules: None,
+                defender_capacities: BTreeMap::new(),
             },
         );
 

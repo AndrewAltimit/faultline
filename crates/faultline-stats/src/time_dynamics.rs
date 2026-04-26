@@ -647,6 +647,7 @@ mod tests {
             snapshots: vec![],
             event_log: vec![],
             campaign_reports,
+            defender_queue_reports: Vec::new(),
         }
     }
 
@@ -784,6 +785,8 @@ mod tests {
                 branches: vec![],
                 parameter_confidence: None,
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
         let mut chains = BTreeMap::new();

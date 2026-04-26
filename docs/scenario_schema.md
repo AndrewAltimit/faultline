@@ -161,6 +161,7 @@ An array of per-region terrain overlays. Each entry:
 | `doctrine` | enum | `Conventional`, `Guerrilla`, `Defensive`, `Disruption`, `CounterInsurgency`, `Blitzkrieg`, `Adaptive` |
 | `recruitment` | table? | See `RecruitmentConfig` below |
 | `escalation_rules` | table? | _Optional._ Declarative doctrine / ROE ladder (see Epic B) |
+| `defender_capacities` | table? | _Optional._ Per-role investigative-queue model (see Epic K) — keyed by `[factions.<id>.defender_capacities.<role_id>]` |
 
 ### `[factions.<id>.escalation_rules]` (Epic B)
 
@@ -186,6 +187,51 @@ Each `ladder` rung:
 | `trigger_tension` | f64? | Tension at/above which the rung is authorized; `None` = always authorized |
 | `permitted_actions` | `[string]` | Free-text descriptions of permitted capabilities |
 | `prohibited_actions` | `[string]` | Explicit red lines |
+
+### `[factions.<id>.defender_capacities.<role_id>]` (Epic K)
+
+Defender-side capacity model: a per-role investigative queue that
+constrains how fast this faction can process incoming alerts / tips /
+forensic work. When kill-chain phases reference roles via
+`gated_by_defender` or `defender_noise`, the engine maintains
+deterministic FIFO queues, services them at the declared per-tick
+rate, and applies the `saturated_detection_factor` penalty when a
+queue is at capacity. Empty / absent = legacy infinite-capacity
+assumption.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Must equal the inner table key |
+| `name` | string | |
+| `description` | string | _Optional._ |
+| `queue_depth` | u32 | Capacity threshold. Under `DropNew` / `DropOldest` the queue caps here; under `Backlog` the queue can grow past it but `is_saturated()` still fires from this depth onward |
+| `service_rate` | f64 | Mean items serviced per tick; fractional rates accumulate (`0.5` = one item every two ticks) |
+| `overflow` | `"DropNew"` / `"DropOldest"` / `"Backlog"` | Behavior when an enqueue would exceed `queue_depth`. Default: `"DropNew"` |
+| `saturated_detection_factor` | f64 | Multiplier applied to phases gated by this role when the queue is saturated. `1.0` = no penalty; published SOC alert-fatigue literature reports `0.2`–`0.5`. Default: `1.0` |
+
+Phase-side hookups:
+
+```toml
+# This phase floods the tier-1 queue while it's active.
+[[kill_chains.flooded_soc.phases.noisy_enumeration.defender_noise]]
+defender = "blue_soc"
+role = "tier1_alerts"
+items_per_tick = 60.0
+
+# This phase's detection roll is suppressed while tier-1 is saturated.
+gated_by_defender = { faction = "blue_soc", role = "tier1_alerts" }
+```
+
+Per-tick order is **arrive → assess → service**: a phase enqueues
+its noise, the detection roll reads the post-arrival depth, and the
+queue is serviced at end-of-tick. That ordering preserves saturation
+through the current tick's detection rolls — which is what reproduces
+the alert-fatigue effect when a sequential phase 2 inherits the
+backlog phase 1 created.
+
+References to undeclared `(faction, role)` pairs are rejected at load
+time with `ScenarioError::UnknownDefenderRole`. See
+`scenarios/alert_fatigue_soc.toml` for the bundled archetype.
 
 ### `[factions.<id>.faction_type]`
 
@@ -509,6 +555,8 @@ A single phase. Each active tick rolls independently for detection (accumulating
 | `branches` | `[PhaseBranch]` | Next-phase transitions |
 | `parameter_confidence` | `"High"` / `"Medium"` / `"Low"` | Optional author self-assessment of how defensible this phase's base rates, detection probability, and attribution difficulty are. Omit for "unrated." Distinct from the Monte Carlo-derived confidence in the feasibility matrix, which reflects *sampling* stability — `parameter_confidence` reflects *parameter* defensibility. Phases tagged `Low` are listed in a dedicated section of the generated Markdown report. |
 | `warning_indicators` | `[WarningIndicator]` | _Optional._ IWI / IOC entries surfaced in the **Countermeasure Analysis** report section (Epic B) |
+| `defender_noise` | `[DefenderNoise]` | _Optional._ Per-tick alert volume this phase generates against a named defender role's queue (Epic K) |
+| `gated_by_defender` | `DefenderRoleRef` | _Optional._ When the named role's queue is at capacity, multiplies this phase's per-tick detection roll by the role's `saturated_detection_factor` (Epic K) |
 
 ### `WarningIndicator` (Epic B)
 

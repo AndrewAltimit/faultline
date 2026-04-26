@@ -471,6 +471,7 @@ mod tests {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         }
     }
 
@@ -732,6 +733,8 @@ mod tests {
                 branches: vec![],
                 parameter_confidence: None,
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
         scenario.kill_chains.insert(

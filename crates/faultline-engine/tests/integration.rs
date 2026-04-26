@@ -117,6 +117,7 @@ fn base_scenario() -> Scenario {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         },
     );
     factions.insert(
@@ -139,6 +140,7 @@ fn base_scenario() -> Scenario {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         },
     );
 
@@ -279,6 +281,8 @@ fn campaign_scenario() -> Scenario {
             }],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     phases.insert(
@@ -308,6 +312,8 @@ fn campaign_scenario() -> Scenario {
             branches: vec![],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
 
@@ -439,6 +445,8 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
             }],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     phases.insert(
@@ -465,6 +473,8 @@ fn campaign_entry_phase_budget_block_fires_on_failure_branch() {
             branches: vec![],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
 
@@ -2413,6 +2423,8 @@ fn escalation_threshold_branch_fires_after_sustained_window() {
             ],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     for (id, name) in [
@@ -2443,6 +2455,8 @@ fn escalation_threshold_branch_fires_after_sustained_window() {
                 branches: vec![],
                 parameter_confidence: None,
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
     }
@@ -2543,6 +2557,8 @@ fn escalation_threshold_does_not_fire_below_threshold() {
             ],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     for id in [escalate.clone(), de_escalate.clone()] {
@@ -2570,6 +2586,8 @@ fn escalation_threshold_does_not_fire_below_threshold() {
                 branches: vec![],
                 parameter_confidence: None,
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
     }

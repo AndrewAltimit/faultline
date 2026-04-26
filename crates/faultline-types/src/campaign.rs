@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{FactionId, KillChainId, PhaseId, RegionId};
+use crate::ids::{DefenderRoleId, FactionId, KillChainId, PhaseId, RegionId};
 use crate::stats::ConfidenceLevel;
 
 // ---------------------------------------------------------------------------
@@ -101,6 +101,48 @@ pub struct CampaignPhase {
     /// posture would have to cover.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warning_indicators: Vec<WarningIndicator>,
+    /// Defender-side noise this phase generates while active. Each
+    /// entry routes a Poisson-distributed stream of "tickets" (alerts,
+    /// tips, samples to triage) into a named defender role's queue
+    /// every active tick. Drives the alert-fatigue / FOIA-flood /
+    /// forensic-backlog scenario classes (Epic K). Empty = legacy
+    /// phase that does not enqueue defender work; the defender
+    /// capacity machinery sees no traffic.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defender_noise: Vec<DefenderNoise>,
+    /// If set, the per-tick detection roll for this phase is multiplied
+    /// by the named defender role's `saturated_detection_factor` when
+    /// that role's queue is at full depth. Models the analytic premise
+    /// behind alert fatigue: the SOC will catch a real signal *if*
+    /// it has bandwidth to look at it. Distinct from `defender_noise`
+    /// — a phase can saturate one role but be gated by another (e.g.
+    /// volume attack overwhelms tier-1, while the real intrusion
+    /// would have been caught by tier-2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gated_by_defender: Option<DefenderRoleRef>,
+}
+
+/// A stream of synthetic defender work this phase generates.
+///
+/// Items are sampled from a Poisson distribution with mean
+/// `items_per_tick` *each active tick* and pushed into the named role's
+/// queue. The queue's [`OverflowPolicy`](crate::faction::OverflowPolicy)
+/// decides what happens when the queue is full.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderNoise {
+    /// The faction whose defender capacity receives the work.
+    pub defender: FactionId,
+    /// Which role within the faction handles it.
+    pub role: DefenderRoleId,
+    /// Mean items enqueued per active tick (Poisson rate `>= 0`).
+    pub items_per_tick: f64,
+}
+
+/// A reference to one (faction, role) defender capacity.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderRoleRef {
+    pub faction: FactionId,
+    pub role: DefenderRoleId,
 }
 
 /// An indicator-and-warning entry attached to a campaign phase.

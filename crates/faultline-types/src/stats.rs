@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{EventId, FactionId, InfraId, KillChainId, PhaseId, RegionId};
+use crate::ids::{DefenderRoleId, EventId, FactionId, InfraId, KillChainId, PhaseId, RegionId};
 use crate::strategy::FactionState;
 
 /// Configuration for Monte Carlo simulation runs.
@@ -52,6 +52,53 @@ pub struct RunResult {
     /// scenario has no kill chains.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
+    /// Per-defender-role queue summary at run end (Epic K). Empty when
+    /// no scenario faction declares `defender_capacities`. Sorted
+    /// (faction_id, role_id) for deterministic rendering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defender_queue_reports: Vec<DefenderQueueReport>,
+}
+
+/// End-of-run snapshot of a single defender role's queue activity.
+///
+/// Pure summary: derived from the per-tick state the engine kept on
+/// `DefenderQueueState`. The values that matter for cross-run
+/// aggregation are the rate-style fields (utilization, dropped,
+/// shadow_detections) and the timing field (`time_to_saturation`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderQueueReport {
+    pub faction: FactionId,
+    pub role: DefenderRoleId,
+    /// Capacity carried through for downstream rendering — the analyst
+    /// reads "depth N of capacity C" rather than digging up the schema.
+    pub capacity: u32,
+    /// Final tick's queue depth.
+    pub final_depth: u32,
+    /// Mean depth over the run (`total_depth_sum / ticks_observed`).
+    pub mean_depth: f64,
+    /// Maximum depth observed at any tick.
+    pub max_depth: u32,
+    /// `mean_depth / capacity`, clamped to `[0, 1]`. Convenience for
+    /// renderers that want utilization without dividing themselves.
+    pub utilization: f64,
+    /// Total items pushed onto the queue across the run.
+    pub total_enqueued: u64,
+    /// Total items the role serviced (subtracted by the rate model).
+    pub total_serviced: u64,
+    /// Total items dropped via [`OverflowPolicy::DropNew`] /
+    /// [`OverflowPolicy::DropOldest`](crate::faction::OverflowPolicy).
+    /// Always `0` under [`OverflowPolicy::Backlog`].
+    pub total_dropped: u64,
+    /// Tick at which the queue first hit `depth >= capacity`. `None`
+    /// when it never saturated — the run is right-censored for the
+    /// time-to-saturation distribution.
+    pub time_to_saturation: Option<u32>,
+    /// Detection rolls suppressed by saturation: rolls that the engine
+    /// computed *would have fired* at the unattenuated probability but
+    /// did not after multiplying by `saturated_detection_factor`.
+    /// The "shadow" name is field-standard in queueing-theory writing
+    /// for missed-event rates under load.
+    pub shadow_detections: u32,
 }
 
 /// End-of-run snapshot of a single kill chain's resolution.
@@ -123,6 +170,57 @@ pub struct MonteCarloSummary {
     /// runs sit "behind" the frontier on at least one axis.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pareto_frontier: Option<ParetoFrontier>,
+    /// Per-(faction, role) defender-capacity queue analytics aggregated
+    /// across runs (Epic K). Empty when no scenario faction declares
+    /// `defender_capacities`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defender_capacity: Vec<DefenderCapacitySummary>,
+}
+
+/// Aggregate queue analytics for one (faction, role) defender across
+/// the full Monte Carlo batch.
+///
+/// `mean_*` / `max_*` aggregate the per-run scalars on
+/// [`DefenderQueueReport`]. [`TimeToSaturation`] is right-censored:
+/// runs that never saturated count toward `right_censored` rather than
+/// being treated as instant or infinite saturation, which would bias
+/// the descriptive stats either way.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderCapacitySummary {
+    pub faction: FactionId,
+    pub role: DefenderRoleId,
+    pub capacity: u32,
+    /// Number of runs that contributed a queue report (always equal
+    /// to `total_runs` for a scenario that defines this role).
+    pub n_runs: u32,
+    /// Mean of `utilization` across runs.
+    pub mean_utilization: f64,
+    /// Maximum `utilization` observed in any single run.
+    pub max_utilization: f64,
+    /// Mean of `max_depth` across runs.
+    pub mean_max_depth: f64,
+    /// Mean of `total_dropped` across runs.
+    pub mean_dropped: f64,
+    /// Mean of `shadow_detections` across runs.
+    pub mean_shadow_detections: f64,
+    /// Time-to-saturation distribution across runs (right-censored).
+    pub time_to_saturation: TimeToSaturation,
+}
+
+/// Time-to-saturation distribution for one defender role.
+///
+/// Mirrors the right-censored shape of
+/// [`TimeToFirstDetection`] — runs that never saturated are counted in
+/// `right_censored` so the mean / percentiles on `stats` describe only
+/// the runs that actually hit capacity. A run-set with all
+/// `right_censored == n_runs` produces `stats: None`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimeToSaturation {
+    pub saturated_runs: u32,
+    pub right_censored: u32,
+    pub samples: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stats: Option<DistributionStats>,
 }
 
 /// Pearson correlation matrix over a fixed list of per-run scalar
@@ -531,4 +629,7 @@ pub struct DeltaEncodedRun {
     /// Campaign reports are small — preserved verbatim, not delta-encoded.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
+    /// Defender-queue summaries — preserved verbatim, not delta-encoded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defender_queue_reports: Vec<DefenderQueueReport>,
 }

@@ -102,6 +102,24 @@ scenario asks for; legacy scenarios with no such branch pay zero
 overhead. Schema reference is in `docs/scenario_schema.md` under
 `PhaseBranch`.
 
+**Defender capacity model (Epic K).** Factions can declare per-role
+investigative queues via `[factions.<id>.defender_capacities.<role>]`
+(see `docs/scenario_schema.md`). Kill-chain phases hook in via
+`defender_noise` (Poisson-sampled per-tick alerts pushed onto a
+named role's queue) and `gated_by_defender` (multiplies that phase's
+per-tick detection roll by the role's `saturated_detection_factor`
+when the queue is at capacity). Per-tick order in
+`crates/faultline-engine/src/campaign.rs::campaign_phase` is
+**arrive → assess → service**: a phase enqueues its noise, the
+detection roll reads the post-arrival depth, and the queue is
+serviced at end-of-tick — that ordering reproduces the alert-fatigue
+effect when a sequential phase 2 inherits the backlog phase 1
+created. Output lives on `RunResult.defender_queue_reports` per run
+and aggregates to `MonteCarloSummary.defender_capacity` (mean
+utilization, time-to-saturation, mean shadow detections); both
+elide entirely when no faction declares queues. Bundled archetype:
+`scenarios/alert_fatigue_soc.toml`.
+
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,

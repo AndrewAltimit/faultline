@@ -195,6 +195,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
     render_time_dynamics(&mut out, summary);
     render_pareto_frontier(&mut out, summary.pareto_frontier.as_ref());
     render_correlation_matrix(&mut out, summary.correlation_matrix.as_ref());
+    render_defender_capacity(&mut out, summary);
 
     if !summary.seam_scores.is_empty() {
         let _ = writeln!(out, "## Doctrinal Seam Analysis");
@@ -1059,6 +1060,73 @@ fn render_correlation_matrix(out: &mut String, matrix: Option<&CorrelationMatrix
     let _ = writeln!(out);
 }
 
+/// Render the Defender Capacity section (Epic K).
+///
+/// Elided entirely when no scenario faction declares
+/// `defender_capacities` — the rollup is empty in that case.
+/// Otherwise emits a single utilization table plus a
+/// time-to-saturation row per role; downstream tooling that wants the
+/// raw distributions reads them off `summary.defender_capacity`
+/// directly.
+fn render_defender_capacity(out: &mut String, summary: &MonteCarloSummary) {
+    if summary.defender_capacity.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "## Defender Capacity");
+    let _ = writeln!(
+        out,
+        "Per-role investigative-queue analytics across the {} runs in the batch. Utilization is mean-depth / capacity; shadow detections are detection rolls suppressed by saturation (the defender would have caught the operation at idle but missed it under load).",
+        summary.total_runs
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "| Faction | Role | Capacity | Mean util. | Max util. | Mean dropped | Mean shadow det. | Saturated runs |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
+    for q in &summary.defender_capacity {
+        let _ = writeln!(
+            out,
+            "| `{}` | `{}` | {} | {:.1}% | {:.1}% | {:.1} | {:.2} | {}/{} |",
+            q.faction,
+            q.role,
+            q.capacity,
+            q.mean_utilization * 100.0,
+            q.max_utilization * 100.0,
+            q.mean_dropped,
+            q.mean_shadow_detections,
+            q.time_to_saturation.saturated_runs,
+            q.n_runs,
+        );
+    }
+    let _ = writeln!(out);
+    // Time-to-saturation distribution per role. Right-censored: runs
+    // that never saturated do not appear in the descriptive stats.
+    for q in &summary.defender_capacity {
+        let Some(stats) = q.time_to_saturation.stats.as_ref() else {
+            continue;
+        };
+        let _ = writeln!(
+            out,
+            "**`{}` / `{}` time-to-saturation:** {} of {} runs saturated; mean {:.1} ticks (5th–95th percentile {:.1}–{:.1}).",
+            q.faction,
+            q.role,
+            q.time_to_saturation.saturated_runs,
+            q.n_runs,
+            stats.mean,
+            stats.percentile_5,
+            stats.percentile_95,
+        );
+    }
+    if summary
+        .defender_capacity
+        .iter()
+        .any(|q| q.time_to_saturation.stats.is_some())
+    {
+        let _ = writeln!(out);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1090,6 +1158,7 @@ mod tests {
             seam_scores: BTreeMap::new(),
             correlation_matrix: None,
             pareto_frontier: None,
+            defender_capacity: Vec::new(),
         }
     }
 
@@ -1210,6 +1279,8 @@ mod tests {
                 branches: vec![],
                 parameter_confidence: Some(ConfidenceLevel::Low),
                 warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
             },
         );
         scenario.kill_chains.insert(
