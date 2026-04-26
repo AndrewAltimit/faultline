@@ -118,6 +118,7 @@ fn base_scenario() -> Scenario {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         },
     );
     factions.insert(
@@ -141,6 +142,7 @@ fn base_scenario() -> Scenario {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         },
     );
 
@@ -232,6 +234,7 @@ fn base_scenario() -> Scenario {
         kill_chains: BTreeMap::new(),
         defender_budget: None,
         attacker_budget: None,
+        environment: faultline_types::map::EnvironmentSchedule::default(),
     }
 }
 
@@ -2621,6 +2624,754 @@ fn escalation_threshold_does_not_fire_below_threshold() {
             Some(PhaseOutcome::Pending) | None
         ),
         "escalation branch must not fire below threshold"
+    );
+}
+
+#[test]
+fn or_any_branch_fires_on_any_inner_match() {
+    // OrAny composes two inner conditions:
+    //   1. EscalationThreshold(Tension <= 0.1 sustained 3 ticks)
+    //   2. OnSuccess
+    // Tension is high and the recon phase deterministically succeeds.
+    // Inner #1 cannot match (tension never drops); inner #2 must, so
+    // the branch fires and the chain transitions to `escalate`. Without
+    // the new variant the test would fall through to `de_escalate`.
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, EscalationMetric, KillChain, PhaseBranch, PhaseCost,
+        ThresholdDirection,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::stats::PhaseOutcome;
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 50;
+    scenario.political_climate.tension = 0.95;
+
+    let chain_id = KillChainId::from("or_any_chain");
+    let recon = PhaseId::from("recon");
+    let escalate = PhaseId::from("escalate");
+    let de_escalate = PhaseId::from("de_escalate");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 5,
+            max_duration: 5,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![],
+            branches: vec![
+                PhaseBranch {
+                    condition: BranchCondition::OrAny {
+                        conditions: vec![
+                            BranchCondition::EscalationThreshold {
+                                metric: EscalationMetric::Tension,
+                                threshold: 0.1,
+                                direction: ThresholdDirection::Below,
+                                sustained_ticks: 3,
+                            },
+                            BranchCondition::OnSuccess,
+                        ],
+                    },
+                    next_phase: escalate.clone(),
+                },
+                PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: de_escalate.clone(),
+                },
+            ],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+    for id in [escalate.clone(), de_escalate.clone()] {
+        phases.insert(
+            id.clone(),
+            CampaignPhase {
+                id: id.clone(),
+                name: id.to_string(),
+                description: String::new(),
+                prerequisites: vec![recon.clone()],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+    }
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "OrAny".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&escalate),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "OrAny branch must fire when at least one inner condition matches; got {:?}",
+        report.phase_outcomes
+    );
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&de_escalate),
+            Some(PhaseOutcome::Pending) | None
+        ),
+        "fallback must not fire when OrAny matches first"
+    );
+}
+
+#[test]
+fn or_any_does_not_fire_when_all_inners_fail() {
+    // OrAny over `OnFailure` and `EscalationThreshold(Below 0.1)` —
+    // the recon phase succeeds (so OnFailure fails) and tension stays
+    // high (so the threshold fails). The fallback must win.
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, EscalationMetric, KillChain, PhaseBranch, PhaseCost,
+        ThresholdDirection,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::stats::PhaseOutcome;
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 50;
+    scenario.political_climate.tension = 0.95;
+
+    let chain_id = KillChainId::from("or_any_chain");
+    let recon = PhaseId::from("recon");
+    let escalate = PhaseId::from("escalate");
+    let de_escalate = PhaseId::from("de_escalate");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 5,
+            max_duration: 5,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![],
+            branches: vec![
+                PhaseBranch {
+                    condition: BranchCondition::OrAny {
+                        conditions: vec![
+                            BranchCondition::OnFailure,
+                            BranchCondition::EscalationThreshold {
+                                metric: EscalationMetric::Tension,
+                                threshold: 0.1,
+                                direction: ThresholdDirection::Below,
+                                sustained_ticks: 3,
+                            },
+                        ],
+                    },
+                    next_phase: escalate.clone(),
+                },
+                PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: de_escalate.clone(),
+                },
+            ],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+    for id in [escalate.clone(), de_escalate.clone()] {
+        phases.insert(
+            id.clone(),
+            CampaignPhase {
+                id: id.clone(),
+                name: id.to_string(),
+                description: String::new(),
+                prerequisites: vec![recon.clone()],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+    }
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "OrAny".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    let result = engine.run().expect("run");
+    let report = result.campaign_reports.get(&chain_id).expect("report");
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&de_escalate),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "fallback must fire when no OrAny inner matches; got {:?}",
+        report.phase_outcomes
+    );
+    assert!(
+        matches!(
+            report.phase_outcomes.get(&escalate),
+            Some(PhaseOutcome::Pending) | None
+        ),
+        "OrAny must not fire when every inner condition fails"
+    );
+}
+
+#[test]
+fn empty_or_any_rejected_at_validation() {
+    use faultline_engine::validate_scenario;
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost,
+    };
+    use faultline_types::error::ScenarioError;
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    let mut scenario = base_scenario();
+    let chain_id = KillChainId::from("bad_chain");
+    let recon = PhaseId::from("recon");
+
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        recon.clone(),
+        CampaignPhase {
+            id: recon.clone(),
+            name: "Recon".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 1,
+            max_duration: 1,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![],
+            branches: vec![PhaseBranch {
+                condition: BranchCondition::OrAny { conditions: vec![] },
+                next_phase: recon.clone(),
+            }],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Bad".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: recon.clone(),
+            phases,
+        },
+    );
+
+    let err = validate_scenario(&scenario).expect_err("empty OrAny must reject");
+    assert!(
+        matches!(err, ScenarioError::EmptyOrAnyBranch { .. }),
+        "expected EmptyOrAnyBranch, got {err:?}"
+    );
+}
+
+#[test]
+fn environment_detection_factor_reduces_phase_detection() {
+    // Build two identical scenarios — same chain, same RNG seed — and
+    // attach a `detection_factor: 0.0` Always window to one of them.
+    // Under that window every kill-chain detection roll is forced to
+    // zero, so the recon phase must reach `Succeeded` instead of
+    // `Detected`. Pins the contract that environment.detection_factor
+    // multiplies into the phase's per-tick detection probability.
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+    use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+    use faultline_types::stats::PhaseOutcome;
+
+    let make_scenario = |env: EnvironmentSchedule| {
+        let mut scenario = base_scenario();
+        scenario.simulation.max_ticks = 20;
+        scenario.environment = env;
+
+        let chain_id = KillChainId::from("env_chain");
+        let recon = PhaseId::from("recon");
+        let exfil = PhaseId::from("exfil");
+
+        let mut phases = BTreeMap::new();
+        phases.insert(
+            recon.clone(),
+            CampaignPhase {
+                id: recon.clone(),
+                name: "Recon".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 1.0,
+                min_duration: 5,
+                max_duration: 5,
+                detection_probability_per_tick: 0.9, // very visible
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![PhaseBranch {
+                    condition: BranchCondition::OnSuccess,
+                    next_phase: exfil.clone(),
+                }],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+        phases.insert(
+            exfil.clone(),
+            CampaignPhase {
+                id: exfil.clone(),
+                name: "Exfil".into(),
+                description: String::new(),
+                prerequisites: vec![recon.clone()],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![],
+                branches: vec![],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id.clone(),
+                name: "Env".into(),
+                description: String::new(),
+                attacker: FactionId::from("alpha"),
+                target: FactionId::from("bravo"),
+                entry_phase: recon.clone(),
+                phases,
+            },
+        );
+        (scenario, chain_id, recon, exfil)
+    };
+
+    // Baseline: no environment, very high per-tick detection → recon
+    // gets caught well before the duration elapses.
+    let (baseline, chain_id_a, recon_a, _) = make_scenario(EnvironmentSchedule::default());
+    let mut engine_a = Engine::with_seed(baseline, 42).expect("engine");
+    let result_a = engine_a.run().expect("run");
+    let report_a = result_a.campaign_reports.get(&chain_id_a).expect("report");
+    assert!(
+        matches!(
+            report_a.phase_outcomes.get(&recon_a),
+            Some(PhaseOutcome::Detected { .. })
+        ),
+        "baseline: high-detection recon must be detected; got {:?}",
+        report_a.phase_outcomes.get(&recon_a)
+    );
+
+    // Night window: detection_factor = 0.0 forces every roll to 0 →
+    // recon completes its 5-tick duration uneventfully and reaches
+    // `Succeeded`, the exfil phase fires.
+    let night = EnvironmentSchedule {
+        windows: vec![EnvironmentWindow {
+            id: "night".into(),
+            name: "Night".into(),
+            activation: Activation::Always,
+            applies_to: vec![],
+            movement_factor: 1.0,
+            defense_factor: 1.0,
+            visibility_factor: 1.0,
+            detection_factor: 0.0,
+        }],
+    };
+    let (shielded, chain_id_b, recon_b, exfil_b) = make_scenario(night);
+    let mut engine_b = Engine::with_seed(shielded, 42).expect("engine");
+    let result_b = engine_b.run().expect("run");
+    let report_b = result_b.campaign_reports.get(&chain_id_b).expect("report");
+    assert!(
+        matches!(
+            report_b.phase_outcomes.get(&recon_b),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "shielded: detection_factor 0 must zero out every roll; got {:?}",
+        report_b.phase_outcomes.get(&recon_b)
+    );
+    assert!(
+        matches!(
+            report_b.phase_outcomes.get(&exfil_b),
+            Some(PhaseOutcome::Succeeded { .. })
+        ),
+        "shielded: exfil should fire after recon succeeds"
+    );
+}
+
+#[test]
+fn environment_cycle_activation_matches_expected_ticks() {
+    // Sanity-check the Cycle activation arithmetic in isolation. A
+    // night-cycle of period=24 phase=18 duration=12 should be active
+    // for hours 18..=29 mod 24 — i.e. ticks 0..=5 (early morning) and
+    // ticks 18..=29 etc. Documented behavior is the implicit contract
+    // for time-of-day modeling under hourly ticks; pin it.
+    use faultline_types::map::Activation;
+
+    let night = Activation::Cycle {
+        period: 24,
+        phase: 18,
+        duration: 12,
+    };
+    // Active early-morning hours of day 0 (ticks 0..=5).
+    for t in 0..=5 {
+        assert!(night.is_active_at(t), "expected active at tick {t}");
+    }
+    // Inactive daytime hours of day 0 (ticks 6..=17).
+    for t in 6..=17 {
+        assert!(!night.is_active_at(t), "expected inactive at tick {t}");
+    }
+    // Active evening of day 0 (ticks 18..=23).
+    for t in 18..=23 {
+        assert!(night.is_active_at(t), "expected active at tick {t}");
+    }
+    // Active early-morning of day 1 (ticks 24..=29).
+    for t in 24..=29 {
+        assert!(night.is_active_at(t), "expected active at tick {t}");
+    }
+}
+
+#[test]
+fn leadership_decapitation_caps_target_morale() {
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+    };
+    use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 20;
+
+    if let Some(bravo) = scenario.factions.get_mut(&FactionId::from("bravo")) {
+        bravo.initial_morale = 0.95;
+        bravo.leadership = Some(LeadershipCadre {
+            ranks: vec![
+                LeadershipRank {
+                    id: "principal".into(),
+                    name: "Principal".into(),
+                    effectiveness: 1.0,
+                    description: String::new(),
+                },
+                LeadershipRank {
+                    id: "deputy".into(),
+                    name: "Deputy".into(),
+                    effectiveness: 0.5,
+                    description: String::new(),
+                },
+            ],
+            succession_recovery_ticks: 4,
+            succession_floor: 0.4,
+        });
+    }
+
+    // Three distinct strike phases chained OnSuccess → so each one
+    // resolves once and lands a decapitation against bravo. The
+    // second strike pushes the rank index past the cadre (leaderless),
+    // and the third decapitation lands against an already-leaderless
+    // faction — counter still increments, index saturates at
+    // `ranks.len()`.
+    let chain_id = KillChainId::from("decap_chain");
+    let strike1 = PhaseId::from("strike1");
+    let strike2 = PhaseId::from("strike2");
+    let strike3 = PhaseId::from("strike3");
+    let make_strike = |id: &PhaseId, next: Option<&PhaseId>| CampaignPhase {
+        id: id.clone(),
+        name: id.to_string(),
+        description: String::new(),
+        prerequisites: vec![],
+        base_success_probability: 1.0,
+        min_duration: 1,
+        max_duration: 1,
+        detection_probability_per_tick: 0.0,
+        prerequisite_success_boost: 0.0,
+        attribution_difficulty: 0.5,
+        cost: PhaseCost {
+            attacker_dollars: 0.0,
+            defender_dollars: 0.0,
+            attacker_resources: 0.0,
+            confidence: None,
+        },
+        targets_domains: vec![],
+        outputs: vec![PhaseOutput::LeadershipDecapitation {
+            target_faction: FactionId::from("bravo"),
+            morale_shock: 0.2,
+        }],
+        branches: next
+            .map(|n| {
+                vec![PhaseBranch {
+                    condition: BranchCondition::OnSuccess,
+                    next_phase: n.clone(),
+                }]
+            })
+            .unwrap_or_default(),
+        parameter_confidence: None,
+        warning_indicators: vec![],
+        defender_noise: vec![],
+        gated_by_defender: None,
+    };
+    let mut phases = BTreeMap::new();
+    phases.insert(strike1.clone(), make_strike(&strike1, Some(&strike2)));
+    phases.insert(strike2.clone(), make_strike(&strike2, Some(&strike3)));
+    phases.insert(strike3.clone(), make_strike(&strike3, None));
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Decap".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: strike1.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    // Tick 1 activates strike1 (started_at=1). Tick 2 resolves it.
+    engine.tick().expect("tick 1");
+    engine.tick().expect("tick 2");
+    let bravo_state = engine
+        .snapshot()
+        .faction_states
+        .get(&FactionId::from("bravo"))
+        .expect("bravo runtime state")
+        .clone();
+    assert_eq!(bravo_state.leadership_decapitations, 1);
+    assert_eq!(bravo_state.current_leadership_rank, 1);
+    assert_eq!(bravo_state.last_decapitation_tick, Some(2));
+    // Cap on morale at strike tick: deputy effectiveness 0.5 *
+    // succession_floor 0.4 = 0.20.
+    assert!(
+        bravo_state.morale <= 0.20 + 1e-9,
+        "morale must be capped at deputy 0.5 × floor 0.4 = 0.20 \
+         immediately after strike, got {}",
+        bravo_state.morale
+    );
+
+    // Six more ticks let strikes 2 and 3 resolve (each pair: activate
+    // + resolve). After strike2 the rank is past the cadre; strike3
+    // increments the count further but the rank index saturates at
+    // ranks.len() = 2.
+    for _ in 0..6 {
+        engine.tick().expect("tick");
+    }
+    let bravo_state = engine
+        .snapshot()
+        .faction_states
+        .get(&FactionId::from("bravo"))
+        .expect("bravo runtime state")
+        .clone();
+    assert!(
+        bravo_state.leadership_decapitations >= 2,
+        "second decapitation must have landed; got {}",
+        bravo_state.leadership_decapitations
+    );
+    assert_eq!(
+        bravo_state.current_leadership_rank, 2,
+        "rank index must saturate at cadre length once the cadre is exhausted"
+    );
+    assert!(
+        bravo_state.morale <= f64::EPSILON,
+        "leaderless faction must floor morale to 0; got {}",
+        bravo_state.morale
+    );
+}
+
+#[test]
+fn leadership_no_cadre_means_no_morale_cap() {
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+    };
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    let mut scenario = base_scenario();
+    scenario.simulation.max_ticks = 5;
+    if let Some(bravo) = scenario.factions.get_mut(&FactionId::from("bravo")) {
+        bravo.initial_morale = 0.95;
+        bravo.leadership = None;
+    }
+
+    let chain_id = KillChainId::from("decap_chain");
+    let strike = PhaseId::from("strike");
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        strike.clone(),
+        CampaignPhase {
+            id: strike.clone(),
+            name: "Strike".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 1,
+            max_duration: 1,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![PhaseOutput::LeadershipDecapitation {
+                target_faction: FactionId::from("bravo"),
+                morale_shock: 0.0,
+            }],
+            branches: vec![PhaseBranch {
+                condition: BranchCondition::OnSuccess,
+                next_phase: strike.clone(),
+            }],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Decap".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("bravo"),
+            entry_phase: strike.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+    }
+    let bravo_state = engine
+        .snapshot()
+        .faction_states
+        .get(&FactionId::from("bravo"))
+        .expect("bravo runtime state")
+        .clone();
+    assert!(bravo_state.leadership_decapitations >= 1);
+    assert_eq!(bravo_state.current_leadership_rank, 0);
+    assert!(
+        bravo_state.morale > 0.5,
+        "without a cadre, morale must not be capped by leadership; got {}",
+        bravo_state.morale
     );
 }
 

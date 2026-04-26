@@ -142,6 +142,50 @@ An array of per-region terrain overlays. Each entry:
 
 ---
 
+## `[[environment.windows]]` (Epic D — weather, time-of-day)
+
+Optional global timeline of environmental windows that modify per-region terrain effects and a global kill-chain detection multiplier. Empty by default — scenarios with no environmental modeling pay zero overhead and the engine's per-tick environment lookup collapses to a `1.0` multiplier.
+
+```toml
+[[environment.windows]]
+id = "monsoon"
+name = "Monsoon Storm"
+activation = { type = "TickRange", start = 30, end = 60 }
+applies_to = ["Mountain", "Forest"]
+defense_factor = 1.4
+visibility_factor = 0.5
+detection_factor = 0.7
+
+[[environment.windows]]
+id = "night"
+name = "Night Cycle"
+activation = { type = "Cycle", period = 24, phase = 18, duration = 12 }
+detection_factor = 0.6
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Stable identifier surfaced in reports |
+| `name` | string | Human-readable label |
+| `activation` | enum | When the window is active (see below) |
+| `applies_to` | `[TerrainType]` | Empty = applies to every terrain. Filters the per-terrain factors only |
+| `movement_factor` | f64 | Multiplier on `terrain.movement_modifier` (default 1.0) |
+| `defense_factor` | f64 | Multiplier on `terrain.defense_modifier` (default 1.0) — read by combat |
+| `visibility_factor` | f64 | Multiplier on `terrain.visibility` (default 1.0) |
+| `detection_factor` | f64 | Multiplier applied **globally** to every kill-chain phase's per-tick detection probability (default 1.0). Not gated by `applies_to` since kill chains are faction-vs-faction without a region |
+
+Multiple active windows compose multiplicatively, so a scenario can stack a daily night cycle with an event-driven storm window. Negative or non-finite factors are rejected at validation.
+
+### `Activation` variants
+
+| `type` | Extra fields | Notes |
+|---|---|---|
+| `Always` | — | Active on every tick |
+| `TickRange` | `start` (u32), `end` (u32) | Active when `start <= tick <= end` (inclusive) |
+| `Cycle` | `period`, `phase`, `duration` (u32) | Active when `(tick - phase) mod period < duration`. Useful for time-of-day cycles under hourly ticks (`period = 24`, `phase = 18`, `duration = 12` is night running 18:00–06:00) |
+
+---
+
 ## `[factions.<faction_id>]`
 
 | Field | Type | Notes |
@@ -162,6 +206,7 @@ An array of per-region terrain overlays. Each entry:
 | `recruitment` | table? | See `RecruitmentConfig` below |
 | `escalation_rules` | table? | _Optional._ Declarative doctrine / ROE ladder (see Epic B) |
 | `defender_capacities` | table? | _Optional._ Per-role investigative-queue model (see Epic K) — keyed by `[factions.<id>.defender_capacities.<role_id>]` |
+| `leadership` | table? | _Optional._ Leadership cadre with named ranks + succession (see Epic D) |
 
 ### `[factions.<id>.escalation_rules]` (Epic B)
 
@@ -187,6 +232,52 @@ Each `ladder` rung:
 | `trigger_tension` | f64? | Tension at/above which the rung is authorized; `None` = always authorized |
 | `permitted_actions` | `[string]` | Free-text descriptions of permitted capabilities |
 | `prohibited_actions` | `[string]` | Explicit red lines |
+
+### `[factions.<id>.leadership]` (Epic D)
+
+Optional leadership cadre — named ranks (top of chain first) plus succession parameters. Drives the `PhaseOutput::LeadershipDecapitation` mechanic: a successful decapitation phase advances the rank index, applies a one-shot morale shock, and caps the faction's runtime morale at the new rank's effectiveness × `succession_floor` during the recovery ramp. When the rank index passes the end of `ranks` the faction is "leaderless": effectiveness collapses to `0.0` and morale is floored there until the run ends. `None` / absent = legacy behavior; the faction has no decapitation surface and `LeadershipDecapitation` outputs against it are no-ops (other than incrementing the strike counter for analytics).
+
+```toml
+[factions.bravo.leadership]
+succession_recovery_ticks = 6
+succession_floor = 0.4
+
+[[factions.bravo.leadership.ranks]]
+id = "principal"
+name = "Principal"
+effectiveness = 1.0
+
+[[factions.bravo.leadership.ranks]]
+id = "deputy"
+name = "Deputy"
+effectiveness = 0.5
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `ranks` | `[LeadershipRank]` | Ordered top-of-chain first. Must contain at least one entry |
+| `succession_recovery_ticks` | u32 | Number of ticks the recovery ramp lasts after a decapitation. `0` disables the ramp (a successor reaches full effectiveness immediately) |
+| `succession_floor` | f64 | Multiplier on the new rank's effectiveness on the strike tick; linearly interpolates to `1.0` over `succession_recovery_ticks`. Default `0.5` |
+
+Each `ranks` entry:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Stable identifier (e.g. `"principal"`, `"deputy"`) |
+| `name` | string | |
+| `effectiveness` | f64 | `[0,1]` multiplicative scalar; top is conventionally `1.0` and successors lower |
+| `description` | string | _Optional._ |
+
+Phase-side hookup:
+
+```toml
+[[kill_chains.alpha.phases.alpha_strike.outputs]]
+type = "LeadershipDecapitation"
+target_faction = "bravo"
+morale_shock = 0.2
+```
+
+The `morale_shock` is a one-time clamp-respecting drop applied on the strike tick before the leadership cap clamps morale further; `0.0` disables the shock and lets the leadership cap do all the work.
 
 ### `[factions.<id>.defender_capacities.<role_id>]` (Epic K)
 
@@ -612,6 +703,7 @@ A tagged enum of effects applied when a phase completes successfully. One `[[kil
 | `CoercionPressure` | `delta` (f64) | Non-kinetic accumulator |
 | `PoliticalCost` | `delta` (f64) | Non-kinetic accumulator |
 | `Custom` | `key` (string), `value` (f64) | Generic analytical metric |
+| `LeadershipDecapitation` | `target_faction` (id), `morale_shock` (f64, default `0.0`) | Advances the target's leadership rank index by 1, applies a one-shot morale drop, and caps morale at the new rank's effectiveness during the recovery ramp (Epic D). No-op against factions without a `leadership` cadre |
 
 Each entry is written as:
 
@@ -643,6 +735,7 @@ next_phase = "alpha_abort"
 | `Probability` | `p` (f64) | Independent roll against `p` |
 | `Always` | — | Terminal fallback |
 | `EscalationThreshold` | `metric`, `threshold` (f64), `direction`, `sustained_ticks` (u32) | Fires when a global metric has stayed on the requested side of `threshold` for `sustained_ticks` consecutive end-of-tick snapshots. Hysteresis is built in — a single-tick spike will not flip the branch (Epic C) |
+| `OrAny` | `conditions` (array) | Fires when **any** inner condition matches. Short-circuit left-to-right (Epic D) |
 
 #### `EscalationThreshold` (Epic C)
 
@@ -656,7 +749,20 @@ condition = { type = "Always" }
 next_phase = "alpha_de_escalate"
 ```
 
-Reads from a rolling history of escalation-relevant metrics that the engine captures at the end of every tick. The branch fires only when the predicate has held continuously across the requested window — useful for "if tension stays elevated for N ticks, the operation gets called off (or escalated)." The engine sizes the history buffer to the longest `sustained_ticks` any branch in the scenario asks for; scenarios with no `EscalationThreshold` branches pay zero overhead.
+Reads from a rolling history of escalation-relevant metrics that the engine captures at the end of every tick. The branch fires only when the predicate has held continuously across the requested window — useful for "if tension stays elevated for N ticks, the operation gets called off (or escalated)." The engine sizes the history buffer to the longest `sustained_ticks` any branch in the scenario asks for; scenarios with no `EscalationThreshold` branches pay zero overhead. The history-buffer walker recurses through `OrAny`, so an `EscalationThreshold` nested inside an `OrAny` correctly registers its window.
+
+#### `OrAny` (Epic D)
+
+```toml
+[[kill_chains.alpha.phases.alpha_recon.branches]]
+condition = { type = "OrAny", conditions = [
+  { type = "OnDetection" },
+  { type = "EscalationThreshold", metric = "Tension", threshold = 0.7, direction = "Above", sustained_ticks = 3 },
+] }
+next_phase = "alpha_abort"
+```
+
+Lets a single branch fire on any of several equivalent triggers without duplicating the `next_phase`. Inner conditions are evaluated short-circuit left-to-right. Any condition (including `OrAny` itself) may be nested. Engine validation rejects an empty `conditions` array — an empty OR is ambiguous between "vacuously false" and "unfilled author template" and would silently never match.
 
 | Field | Type | Notes |
 |---|---|---|

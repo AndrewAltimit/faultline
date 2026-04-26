@@ -134,6 +134,13 @@ impl Engine {
             );
         }
 
+        // Phase 7c: Leadership caps (Epic D — decapitation recovery
+        // ramp). Applied after the campaign phase so a decapitation
+        // landed *this tick* takes effect on the morale read by the
+        // next tick's combat. No-op for scenarios without any faction
+        // declaring a `leadership` cadre.
+        tick::apply_leadership_caps(&mut self.state, &self.scenario);
+
         // Update region control after all modifications.
         tick::update_region_control(&mut self.state, &self.scenario);
 
@@ -282,6 +289,9 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
                 tech_deployed: faction.tech_access.clone(),
                 region_hold_ticks: BTreeMap::new(),
                 eliminated: false,
+                current_leadership_rank: 0,
+                last_decapitation_tick: None,
+                leadership_decapitations: 0,
             },
         );
     }
@@ -374,13 +384,7 @@ fn max_escalation_window(scenario: &Scenario) -> usize {
     for chain in scenario.kill_chains.values() {
         for phase in chain.phases.values() {
             for branch in &phase.branches {
-                if let BranchCondition::EscalationThreshold {
-                    sustained_ticks, ..
-                } = &branch.condition
-                {
-                    found_any = true;
-                    max_window = max_window.max(*sustained_ticks);
-                }
+                walk_escalation(&branch.condition, &mut max_window, &mut found_any);
             }
         }
     }
@@ -388,6 +392,32 @@ fn max_escalation_window(scenario: &Scenario) -> usize {
         (max_window as usize).max(1)
     } else {
         0
+    }
+}
+
+/// Walks `cond` (recursively through `OrAny`) accumulating the
+/// largest `sustained_ticks` across every `EscalationThreshold`
+/// reached. `OrAny` was added with Epic D — without recursion here,
+/// an escalation branch nested inside an OR would silently see an
+/// empty metric history and never fire.
+fn walk_escalation(cond: &BranchCondition, max_window: &mut u32, found_any: &mut bool) {
+    match cond {
+        BranchCondition::EscalationThreshold {
+            sustained_ticks, ..
+        } => {
+            *found_any = true;
+            *max_window = (*max_window).max(*sustained_ticks);
+        },
+        BranchCondition::OrAny { conditions } => {
+            for inner in conditions {
+                walk_escalation(inner, max_window, found_any);
+            }
+        },
+        BranchCondition::OnSuccess
+        | BranchCondition::OnFailure
+        | BranchCondition::OnDetection
+        | BranchCondition::Probability { .. }
+        | BranchCondition::Always => {},
     }
 }
 
@@ -444,6 +474,9 @@ fn take_snapshot(state: &SimulationState) -> StateSnapshot {
                     controlled_regions: rfs.controlled_regions.clone(),
                     total_strength: rfs.total_strength,
                     institution_loyalty: state.institution_loyalty.clone(),
+                    current_leadership_rank: rfs.current_leadership_rank,
+                    leadership_decapitations: rfs.leadership_decapitations,
+                    last_decapitation_tick: rfs.last_decapitation_tick,
                 },
             )
         })

@@ -45,6 +45,66 @@ pub struct Faction {
     /// scenarios; see `docs/scenario_schema.md` for the full model.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub defender_capacities: BTreeMap<DefenderRoleId, DefenderCapacity>,
+    /// Optional leadership cadre — named ranks (top of chain first)
+    /// plus succession parameters. Drives the
+    /// `PhaseOutput::LeadershipDecapitation` mechanic: a successful
+    /// decapitation phase advances the rank index, applies a morale
+    /// shock, and caps the faction's morale at the new rank's
+    /// effectiveness during the recovery ramp. `None` = legacy
+    /// behavior (faction has no decapitation surface to expose).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leadership: Option<LeadershipCadre>,
+}
+
+/// A faction's leadership cadre — ranks plus succession dynamics.
+///
+/// Models discontinuous capability drops when a top leader is killed
+/// or removed. The current top rank is index 0 at simulation start; a
+/// `LeadershipDecapitation` phase advances the index by one and
+/// triggers a recovery ramp during which the new rank's nominal
+/// effectiveness is multiplied by an interpolated factor rising from
+/// `succession_floor` to 1.0 over `succession_recovery_ticks`.
+///
+/// When the rank index passes the end of the cadre the faction is
+/// "leaderless": effectiveness collapses to 0.0 and no further
+/// decapitation can degrade it. Reports surface this as a terminal
+/// state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LeadershipCadre {
+    /// Ranks ordered top-of-chain first. Must contain at least one
+    /// entry (validated at scenario load).
+    pub ranks: Vec<LeadershipRank>,
+    /// Number of ticks the recovery ramp lasts after a decapitation.
+    /// `0` means a successor reaches full effectiveness immediately
+    /// (no transition penalty); `succession_floor` is then ignored.
+    pub succession_recovery_ticks: u32,
+    /// Multiplier applied on the first tick after a decapitation.
+    /// Linearly interpolates to 1.0 over `succession_recovery_ticks`.
+    /// Defaults to 0.5 (a successor is half-effective day one) which
+    /// matches the public published case-study spread on contested
+    /// successions.
+    #[serde(default = "default_succession_floor")]
+    pub succession_floor: f64,
+}
+
+/// One rank in the leadership cadre.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LeadershipRank {
+    /// Stable identifier (e.g. "principal", "deputy", "field_lt").
+    pub id: String,
+    pub name: String,
+    /// Multiplicative scalar describing this rank's relative command
+    /// effectiveness. Top of chain is conventionally `1.0`; later
+    /// successors typically have lower values reflecting reduced
+    /// authority and experience. The engine reads this to cap the
+    /// faction's runtime morale during the recovery period.
+    pub effectiveness: f64,
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_succession_floor() -> f64 {
+    0.5
 }
 
 /// One defender role with bounded investigative throughput.

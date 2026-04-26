@@ -1576,3 +1576,76 @@ fn existing_scenarios_still_parse_with_new_fields() {
         }
     }
 }
+
+#[test]
+fn environment_schedule_roundtrips_through_toml() {
+    use crate::map::TerrainType;
+    use crate::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+
+    let schedule = EnvironmentSchedule {
+        windows: vec![
+            EnvironmentWindow {
+                id: "monsoon".into(),
+                name: "Monsoon".into(),
+                activation: Activation::TickRange { start: 30, end: 60 },
+                applies_to: vec![TerrainType::Mountain, TerrainType::Forest],
+                movement_factor: 0.6,
+                defense_factor: 1.4,
+                visibility_factor: 0.5,
+                detection_factor: 0.7,
+            },
+            EnvironmentWindow {
+                id: "night".into(),
+                name: "Night".into(),
+                activation: Activation::Cycle {
+                    period: 24,
+                    phase: 18,
+                    duration: 12,
+                },
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: 1.0,
+                visibility_factor: 1.0,
+                detection_factor: 0.6,
+            },
+        ],
+    };
+    let toml_text =
+        toml::to_string(&schedule).expect("environment schedule must serialize cleanly");
+    let restored: EnvironmentSchedule = toml::from_str(&toml_text).expect("roundtrip");
+    assert_eq!(restored.windows.len(), 2);
+    assert!(matches!(
+        restored.windows[0].activation,
+        Activation::TickRange { start: 30, end: 60 }
+    ));
+    assert!(matches!(
+        restored.windows[1].activation,
+        Activation::Cycle {
+            period: 24,
+            phase: 18,
+            duration: 12
+        }
+    ));
+}
+
+#[test]
+fn environment_window_factors_default_to_unity_when_omitted() {
+    use crate::map::EnvironmentWindow;
+
+    // Authors should be able to author "this window only modifies
+    // detection" without listing every other factor — the omitted
+    // ones default to 1.0 (no effect). Roundtrip-tests the serde
+    // defaults wired up on EnvironmentWindow.
+    let toml_text = r#"
+id = "stealth_aware"
+name = "Stealth"
+activation = { type = "Always" }
+detection_factor = 0.5
+"#;
+    let win: EnvironmentWindow = toml::from_str(toml_text).expect("partial window parses");
+    assert_eq!(win.movement_factor, 1.0);
+    assert_eq!(win.defense_factor, 1.0);
+    assert_eq!(win.visibility_factor, 1.0);
+    assert_eq!(win.detection_factor, 0.5);
+    assert!(win.applies_to.is_empty());
+}

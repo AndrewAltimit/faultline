@@ -222,6 +222,25 @@ pub struct RuntimeFactionState {
     /// Whether this faction has been eliminated (strength = 0
     /// and no recruitment possible).
     pub eliminated: bool,
+    /// Index into the faction's `LeadershipCadre.ranks`. `0` means the
+    /// top-of-chain leader is in command. Each
+    /// `PhaseOutput::LeadershipDecapitation` strike advances this by
+    /// one. When it passes the end of the cadre the faction is
+    /// leaderless — effectiveness collapses to 0 and morale is capped
+    /// there until the run ends. Zero-cost for legacy factions
+    /// (the engine path skips the cadre lookup when no cadre is
+    /// declared).
+    #[serde(default)]
+    pub current_leadership_rank: u32,
+    /// Tick of the most recent decapitation, or `None` if the faction
+    /// has never been struck. Drives the recovery-ramp interpolation
+    /// in `effective_leadership_factor`.
+    #[serde(default)]
+    pub last_decapitation_tick: Option<u32>,
+    /// Cumulative count of leadership decapitations against this
+    /// faction over the run. Surfaced by the report.
+    #[serde(default)]
+    pub leadership_decapitations: u32,
 }
 
 impl RuntimeFactionState {
@@ -262,6 +281,9 @@ mod tests {
             tech_deployed: vec![],
             region_hold_ticks: BTreeMap::new(),
             eliminated: false,
+            current_leadership_rank: 0,
+            last_decapitation_tick: None,
+            leadership_decapitations: 0,
         }
     }
 

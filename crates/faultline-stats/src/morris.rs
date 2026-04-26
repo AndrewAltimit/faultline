@@ -481,6 +481,7 @@ mod tests {
             kill_chains: BTreeMap::new(),
             defender_budget: None,
             attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
         }
     }
 
@@ -521,6 +522,7 @@ mod tests {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         }
     }
 

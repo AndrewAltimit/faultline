@@ -71,6 +71,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         doctrine: Doctrine::Conventional,
         escalation_rules: None,
         defender_capacities: BTreeMap::new(),
+        leadership: None,
     }
 }
 
@@ -273,6 +274,7 @@ fn flagged_chain_scenario() -> Scenario {
         kill_chains,
         defender_budget: None,
         attacker_budget: None,
+        environment: faultline_types::map::EnvironmentSchedule::default(),
     }
 }
 

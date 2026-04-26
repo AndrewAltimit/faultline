@@ -6,7 +6,7 @@ use crate::campaign::KillChain;
 use crate::events::EventDefinition;
 use crate::faction::Faction;
 use crate::ids::{EventId, FactionId, KillChainId, TechCardId, VictoryId};
-use crate::map::MapConfig;
+use crate::map::{EnvironmentSchedule, MapConfig};
 use crate::politics::PoliticalClimate;
 use crate::simulation::SimulationConfig;
 use crate::stats::ConfidenceLevel;
@@ -34,6 +34,12 @@ pub struct Scenario {
     /// Attacker budget cap in dollars. `None` = unlimited.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attacker_budget: Option<f64>,
+    /// Optional global environmental schedule (weather, time-of-day).
+    /// Empty schedule = no effect; omitted entirely from serialized
+    /// output when no windows are declared so legacy scenarios stay
+    /// byte-identical (Epic D).
+    #[serde(default, skip_serializing_if = "EnvironmentSchedule::is_empty")]
+    pub environment: EnvironmentSchedule,
 }
 
 /// Metadata about the scenario.

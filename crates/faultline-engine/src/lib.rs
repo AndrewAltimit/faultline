@@ -188,10 +188,148 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     });
                 }
             }
+
+            // OrAny composition (Epic D): an empty `conditions` vector
+            // would silently never match — likely an unfilled author
+            // template. Walk recursively so a nested OrAny inside an
+            // OrAny is also caught.
+            for branch in &phase.branches {
+                if let Err(()) = check_or_any_nonempty(&branch.condition) {
+                    return Err(ScenarioError::EmptyOrAnyBranch {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Environment schedule (Epic D — weather / time-of-day).
+    // Catch authoring errors that would otherwise produce silent
+    // no-ops or NaN-poisoned multipliers at runtime.
+    for window in &scenario.environment.windows {
+        validate_environment_window(window)?;
+    }
+
+    // Leadership cadre (Epic D — decapitation). Catch malformed cadres
+    // (empty rank list, non-finite effectiveness) at load time so the
+    // runtime helper can stay branch-free.
+    for (fid, faction) in &scenario.factions {
+        if let Some(cadre) = faction.leadership.as_ref() {
+            if cadre.ranks.is_empty() {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("faction {fid} leadership.ranks"),
+                    value: 0.0,
+                    expected: ">= 1 rank".into(),
+                });
+            }
+            if !cadre.succession_floor.is_finite()
+                || cadre.succession_floor < 0.0
+                || cadre.succession_floor > 1.0
+            {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("faction {fid} leadership.succession_floor"),
+                    value: cadre.succession_floor,
+                    expected: "[0.0, 1.0]".into(),
+                });
+            }
+            for rank in &cadre.ranks {
+                if !rank.effectiveness.is_finite()
+                    || rank.effectiveness < 0.0
+                    || rank.effectiveness > 1.0
+                {
+                    return Err(ScenarioError::ValueOutOfRange {
+                        field: format!("faction {fid} leadership rank {} effectiveness", rank.id),
+                        value: rank.effectiveness,
+                        expected: "[0.0, 1.0]".into(),
+                    });
+                }
+            }
         }
     }
 
     Ok(())
+}
+
+fn validate_environment_window(
+    window: &faultline_types::map::EnvironmentWindow,
+) -> Result<(), ScenarioError> {
+    use faultline_types::map::Activation;
+
+    // Reject NaN / infinity / negative factors. Negative would invert
+    // the modifier sign (combat defense becoming offensive); >1 is
+    // legitimate (storms making defense easier in cover). NaN
+    // silently propagates and corrupts every downstream multiplier.
+    let bad_factor = |label: &str, value: f64| -> Result<(), ScenarioError> {
+        if !value.is_finite() || value < 0.0 {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("environment window {} {}", window.id, label),
+                value,
+                expected: ">= 0.0 and finite".into(),
+            });
+        }
+        Ok(())
+    };
+    bad_factor("movement_factor", window.movement_factor)?;
+    bad_factor("defense_factor", window.defense_factor)?;
+    bad_factor("visibility_factor", window.visibility_factor)?;
+    bad_factor("detection_factor", window.detection_factor)?;
+
+    match &window.activation {
+        Activation::Always => {},
+        Activation::TickRange { start, end } => {
+            if start > end {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("environment window {} TickRange.start", window.id),
+                    value: f64::from(*start),
+                    expected: format!("<= end ({end})"),
+                });
+            }
+        },
+        Activation::Cycle {
+            period,
+            phase: _,
+            duration,
+        } => {
+            if *period == 0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("environment window {} Cycle.period", window.id),
+                    value: f64::from(*period),
+                    expected: "> 0".into(),
+                });
+            }
+            if duration > period {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("environment window {} Cycle.duration", window.id),
+                    value: f64::from(*duration),
+                    expected: format!("<= period ({period})"),
+                });
+            }
+        },
+    }
+
+    Ok(())
+}
+
+fn check_or_any_nonempty(cond: &faultline_types::campaign::BranchCondition) -> Result<(), ()> {
+    use faultline_types::campaign::BranchCondition;
+    match cond {
+        BranchCondition::OrAny { conditions } => {
+            if conditions.is_empty() {
+                return Err(());
+            }
+            for inner in conditions {
+                check_or_any_nonempty(inner)?;
+            }
+            Ok(())
+        },
+        BranchCondition::OnSuccess
+        | BranchCondition::OnFailure
+        | BranchCondition::OnDetection
+        | BranchCondition::Probability { .. }
+        | BranchCondition::Always
+        | BranchCondition::EscalationThreshold { .. } => Ok(()),
+    }
 }
 
 fn defender_role_exists(
@@ -265,6 +403,7 @@ mod tests {
                 doctrine: Doctrine::Conventional,
                 escalation_rules: None,
                 defender_capacities: BTreeMap::new(),
+                leadership: None,
             },
         );
 
@@ -327,6 +466,7 @@ mod tests {
             kill_chains: BTreeMap::new(),
             defender_budget: None,
             attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
         }
     }
 

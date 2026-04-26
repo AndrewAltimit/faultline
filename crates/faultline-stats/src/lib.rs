@@ -1055,6 +1055,7 @@ mod tests {
             kill_chains: BTreeMap::new(),
             defender_budget: None,
             attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
         }
     }
 
@@ -1082,6 +1083,9 @@ mod tests {
             controlled_regions: vec![],
             total_strength: strength,
             institution_loyalty: BTreeMap::new(),
+            current_leadership_rank: 0,
+            leadership_decapitations: 0,
+            last_decapitation_tick: None,
         }
     }
 
@@ -1652,6 +1656,7 @@ mod tests {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         }
     }
 }

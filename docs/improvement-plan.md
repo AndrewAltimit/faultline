@@ -162,16 +162,46 @@ all at once — each is substantial.
 - [ ] Supply-network graph + interdiction (new `supply_phase`)
 - [ ] Multi-front resource contention (campaigns compete for
       defender attention)
-- [ ] Leadership decapitation + succession penalties
+- [x] Leadership decapitation + succession penalties
 - [ ] Info-op narrative competition (so `MediaEvent` isn't
       fire-and-forget)
-- [ ] Weather / time-of-day modifiers on terrain
+- [x] Weather / time-of-day modifiers on terrain
 - [ ] Coalition / alliance fracture mechanic (beyond
       `Foreign.is_proxy` flag)
 - [ ] Refugee / displacement flows with cross-regional propagation
-- [ ] `BranchCondition::OrAny` for prerequisite OR logic
+- [x] `BranchCondition::OrAny` for prerequisite OR logic
 
-**Status:** deferred — select on entry.
+**Status:** Epic D **closed** (round one). Single PR (branch
+`epic-d-engine-depth`) shipped three of the seven items — the
+"pick 2–3" bar this epic was scoped to. (1) `BranchCondition::OrAny`
+adds an OR composition over inner conditions with short-circuit
+left-to-right evaluation; the engine-side escalation-window walker
+recurses through it so an `EscalationThreshold` nested in an `OrAny`
+still registers its history requirement, and validation rejects an
+empty `conditions` vector at load time so an unfilled author template
+fails loudly instead of silently never matching. (2) Weather / time-
+of-day modifiers introduce an optional global `EnvironmentSchedule`
+whose windows compose multiplicatively — `Activation::Always`,
+`TickRange`, and `Cycle` (with safe modular-subtraction arithmetic
+that handles `phase >= period`) all serialize cleanly. Per-terrain
+factors apply to combat defense; a global `detection_factor` applies
+to every kill-chain phase's per-tick detection probability before
+saturation gating, which naturally narrows the shadow-detection
+window between unattenuated and saturated rolls. (3) Leadership
+decapitation adds an optional `LeadershipCadre` on `Faction` plus a
+`PhaseOutput::LeadershipDecapitation` variant that advances the rank
+index, applies a one-shot morale shock, and caps the target's morale
+at the new rank's effectiveness × succession_floor for the recovery
+ramp; combat reads `morale` directly so the cap is observable in
+Lanchester outcomes. Faction becomes leaderless when the rank index
+passes the cadre — morale floors at zero and further strikes saturate
+the index without going negative. The remaining four items
+(supply-network graph, info-op competition, coalition fracture,
+refugee flows) are deferred. All schema additions are
+`#[serde(default)]` so legacy scenarios load unchanged; all 10
+bundled scenarios still verify bit-identical via the manifest
+determinism contract; cargo deny / clippy / fmt / verify-bundled /
+verify-migration / grep-guard all clean.
 
 ### Epic E — UI identity & analytical density
 
