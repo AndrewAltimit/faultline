@@ -91,6 +91,33 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     id: cap.id.clone(),
                 });
             }
+            // `initialize_defender_queues` clamps service_rate via
+            // `.max(0.0)`, but a negative value almost always means an
+            // authoring error (typo / sign flip) — fail loudly instead
+            // of silently freezing the queue. NaN is also rejected here
+            // since `< 0.0` is false for NaN; we use `!is_finite()` to
+            // catch it. f64::NEG_INFINITY satisfies `value < 0.0`.
+            if !cap.service_rate.is_finite() || cap.service_rate < 0.0 {
+                return Err(ScenarioError::NegativeServiceRate {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                    value: cap.service_rate,
+                });
+            }
+            // saturated_detection_factor is a multiplier on detection
+            // probability; the gating path clamps to [0, 1] silently,
+            // which would turn an authoring error like -0.5 into
+            // complete detection suppression with no diagnostic.
+            if !cap.saturated_detection_factor.is_finite()
+                || cap.saturated_detection_factor < 0.0
+                || cap.saturated_detection_factor > 1.0
+            {
+                return Err(ScenarioError::SaturatedDetectionFactorOutOfRange {
+                    faction: fid.clone(),
+                    role: rid.clone(),
+                    value: cap.saturated_detection_factor,
+                });
+            }
         }
     }
 
@@ -106,8 +133,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     // Catching this at load time turns a silent "queue not found, no
     // gating, no enqueue" runtime no-op into a loud configuration
     // error.
-    for chain in scenario.kill_chains.values() {
-        for phase in chain.phases.values() {
+    for (cid, chain) in &scenario.kill_chains {
+        for (pid, phase) in &chain.phases {
             if let Some(rr) = &phase.gated_by_defender
                 && !defender_role_exists(scenario, &rr.faction, &rr.role)
             {
@@ -121,6 +148,21 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     return Err(ScenarioError::UnknownDefenderRole {
                         faction: noise.defender.clone(),
                         role: noise.role.clone(),
+                    });
+                }
+                // `sample_poisson` uses Knuth's inverse-transform method,
+                // which relies on `(-mean).exp()`. For `mean > ~709` this
+                // underflows to 0.0 in f64 and the loop falls through to
+                // the 100,000-iteration cap, returning `mean as u32` with
+                // a degenerate (non-Poisson) distribution. Cap well
+                // below the underflow threshold so the sampler stays in
+                // its accurate regime; authors who genuinely need higher
+                // rates can split across multiple noise streams.
+                if !noise.items_per_tick.is_finite() || noise.items_per_tick > 700.0 {
+                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
+                        chain: cid.0.clone(),
+                        phase: pid.0.clone(),
+                        value: noise.items_per_tick,
                     });
                 }
             }

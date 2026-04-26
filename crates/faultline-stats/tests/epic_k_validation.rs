@@ -216,6 +216,107 @@ fn no_capacity_scenario_produces_empty_queue_summary() {
 }
 
 #[test]
+fn validate_scenario_rejects_negative_service_rate() {
+    // A queue cannot drain at a negative rate. The runtime silently
+    // clamps via .max(0.0), but that masks an authoring error.
+    let scenario = load_alert_fatigue_scenario();
+    let mut bad = scenario.clone();
+    let faction = bad
+        .factions
+        .values_mut()
+        .next()
+        .expect("scenario has a faction");
+    let cap = faction
+        .defender_capacities
+        .values_mut()
+        .next()
+        .expect("at least one defender role declared");
+    cap.service_rate = -1.5;
+    let err = faultline_engine::validate_scenario(&bad)
+        .expect_err("validate must reject negative service_rate");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("negative service_rate") || msg.contains("-1.5"),
+        "unhelpful error message: {msg}"
+    );
+}
+
+#[test]
+fn validate_scenario_rejects_out_of_range_saturated_factor() {
+    // saturated_detection_factor is a multiplier; values outside
+    // [0, 1] are physically meaningless and the gating path silently
+    // clamps them — fail loudly instead.
+    let scenario = load_alert_fatigue_scenario();
+    let mut bad = scenario.clone();
+    let faction = bad
+        .factions
+        .values_mut()
+        .next()
+        .expect("scenario has a faction");
+    let cap = faction
+        .defender_capacities
+        .values_mut()
+        .next()
+        .expect("at least one defender role declared");
+    cap.saturated_detection_factor = -0.5;
+    let err = faultline_engine::validate_scenario(&bad)
+        .expect_err("validate must reject negative saturated_detection_factor");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("saturated_detection_factor"),
+        "unhelpful error message: {msg}"
+    );
+
+    let mut bad2 = scenario.clone();
+    let faction2 = bad2
+        .factions
+        .values_mut()
+        .next()
+        .expect("scenario has a faction");
+    let cap2 = faction2
+        .defender_capacities
+        .values_mut()
+        .next()
+        .expect("at least one defender role declared");
+    cap2.saturated_detection_factor = 1.5;
+    let err2 = faultline_engine::validate_scenario(&bad2)
+        .expect_err("validate must reject saturated_detection_factor > 1");
+    let msg2 = format!("{err2}");
+    assert!(
+        msg2.contains("saturated_detection_factor"),
+        "unhelpful error message: {msg2}"
+    );
+}
+
+#[test]
+fn validate_scenario_rejects_excessive_items_per_tick() {
+    // sample_poisson uses Knuth's inverse-transform method, which
+    // degrades silently for means above ~709 (exp(-mean) underflows
+    // to 0 in f64). Cap at 700 so authors can't accidentally exceed
+    // the sampler's accurate regime.
+    let scenario = load_alert_fatigue_scenario();
+    let mut bad = scenario.clone();
+    let chain = bad
+        .kill_chains
+        .values_mut()
+        .next()
+        .expect("scenario has a kill chain");
+    let phase_with_noise = chain
+        .phases
+        .values_mut()
+        .find(|p| !p.defender_noise.is_empty())
+        .expect("alert_fatigue_soc has phases with defender_noise");
+    phase_with_noise.defender_noise[0].items_per_tick = 5_000.0;
+    let err = faultline_engine::validate_scenario(&bad)
+        .expect_err("validate must reject items_per_tick > 700");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("items_per_tick") || msg.contains("Poisson"),
+        "unhelpful error message: {msg}"
+    );
+}
+
+#[test]
 fn validate_scenario_rejects_unknown_defender_role_reference() {
     // A kill-chain phase that names an undeclared (faction, role)
     // must be rejected at load time. Catches author typos that

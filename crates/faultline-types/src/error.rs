@@ -97,6 +97,42 @@ pub enum ScenarioError {
         id: DefenderRoleId,
     },
 
+    #[error(
+        "defender role {role} on faction {faction} has negative service_rate \
+         {value}; service_rate must be >= 0 (a queue cannot drain at a \
+         negative rate)"
+    )]
+    NegativeServiceRate {
+        faction: FactionId,
+        role: DefenderRoleId,
+        value: f64,
+    },
+
+    #[error(
+        "defender role {role} on faction {faction} has \
+         saturated_detection_factor {value} outside [0.0, 1.0]; the factor \
+         is a multiplier on detection probability — values < 0 or > 1 are \
+         physically meaningless"
+    )]
+    SaturatedDetectionFactorOutOfRange {
+        faction: FactionId,
+        role: DefenderRoleId,
+        value: f64,
+    },
+
+    #[error(
+        "kill chain {chain} phase {phase} declares defender_noise with \
+         items_per_tick = {value}; the inverse-transform Poisson sampler \
+         used here loses precision for means above ~700 (exp(-mean) \
+         underflows to 0 in f64). Cap at 700.0 or split across multiple \
+         noise streams."
+    )]
+    DefenderNoiseRateTooHigh {
+        chain: String,
+        phase: String,
+        value: f64,
+    },
+
     #[error("{0}")]
     Custom(String),
 }

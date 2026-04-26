@@ -341,7 +341,8 @@ fn compute_defender_capacity_summary(
     let mut out = Vec::new();
     for ((faction, role), reports) in grouped {
         let n = reports.len() as f64;
-        let n_runs = u32::try_from(reports.len()).unwrap_or(u32::MAX);
+        let n_runs = u32::try_from(reports.len())
+            .expect("reports.len() bounded by MonteCarloConfig.num_runs: u32");
         let capacity = reports.iter().map(|r| r.capacity).max().unwrap_or(0);
 
         let mean_utilization = reports.iter().map(|r| r.utilization).sum::<f64>() / n;
@@ -363,7 +364,8 @@ fn compute_defender_capacity_summary(
             .filter_map(|r| r.time_to_saturation)
             .collect();
         sat_samples.sort_unstable();
-        let saturated_runs = u32::try_from(sat_samples.len()).unwrap_or(u32::MAX);
+        let saturated_runs = u32::try_from(sat_samples.len())
+            .expect("sat_samples.len() <= reports.len(), bounded by num_runs: u32");
         let right_censored = n_runs.saturating_sub(saturated_runs);
         let stats = if sat_samples.is_empty() {
             None
