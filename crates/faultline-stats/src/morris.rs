@@ -215,16 +215,25 @@ pub fn run_morris(
                 candidate
             };
 
+            // Use the actual applied delta (not the intended step) so that
+            // clamped steps — where the parameter moves less than |step| —
+            // do not underestimate |EE|. Skip the step entirely when clamped
+            // to the starting point to avoid division by near-zero.
+            let actual_delta = candidate - x_prev[param_idx];
+            if actual_delta.abs() < f64::EPSILON {
+                continue;
+            }
+
             let mut x_next = x_prev.clone();
             x_next[param_idx] = candidate;
 
             let y_next =
                 evaluate_metric(base_scenario, mc_config, &config.params, &x_next, metric)?;
             batches_run += 1;
-            // Elementary effect normalised by the *signed* step so
+            // Elementary effect normalised by the *actual signed delta* so
             // cancellation across trajectories is meaningful (both
             // `mu` and `mu_star` are well-defined).
-            let ee = (y_next - y_prev) / step;
+            let ee = (y_next - y_prev) / actual_delta;
             mu_sum[param_idx] += ee;
             mu_abs_sum[param_idx] += ee.abs();
             mu_sq_sum[param_idx] += ee * ee;
