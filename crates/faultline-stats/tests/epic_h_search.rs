@@ -40,6 +40,10 @@ fn small_search_config(method: SearchMethod) -> SearchConfig {
             },
             SearchObjective::MinimizeDuration,
         ],
+        // The integration test pins determinism, not Counter-
+        // Recommendation rendering; skipping the baseline keeps the
+        // test fast and focused.
+        compute_baseline: false,
     }
 }
 
@@ -150,6 +154,7 @@ fn manifest_search_mode_serializes_and_round_trips() {
         trials: 8,
         search_seed: 99,
         objectives: vec!["maximize_win_rate:alpha".into(), "minimize_duration".into()],
+        compute_baseline: false,
     };
     let json = serde_json::to_string(&mode).expect("serialize ManifestMode::Search");
     assert!(
@@ -173,6 +178,10 @@ fn manifest_search_mode_replay_objective_labels_reparse() {
         SearchObjective::MinimizeAttackerCost,
         SearchObjective::MaximizeCostAsymmetry,
         SearchObjective::MinimizeDuration,
+        SearchObjective::MaximizeAttackerCost,
+        SearchObjective::MaximizeDetection,
+        SearchObjective::MinimizeDefenderCost,
+        SearchObjective::MinimizeMaxChainSuccess,
     ];
     for o in &labels {
         let label = o.label();

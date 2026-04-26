@@ -808,6 +808,7 @@ pub fn render_search_markdown(result: &SearchResult, scenario: &Scenario) -> Str
 
     render_best_by_objective(&mut out, result);
     render_search_pareto(&mut out, result);
+    render_counter_recommendation(&mut out, result, scenario);
     render_search_trials(&mut out, result);
 
     out
@@ -876,6 +877,194 @@ fn render_search_pareto(out: &mut String, result: &SearchResult) {
         }
     }
     let _ = writeln!(out);
+}
+
+// ---------------------------------------------------------------------------
+// Counter-Recommendation (Epic I)
+// ---------------------------------------------------------------------------
+
+/// Render the Counter-Recommendation section: ranks Pareto-frontier
+/// trials by per-objective improvement against the search's
+/// "do-nothing" baseline, with Wilson CIs on rate-valued metrics.
+///
+/// Surfaces only when:
+///
+/// - the search produced a baseline (`SearchConfig.compute_baseline`),
+/// - at least one decision variable carries an `owner` so the section
+///   can name *whose* posture is being evaluated,
+/// - the Pareto frontier is non-empty.
+///
+/// The deltas the section reports are direction-aware: a row tagged
+/// "improvement" means the trial moved the objective in the
+/// optimization direction declared by `SearchObjective::maximize()`.
+/// For win-rate-style rate objectives, the table reports the trial's
+/// 95% Wilson CI alongside the baseline's so the analyst can read
+/// whether the improvement is statistically distinguishable from
+/// sampling noise.
+fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenario: &Scenario) {
+    let baseline = match result.baseline.as_ref() {
+        Some(b) => b,
+        None => return,
+    };
+    if result.pareto_indices.is_empty() {
+        return;
+    }
+    // Only emit the section when at least one decision variable names
+    // an owner — without it the analyst can't read "the defender's
+    // best posture" off the table, and the section adds noise. This
+    // keeps the legacy attacker-only `strategy_search_demo.toml`
+    // search reports unchanged.
+    let has_owner = scenario
+        .strategy_space
+        .variables
+        .iter()
+        .any(|v| v.owner.is_some());
+    if !has_owner {
+        return;
+    }
+
+    let _ = writeln!(out, "## Counter-Recommendation");
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "Ranks Pareto-frontier trials by per-objective improvement against the **do-nothing baseline** (the scenario evaluated with no decision-variable assignment). Each delta is direction-aware: positive = better in the objective's optimization direction; negative = worse."
+    );
+    let _ = writeln!(out);
+
+    // Group decision variables by owner so the recommendation reads
+    // "alpha's optimal posture" / "bravo's optimal posture". Owners
+    // are surfaced only when present; un-owned variables are listed
+    // separately under "(no owner)".
+    let owners = collect_decision_owners(scenario);
+    if owners.len() > 1 {
+        let _ = writeln!(out, "### Decision variables by owner");
+        let _ = writeln!(out);
+        for (owner, paths) in &owners {
+            let label = owner
+                .as_ref()
+                .map(|f| format!("`{f}`"))
+                .unwrap_or_else(|| "_(no owner)_".to_string());
+            let _ = writeln!(out, "- {label}: {}", paths.join(", "));
+        }
+        let _ = writeln!(out);
+    }
+
+    // Per Pareto-frontier trial: a single block with the trial's
+    // assignments, then a small per-objective delta table.
+    for idx in &result.pareto_indices {
+        let trial = match result.trials.get(*idx as usize) {
+            Some(t) => t,
+            None => continue,
+        };
+        let _ = writeln!(out, "### Recommendation: trial `#{}`", idx);
+        if !trial.assignments.is_empty() {
+            let _ = writeln!(out, "Posture:");
+            for ov in &trial.assignments {
+                let _ = writeln!(out, "- `{}` = **{:.4}**", ov.path, ov.value);
+            }
+        }
+        let _ = writeln!(out);
+
+        let _ = writeln!(
+            out,
+            "| Objective | Direction | Baseline | Trial | Δ | Improvement? |"
+        );
+        let _ = writeln!(out, "|---|---|---|---|---|---|");
+        for obj in &result.objectives {
+            let label = obj.label();
+            let bv = baseline
+                .objective_values
+                .get(&label)
+                .copied()
+                .unwrap_or(0.0);
+            let tv = trial.objective_values.get(&label).copied().unwrap_or(0.0);
+            let raw_delta = tv - bv;
+            let improved = if obj.maximize() {
+                raw_delta > 0.0
+            } else {
+                raw_delta < 0.0
+            };
+            let direction = if obj.maximize() { "max" } else { "min" };
+            let delta_glyph = if improved {
+                "+"
+            } else if raw_delta == 0.0 {
+                "·"
+            } else {
+                "−"
+            };
+            let _ = writeln!(
+                out,
+                "| `{}` | {} | {:.4} | {:.4} | {}{:.4} | {} |",
+                label,
+                direction,
+                bv,
+                tv,
+                delta_glyph,
+                raw_delta.abs(),
+                if improved { "yes" } else { "no" }
+            );
+        }
+        let _ = writeln!(out);
+
+        // Optional Wilson-CI panel for `MaximizeWinRate` objectives —
+        // the only currently-defined rate-valued objective with the
+        // sample size carried on `MonteCarloSummary.total_runs`. Other
+        // objectives (sums, maxes, durations) are continuous metrics
+        // that need bootstrap CIs; deferred to a follow-up so the
+        // first round-one slice ships clean.
+        let mut wilson_lines: Vec<String> = Vec::new();
+        for obj in &result.objectives {
+            if let SearchObjective::MaximizeWinRate { faction } = obj {
+                let bn = baseline.summary.total_runs;
+                let tn = trial.summary.total_runs;
+                let bp = baseline
+                    .summary
+                    .win_rates
+                    .get(faction)
+                    .copied()
+                    .unwrap_or(0.0);
+                let tp = trial.summary.win_rates.get(faction).copied().unwrap_or(0.0);
+                if let (Some(bw), Some(tw)) = (
+                    crate::uncertainty::wilson_from_rate(bp, bn),
+                    crate::uncertainty::wilson_from_rate(tp, tn),
+                ) {
+                    wilson_lines.push(format!(
+                        "- `{}`: baseline {:.1}% (95% CI {:.1}–{:.1}%), trial {:.1}% (95% CI {:.1}–{:.1}%)",
+                        obj.label(),
+                        bp * 100.0,
+                        bw.lower * 100.0,
+                        bw.upper * 100.0,
+                        tp * 100.0,
+                        tw.lower * 100.0,
+                        tw.upper * 100.0,
+                    ));
+                }
+            }
+        }
+        if !wilson_lines.is_empty() {
+            let _ = writeln!(out, "Win-rate Wilson 95% CIs:");
+            for line in &wilson_lines {
+                let _ = writeln!(out, "{line}");
+            }
+            let _ = writeln!(out);
+        }
+    }
+}
+
+fn collect_decision_owners(
+    scenario: &Scenario,
+) -> std::collections::BTreeMap<Option<faultline_types::ids::FactionId>, Vec<String>> {
+    let mut by_owner: std::collections::BTreeMap<
+        Option<faultline_types::ids::FactionId>,
+        Vec<String>,
+    > = std::collections::BTreeMap::new();
+    for var in &scenario.strategy_space.variables {
+        by_owner
+            .entry(var.owner.clone())
+            .or_default()
+            .push(format!("`{}`", var.path));
+    }
+    by_owner
 }
 
 const SEARCH_TRIAL_RENDER_LIMIT: usize = 64;

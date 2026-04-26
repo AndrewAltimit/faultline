@@ -426,18 +426,95 @@ Sub-class of Epic H specialized for the most common analyst workflow:
 "given this offensive scenario, what's the cost-optimal defender
 configuration?" Distinct enough to ship independently.
 
-- [ ] Defender decision space: tech-card selection from a budgeted
-      menu, force-placement across regions, event-ROE choices
-- [ ] Cost / effectiveness Pareto frontier specifically for defender
-      configurations
-- [ ] "Counter-recommendation" report section: ranked list of defender
-      changes, each with `(cost_delta, success_delta, detection_delta,
-      attribution_delta)` and Wilson CIs
+- [x] Defender decision space: force-placement / posture parameters
+      reachable via the `set_param` path layer (now extended to
+      `faction.<id>.force.<force_id>.{strength,mobility,upkeep}`).
+      Tech-card budgeted-menu selection deferred — the existing
+      `tech_access` shape is a flat vec, and a budgeted on/off switch
+      is a separate schema design (slot for round two).
+- [x] Cost / effectiveness Pareto frontier specifically for defender
+      configurations — four new `SearchObjective` variants
+      (`MaximizeAttackerCost`, `MaximizeDetection`, `MinimizeDefenderCost`,
+      `MinimizeMaxChainSuccess`) compose with the existing
+      `MaximizeWinRate` to express defender-aligned multi-objective
+      Pareto searches.
+- [x] "Counter-recommendation" report section: ranked list of
+      Pareto-frontier postures with `(objective_value − baseline)`
+      deltas, direction-aware "improvement?" tags, and Wilson 95%
+      CIs on rate-valued win-rate objectives. Anchored on a "do
+      nothing" baseline trial that the search runner now computes
+      alongside the sampled trials.
 - [ ] Sensitivity of the optimal posture to assumed attacker strategy
       (robustness analysis — "this defender wins if the attacker is
       Profile A or C, but not Profile B")
 
-**Status:** deferred — slot after H.
+**Status:** Epic I **closed** (round one). Single PR (branch
+`epic-i-defender-posture`) shipped three of the four items — the
+"single-side defender posture optimization with Pareto frontier and
+counter-recommendation" arc the epic was scoped against. Robustness
+analysis (the attacker-strategy sensitivity sweep) is the deferred
+fourth item and slots naturally into a round-two PR alongside the
+Epic H adversarial-co-evolution loop, since both involve nested
+search across attacker and defender spaces.
+
+What landed:
+
+- Four new defender-aligned `SearchObjective` variants on top of the
+  Epic H attacker-aligned set: `MaximizeAttackerCost`,
+  `MaximizeDetection`, `MinimizeDefenderCost`, and
+  `MinimizeMaxChainSuccess`. All four are pure functions of the
+  existing `CampaignSummary` shape — no new analytics modules, no
+  new RNG draws. CLI parser, label round-trip, and direction (the
+  `maximize()` boolean) all extended; back-compat is total because
+  the enum remains additive (older manifests' objective labels
+  reparse cleanly).
+- Extended the dotted-path layer in `faultline_stats::sensitivity` to
+  reach `faction.<id>.force.<force_id>.{strength,mobility,upkeep}`,
+  unblocking force-placement and force-readiness as decision
+  variables. Error messages name the chain of (faction, force,
+  field) so authoring typos surface in the right place.
+- Added `compute_baseline: bool` to `SearchConfig` and an optional
+  `baseline: Option<SearchTrial>` to `SearchResult`. When enabled
+  (default in the CLI), the search runner emits a "do-nothing" trial
+  — the scenario evaluated with no decision-variable assignment
+  applied — using the sentinel `trial_index = u32::MAX` so renderers
+  detect it without a separate type. The `baseline_objective_matches
+  _a_zero_assignment_run` test pins that the baseline reuses the
+  inner MC seed so it's bit-identical to a standalone MC of the same
+  scenario.
+- New `render_counter_recommendation` section on the search report.
+  Gated on (a) baseline present, (b) at least one decision variable
+  carrying an `owner` (so legacy attacker-only spaces stay
+  unchanged), (c) non-empty Pareto frontier. Each frontier trial gets
+  a posture block, a delta table with direction-aware "improvement?"
+  flags, and a Wilson 95% CI panel on rate-valued win-rate objectives
+  (other-shape objectives — sums, maxes, durations — would need
+  bootstrap CIs and are deferred). The deltas are anchored on the
+  baseline so an analyst reads "this posture buys you X over the
+  do-nothing case" rather than guessing from absolute values.
+- `ManifestMode::Search` gained a `compute_baseline` field
+  (`#[serde(default)]` so older manifests at the Epic H shape replay
+  cleanly with `false`); the CLI emits the actual setting and the
+  `--verify` replay path threads it through into `SearchConfig` so
+  hashes match.
+- Bundled `scenarios/defender_posture_optimization.toml` exercises
+  the full pipeline: three blue-side decision variables (per-phase
+  detection probabilities and force readiness), three defender-
+  aligned objectives, an 8-cell grid that produces a 2-trial Pareto
+  frontier with measurable improvements (e.g. trial #6 reduces max
+  chain success from 0.70 to 0.33 and lifts max detection from 0.47
+  to 0.87 against the do-nothing baseline). Five integration tests in
+  `crates/faultline-stats/tests/epic_i_defender_posture.rs` lock
+  search-mode determinism, the baseline-changes-hash invariant,
+  Counter-Recommendation rendering gating, and the
+  decision-variables-actually-move-objectives sanity check (the trap
+  that caught the first draft of this scenario).
+
+All schema additions are `#[serde(default)]` so legacy scenarios
+load unchanged; all 12 bundled scenarios still verify bit-identical
+via the manifest determinism contract; cargo deny / clippy / fmt /
+verify-bundled / verify-migration / grep-guard / JS tests / WASM
+build all clean.
 
 ### Epic J — Adaptive faction AI
 

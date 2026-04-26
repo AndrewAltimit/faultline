@@ -94,6 +94,9 @@ pub fn run_sensitivity(
 /// - `faction.<faction_id>.logistics_capacity`
 /// - `faction.<faction_id>.command_resilience`
 /// - `faction.<faction_id>.intelligence`
+/// - `faction.<faction_id>.force.<force_id>.strength`
+/// - `faction.<faction_id>.force.<force_id>.mobility`
+/// - `faction.<faction_id>.force.<force_id>.upkeep`
 /// - `political_climate.tension`
 /// - `political_climate.institutional_trust`
 /// - `political_climate.media.disinformation_susceptibility`
@@ -122,6 +125,17 @@ pub fn get_param(scenario: &Scenario, param: &str) -> Result<f64, StatsError> {
                 "intelligence" => Ok(faction.intelligence),
                 _ => Err(StatsError::InvalidConfig(format!(
                     "unknown faction field: '{field}'"
+                ))),
+            }
+        },
+        ["faction", faction_id, "force", force_id, field] => {
+            let force = get_force(scenario, faction_id, force_id)?;
+            match *field {
+                "strength" => Ok(force.strength),
+                "mobility" => Ok(force.mobility),
+                "upkeep" => Ok(force.upkeep),
+                _ => Err(StatsError::InvalidConfig(format!(
+                    "unknown force field '{field}' on faction '{faction_id}' force '{force_id}'"
                 ))),
             }
         },
@@ -194,6 +208,19 @@ pub fn set_param(scenario: &mut Scenario, param: &str, value: f64) -> Result<(),
                 },
             }
         },
+        ["faction", faction_id, "force", force_id, field] => {
+            let force = get_force_mut(scenario, faction_id, force_id)?;
+            match *field {
+                "strength" => force.strength = value,
+                "mobility" => force.mobility = value,
+                "upkeep" => force.upkeep = value,
+                _ => {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "unknown force field '{field}' on faction '{faction_id}' force '{force_id}'"
+                    )));
+                },
+            }
+        },
         ["political_climate", field] => match *field {
             "tension" => scenario.political_climate.tension = value,
             "institutional_trust" => scenario.political_climate.institutional_trust = value,
@@ -254,6 +281,42 @@ pub fn set_param(scenario: &mut Scenario, param: &str, value: f64) -> Result<(),
     }
 
     Ok(())
+}
+
+fn get_force<'a>(
+    scenario: &'a Scenario,
+    faction_id: &str,
+    force_id: &str,
+) -> Result<&'a faultline_types::faction::ForceUnit, StatsError> {
+    let fid = faultline_types::ids::FactionId::from(faction_id);
+    let faction = scenario
+        .factions
+        .get(&fid)
+        .ok_or_else(|| StatsError::InvalidConfig(format!("faction '{faction_id}' not found")))?;
+    let force_id_typed = faultline_types::ids::ForceId::from(force_id);
+    faction.forces.get(&force_id_typed).ok_or_else(|| {
+        StatsError::InvalidConfig(format!(
+            "force '{force_id}' not found in faction '{faction_id}'"
+        ))
+    })
+}
+
+fn get_force_mut<'a>(
+    scenario: &'a mut Scenario,
+    faction_id: &str,
+    force_id: &str,
+) -> Result<&'a mut faultline_types::faction::ForceUnit, StatsError> {
+    let fid = faultline_types::ids::FactionId::from(faction_id);
+    let faction = scenario
+        .factions
+        .get_mut(&fid)
+        .ok_or_else(|| StatsError::InvalidConfig(format!("faction '{faction_id}' not found")))?;
+    let force_id_typed = faultline_types::ids::ForceId::from(force_id);
+    faction.forces.get_mut(&force_id_typed).ok_or_else(|| {
+        StatsError::InvalidConfig(format!(
+            "force '{force_id}' not found in faction '{faction_id}'"
+        ))
+    })
 }
 
 fn get_phase<'a>(
@@ -859,6 +922,68 @@ mod tests {
         assert!(
             msg.contains("no_such_field") && msg.contains("alpha") && msg.contains("recon"),
             "set_param error must name the chain, phase, and bad field; got: {msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Epic I force-unit path tests
+    //
+    // The defender-posture optimization workflow needs a way to declare
+    // force strength as a decision variable, so the path layer is
+    // extended to reach `faction.<id>.force.<force_id>.<field>`.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn get_set_force_strength_roundtrip() {
+        let scenario = minimal_scenario();
+        let path = "faction.gov.force.gov-inf.strength";
+        let v = get_param(&scenario, path).expect("get strength");
+        assert!((v - 100.0).abs() < f64::EPSILON);
+        let mut s = scenario.clone();
+        set_param(&mut s, path, 250.0).expect("set strength");
+        let v2 = get_param(&s, path).expect("get after set");
+        assert!((v2 - 250.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn get_set_force_mobility_and_upkeep_roundtrip() {
+        let scenario = minimal_scenario();
+        for (path, baseline, target) in [
+            ("faction.gov.force.gov-inf.mobility", 1.0, 0.7),
+            ("faction.gov.force.gov-inf.upkeep", 1.0, 2.5),
+        ] {
+            let v = get_param(&scenario, path).unwrap_or_else(|e| panic!("get {path}: {e}"));
+            assert!((v - baseline).abs() < f64::EPSILON);
+            let mut s = scenario.clone();
+            set_param(&mut s, path, target).unwrap_or_else(|e| panic!("set {path}: {e}"));
+            let v2 = get_param(&s, path).expect("get after set");
+            assert!((v2 - target).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn force_path_errors_include_faction_force_and_field_context() {
+        let scenario = minimal_scenario();
+
+        // Missing faction.
+        let err = get_param(&scenario, "faction.does_not_exist.force.gov-inf.strength")
+            .expect_err("missing faction must error");
+        let msg = format!("{err}");
+        assert!(msg.contains("does_not_exist"));
+
+        // Missing force.
+        let err = get_param(&scenario, "faction.gov.force.no_such_force.strength")
+            .expect_err("missing force must error");
+        let msg = format!("{err}");
+        assert!(msg.contains("no_such_force") && msg.contains("gov"));
+
+        // Unknown force field.
+        let err = get_param(&scenario, "faction.gov.force.gov-inf.no_such_field")
+            .expect_err("unknown field must error");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("no_such_field") && msg.contains("gov-inf"),
+            "force-field error must name field and force; got: {msg}"
         );
     }
 

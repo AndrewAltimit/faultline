@@ -94,6 +94,34 @@ pub struct SearchConfig {
     /// are derived afterwards. Empty `objectives` is rejected — a
     /// search with no objectives produces no ranking.
     pub objectives: Vec<SearchObjective>,
+    /// Compute a "do nothing" baseline trial (no decision-variable
+    /// assignments applied) alongside the search trials. Used by the
+    /// Counter-Recommendation report (Epic I) to anchor deltas.
+    /// Defaults to `true` for caller convenience; flip to `false` when
+    /// the extra MC batch is unwanted.
+    pub compute_baseline: bool,
+}
+
+impl SearchConfig {
+    /// Construct a `SearchConfig` with `compute_baseline = true`. Use
+    /// `SearchConfig { compute_baseline: false, ..config }` when an
+    /// existing instance needs the baseline disabled.
+    pub fn new(
+        trials: u32,
+        method: SearchMethod,
+        search_seed: u64,
+        mc_config: MonteCarloConfig,
+        objectives: Vec<SearchObjective>,
+    ) -> Self {
+        Self {
+            trials,
+            method,
+            search_seed,
+            mc_config,
+            objectives,
+            compute_baseline: true,
+        }
+    }
 }
 
 /// One trial's worth of decisions and their evaluated objectives.
@@ -132,6 +160,21 @@ pub struct SearchResult {
     /// Echo of the objectives evaluated, in the order supplied. Lets
     /// the report renderer iterate without redeclaring the order.
     pub objectives: Vec<SearchObjective>,
+    /// "Do nothing" reference run — the scenario evaluated with no
+    /// decision-variable assignment applied (Epic I).
+    ///
+    /// The Counter-Recommendation report section uses this as the
+    /// comparison anchor: every Pareto-frontier trial is reported with
+    /// `(objective_value - baseline_value)` deltas so an analyst sees
+    /// what the posture investment buys vs. status quo. Reuses the
+    /// inner Monte Carlo seed so the baseline is bit-identical to a
+    /// `--single-run` of the same scenario at the same seed.
+    ///
+    /// `None` when `SearchConfig.compute_baseline = false` so legacy
+    /// scenarios that opted out can still produce a search result
+    /// without paying the extra MC batch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<SearchTrial>,
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +286,32 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
     let pareto_indices = compute_pareto_frontier(&trials, &config.objectives);
     let best_by_objective = compute_best_by_objective(&trials, &config.objectives);
 
+    let baseline = if config.compute_baseline {
+        debug!("evaluating baseline (no decision-variable assignment)");
+        let mc = MonteCarloRunner::run(&config.mc_config, scenario)?;
+        let mut objective_values = BTreeMap::new();
+        for objective in &config.objectives {
+            let v = evaluate_objective(objective, &mc.summary);
+            objective_values.insert(objective.label(), v);
+        }
+        // The baseline reuses the trial schema so the report renderer
+        // can iterate it just like a normal trial. `trial_index` is set
+        // to a sentinel u32::MAX so the renderer can detect "this is
+        // the baseline" without a separate type.
+        Some(SearchTrial {
+            trial_index: u32::MAX,
+            assignments: Vec::new(),
+            objective_values,
+            summary: mc.summary,
+        })
+    } else {
+        None
+    };
+
     info!(
         completed = trials.len(),
         pareto = pareto_indices.len(),
+        baseline = baseline.is_some(),
         "strategy search complete"
     );
 
@@ -255,6 +321,7 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
         pareto_indices,
         best_by_objective,
         objectives: config.objectives.clone(),
+        baseline,
     })
 }
 
@@ -480,6 +547,32 @@ fn evaluate_objective(objective: &SearchObjective, summary: &MonteCarloSummary) 
             .fold(f64::NEG_INFINITY, f64::max)
             .max(0.0),
         MinimizeDuration => summary.average_duration,
+        // Defender-aligned objectives. These read the same underlying
+        // CampaignSummary fields as their attacker-aligned mirrors but
+        // flip the optimization direction (see `maximize()` on the
+        // enum). Chains-empty cases stay sane: an empty fold over
+        // `0.0` initial returns 0 (no chains → no detection / cost to
+        // worry about).
+        MaximizeAttackerCost => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.mean_attacker_spend)
+            .sum(),
+        MaximizeDetection => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.detection_rate)
+            .fold(0.0_f64, f64::max),
+        MinimizeDefenderCost => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.mean_defender_spend)
+            .sum(),
+        MinimizeMaxChainSuccess => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.overall_success_rate)
+            .fold(0.0_f64, f64::max),
     }
 }
 
@@ -784,6 +877,10 @@ mod tests {
             objectives: vec![SearchObjective::MaximizeWinRate {
                 faction: FactionId::from("alpha"),
             }],
+            // Most existing tests don't care about the baseline trial
+            // and benefit from skipping the extra MC batch. The
+            // baseline-specific tests below explicitly flip this on.
+            compute_baseline: false,
         }
     }
 
@@ -1243,6 +1340,7 @@ mod tests {
                 parallel: false,
             },
             objectives: vec![SearchObjective::MinimizeDuration],
+            compute_baseline: false,
         };
         // Direct call to sample_grid bypasses run_search's path-resolution
         // probe (the synthetic paths don't exist in any real scenario).
@@ -1416,6 +1514,73 @@ mod tests {
         let parsed: SearchResult = serde_json::from_str(&json).expect("parse JSON");
         let json2 = serde_json::to_string(&parsed).expect("re-serialize JSON");
         assert_eq!(json, json2, "SearchResult must round-trip via JSON");
+    }
+
+    #[test]
+    fn baseline_runs_when_enabled_and_carries_objective_values() {
+        // With `compute_baseline = true`, the runner emits a baseline
+        // trial holding the scenario's natural objective values (no
+        // decision-variable assignment). Without the toggle, no
+        // baseline is emitted (back-compat).
+        let s = search_scenario();
+
+        let mut c = config(SearchMethod::Random, 3);
+        c.compute_baseline = true;
+        c.objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDuration,
+        ];
+        let result = run_search(&s, &c).expect("search with baseline");
+        let baseline = result.baseline.as_ref().expect("baseline present");
+        assert_eq!(baseline.trial_index, u32::MAX, "baseline uses sentinel idx");
+        assert!(
+            baseline.assignments.is_empty(),
+            "baseline carries no assignments"
+        );
+        for obj in &c.objectives {
+            assert!(
+                baseline.objective_values.contains_key(&obj.label()),
+                "baseline missing objective {}",
+                obj.label()
+            );
+        }
+
+        let mut c_off = c.clone();
+        c_off.compute_baseline = false;
+        let r_off = run_search(&s, &c_off).expect("search without baseline");
+        assert!(r_off.baseline.is_none(), "compute_baseline=false → None");
+    }
+
+    #[test]
+    fn baseline_objective_matches_a_zero_assignment_run() {
+        // The baseline must produce the same objective values as if we
+        // had run a Monte Carlo batch on the unmodified scenario at the
+        // same seed. This is the determinism contract that lets the
+        // Counter-Recommendation deltas be reproducible.
+        let s = search_scenario();
+        let mut c = config(SearchMethod::Random, 1);
+        c.compute_baseline = true;
+        let r = run_search(&s, &c).expect("search");
+        let baseline = r.baseline.expect("baseline");
+
+        // Re-run the same MC config independently; objective values
+        // must match exactly (same seed → same outcome distribution).
+        let mc = MonteCarloRunner::run(&c.mc_config, &s).expect("standalone MC");
+        for obj in &c.objectives {
+            let label = obj.label();
+            let bv = baseline
+                .objective_values
+                .get(&label)
+                .copied()
+                .unwrap_or(0.0);
+            let direct = evaluate_objective(obj, &mc.summary);
+            assert!(
+                (bv - direct).abs() < 1e-12,
+                "baseline {label} = {bv} must match direct evaluation {direct}",
+            );
+        }
     }
 
     #[test]

@@ -876,6 +876,11 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
         search_seed,
         mc_config,
         objectives: objectives.clone(),
+        // Always compute the baseline for CLI search runs — the
+        // Counter-Recommendation report section (Epic I) needs it as
+        // the comparison anchor. The cost is one extra MC batch per
+        // search, which is negligible compared to the trial budget.
+        compute_baseline: true,
     };
 
     info!(
@@ -898,6 +903,7 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
         trials: cli.search_trials,
         search_seed,
         objectives: objectives.iter().map(SearchObjective::label).collect(),
+        compute_baseline: config.compute_baseline,
     };
     let output_hash =
         manifest::output_hash(&result).with_context(|| "failed to hash search result")?;
@@ -1280,6 +1286,7 @@ fn replay_manifest_mode(
             trials,
             search_seed,
             objectives,
+            compute_baseline,
         } => {
             // Reparse the recorded objective labels back into the
             // structured form. Recording the labels (not the structured
@@ -1301,6 +1308,7 @@ fn replay_manifest_mode(
                 search_seed: *search_seed,
                 mc_config: inner_config,
                 objectives: parsed_objectives,
+                compute_baseline: *compute_baseline,
             };
             let result = faultline_stats::search::run_search(scenario, &search_config)
                 .with_context(|| "search replay failed")?;
@@ -1312,6 +1320,7 @@ fn replay_manifest_mode(
                     trials: *trials,
                     search_seed: *search_seed,
                     objectives: objectives.clone(),
+                    compute_baseline: *compute_baseline,
                 },
                 h,
             )
