@@ -151,10 +151,17 @@ struct Cli {
     /// Run schema migrations on the scenario and emit the upgraded TOML.
     ///
     /// Loads the scenario, advances `meta.schema_version` from
-    /// whatever was authored to the current version, and prints the
-    /// result to stdout. Combine with `--in-place` to overwrite the
-    /// source file. Mutually exclusive with the run modes — migrate
-    /// is a pure schema operation that does not start the engine.
+    /// whatever was authored to the current version, validates the
+    /// result, and prints the upgraded TOML to stdout. Combine with
+    /// `--in-place` to overwrite the source file. Mutually exclusive
+    /// with the run modes — migrate is a pure schema operation that
+    /// does not start the engine.
+    ///
+    /// Caveat: emitted TOML is the canonical form (BTreeMap-sorted
+    /// keys, single-line strings, no comments). Authorial formatting
+    /// is not preserved. For scenarios where formatting matters, diff
+    /// the migrated form against the source and apply changes by
+    /// hand rather than using `--in-place`.
     #[arg(
         long = "migrate",
         conflicts_with_all = [
@@ -756,6 +763,14 @@ fn write_sensitivity_output(
 /// gives an analyst a single canonical form to commit and removes a
 /// silent variant of "the scenario file disagrees with what the
 /// engine actually loads."
+///
+/// Caveat: the emitted TOML is the canonical form of the parsed
+/// scenario — keys are BTreeMap-sorted, multi-line strings get
+/// collapsed, and comments are stripped. That's the cost of going
+/// through the deserialize-then-reserialize migration pipeline. For
+/// scenarios where formatting matters, run `--migrate` to a temp
+/// file, diff against the source, and apply the changes by hand
+/// instead of `--in-place`.
 fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
     let value: toml::Value = toml::from_str(toml_str)
         .with_context(|| format!("failed to parse {}", cli.scenario.display()))?;
@@ -765,13 +780,23 @@ fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
     let migrated_toml = migrate_scenario_str(toml_str)
         .with_context(|| format!("failed to migrate scenario {}", cli.scenario.display()))?;
 
-    // Sanity-check the migrated form by deserializing it. A migration
-    // that produces structurally-valid TOML but a malformed Scenario
-    // would otherwise leak through to disk; catching it here keeps
-    // `--in-place` safe — we only overwrite after we know the result
-    // re-loads cleanly.
-    let _: Scenario = toml::from_str(&migrated_toml)
-        .with_context(|| "migrated scenario failed to deserialize; refusing to write")?;
+    // Sanity-check the migrated form by deserializing AND validating
+    // before we touch stdout or disk. Two layers:
+    //   1. Deserialize: catches a migration that produces structurally
+    //      bad TOML (wrong field types, missing required fields).
+    //   2. validate_scenario: catches a migration that produces a
+    //      scenario the engine would refuse at run time (no factions,
+    //      regions referencing missing borders, etc.).
+    // Stdout-mode also runs both checks before emitting any bytes so
+    // a redirect (`--migrate > new.toml`) never captures broken output.
+    let migrated_scenario: Scenario = toml::from_str(&migrated_toml)
+        .with_context(|| "migrated scenario failed to deserialize; refusing to emit")?;
+    validate_scenario(&migrated_scenario).with_context(|| {
+        "migrated scenario failed engine validation; refusing to emit. \
+         The migration produced a structurally-valid TOML that the engine \
+         would reject — fix the migration step or repair the source \
+         scenario, then retry."
+    })?;
 
     if cli.in_place {
         fs::write(&cli.scenario, &migrated_toml).with_context(|| {
@@ -788,7 +813,7 @@ fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
         );
     } else {
         // Print to stdout so the user can pipe it: `faultline foo.toml
-        // --migrate > foo-v2.toml`. We use println! (not info!) so the
+        // --migrate > foo-v2.toml`. We use print! (not info!) so the
         // bytes appear on stdout regardless of tracing log level.
         print!("{migrated_toml}");
         info!(

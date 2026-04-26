@@ -81,3 +81,83 @@ if [[ "$fail" -ne 0 ]]; then
 fi
 
 echo "[verify-migration] all ${#scenarios[@]} scenarios migrated and re-validated cleanly"
+
+# ----------------------------------------------------------------------------
+# Negative-path checks
+# ----------------------------------------------------------------------------
+# These pin the error contract analysts and downstream tooling rely on:
+#   1. A scenario authored against a future schema version exits non-zero
+#      with a clear "newer than supported" error rather than silently
+#      parsing as v1.
+#   2. `--migrate --in-place` actually rewrites the source file (catches
+#      a future refactor that turns --in-place into a no-op).
+#   3. `--migrate` does not start the engine — no manifest.json is
+#      emitted, no Monte Carlo runs, the output dir stays untouched.
+
+echo
+echo "[verify-migration] running negative-path checks..."
+
+NEG_DIR="${WORKDIR}/neg"
+mkdir -p "$NEG_DIR"
+
+# (1) Future-version rejection.
+# Take a real scenario, bump schema_version to a far-future value, and
+# confirm --migrate fails. We use sed to keep the rest of the scenario
+# byte-identical so any failure here is unambiguously about the version
+# field, not a side-effect of file content drift.
+future_scenario="${NEG_DIR}/tutorial_v999.toml"
+sed 's/^schema_version = 1$/schema_version = 999/' \
+    scenarios/tutorial_symmetric.toml > "$future_scenario"
+if ! grep -q '^schema_version = 999' "$future_scenario"; then
+    echo "[verify-migration] FAIL: fixture mutation did not take effect"
+    exit 1
+fi
+
+if "$BIN" "$future_scenario" --migrate --quiet > "${NEG_DIR}/future.out" 2>"${NEG_DIR}/future.err"; then
+    echo "[verify-migration] FAIL: --migrate accepted schema_version=999 (must reject)"
+    exit 1
+fi
+if ! grep -qi 'newer\|supports up to' "${NEG_DIR}/future.err"; then
+    echo "[verify-migration] FAIL: --migrate v999 error message missing 'newer/supports up to':"
+    cat "${NEG_DIR}/future.err"
+    exit 1
+fi
+echo "[verify-migration] OK: future schema_version rejected with clear message"
+
+# (2) --in-place actually overwrites the source.
+# Copy a scenario, strip the schema_version line, run --migrate
+# --in-place, and assert the file now contains the field. Catches a
+# regression where --in-place silently doesn't write.
+inplace_scenario="${NEG_DIR}/tutorial_no_version.toml"
+sed '/^schema_version = 1$/d' scenarios/tutorial_symmetric.toml > "$inplace_scenario"
+if grep -q '^schema_version' "$inplace_scenario"; then
+    echo "[verify-migration] FAIL: failed to strip schema_version from fixture"
+    exit 1
+fi
+
+if ! "$BIN" "$inplace_scenario" --migrate --in-place --quiet 2>/dev/null; then
+    echo "[verify-migration] FAIL: --migrate --in-place returned non-zero"
+    exit 1
+fi
+if ! grep -q '^schema_version' "$inplace_scenario"; then
+    echo "[verify-migration] FAIL: --in-place did not stamp schema_version into source file"
+    exit 1
+fi
+echo "[verify-migration] OK: --in-place rewrote the source file with stamped version"
+
+# (3) --migrate does not run the engine.
+# The smoke test would catch most regressions here because --migrate
+# short-circuits before output-dir creation, but a future change might
+# accidentally re-introduce an engine invocation. Confirm no
+# manifest.json appears in a fresh output dir.
+engine_check_dir="${NEG_DIR}/engine_check_out"
+rm -rf "$engine_check_dir"
+"$BIN" scenarios/tutorial_symmetric.toml --migrate --quiet \
+    -o "$engine_check_dir" > /dev/null
+if [[ -f "${engine_check_dir}/manifest.json" ]]; then
+    echo "[verify-migration] FAIL: --migrate emitted a manifest.json (it should never run the engine)"
+    exit 1
+fi
+echo "[verify-migration] OK: --migrate did not start the engine"
+
+echo "[verify-migration] all checks (positive + negative) passed"

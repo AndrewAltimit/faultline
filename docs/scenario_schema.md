@@ -72,6 +72,10 @@ The policy is encoded in `migration.rs` and enforced by the `verify-migration` C
    - Adding a fixture that pins the old shape so the migrator's correctness is testable in perpetuity.
 3. CI runs `tools/ci/verify-migration.sh` on every PR, which migrates each bundled scenario and re-validates the result. Drift fails the build.
 
+**Interaction with Epic Q (manifest hashes):** bumping `CURRENT_SCHEMA_VERSION` changes the canonical JSON shape of `Scenario`, which changes `scenario_hash` for every bundled scenario. Epic Q manifests emitted before a schema bump cannot be replayed against post-bump builds — `--verify` fails with a clear "scenario hash mismatch" error. This is the intended behavior; an analyst citing a stable Faultline run by manifest needs to pin the engine version anyway.
+
+**`--migrate` formatting caveat:** the CLI's `--migrate` flag emits the canonical TOML form of the parsed scenario — keys are BTreeMap-sorted, multi-line strings are collapsed, and comments are stripped. Authorial formatting is not preserved. For scenarios where formatting matters, run `--migrate` to a temp file, diff it against the source, and apply the diff by hand rather than using `--migrate --in-place`.
+
 ---
 
 ## `[map]`
