@@ -1030,20 +1030,6 @@ fn multiplicative_factor(
     acc
 }
 
-/// Identifiers of every window active at `tick`. Used by report
-/// rendering to surface which windows fired during a run; engine-side
-/// behavior is fully captured by the multiplicative factor helpers
-/// above.
-pub fn active_window_ids_at(scenario: &Scenario, tick: u32) -> Vec<String> {
-    scenario
-        .environment
-        .windows
-        .iter()
-        .filter(|w| w.activation.is_active_at(tick))
-        .map(|w| w.id.clone())
-        .collect()
-}
-
 // -----------------------------------------------------------------------
 // Leadership caps (Epic D — decapitation + succession)
 // -----------------------------------------------------------------------
@@ -1110,6 +1096,11 @@ pub fn effective_leadership_factor(
 /// No-op when no faction declares a `leadership` cadre — the
 /// per-faction loop body short-circuits via the `1.0` return.
 pub fn apply_leadership_caps(state: &mut SimulationState, scenario: &Scenario) {
+    // Legacy scenarios with no cadres pay only this scan instead of
+    // cloning every FactionId and computing a no-op factor per tick.
+    if !scenario.factions.values().any(|f| f.leadership.is_some()) {
+        return;
+    }
     // Snapshot tick before borrowing the faction map mutably.
     let tick = state.tick;
     // Collect the cap values first so we don't hold an immutable

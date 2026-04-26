@@ -189,12 +189,14 @@ impl Activation {
                 if *period == 0 || *duration == 0 {
                     return false;
                 }
-                // Modular subtraction in u32 — phase is reduced first
-                // so the `period - phase % period` term is well-defined
-                // even when an author specifies `phase >= period`.
-                let p = *period;
-                let shifted = (tick % p + (p - *phase % p)) % p;
-                shifted < *duration
+                // Promote to u64 so the inner sum never overflows: when
+                // `*phase % p == 0` the term `p - *phase % p` equals `p`,
+                // and `tick % p + p` would wrap u32 for `p > 2^31`.
+                let p = u64::from(*period);
+                let phase = u64::from(*phase);
+                let tick = u64::from(tick);
+                let shifted = (tick % p + (p - phase % p)) % p;
+                shifted < u64::from(*duration)
             },
         }
     }

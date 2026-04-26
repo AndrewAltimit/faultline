@@ -201,6 +201,50 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     });
                 }
             }
+
+            // Leadership-targeted phase outputs (Epic D). A
+            // `LeadershipDecapitation` against a faction without a
+            // declared cadre is a no-op at runtime — almost certainly
+            // an authoring mistake. Reject loudly so the analyst gets
+            // a diagnostic instead of a silently-empty Leadership
+            // Cadres section. Also catches unknown faction ids and
+            // non-finite / out-of-range morale_shock.
+            for output in &phase.outputs {
+                if let faultline_types::campaign::PhaseOutput::LeadershipDecapitation {
+                    target_faction,
+                    morale_shock,
+                } = output
+                {
+                    let Some(target) = scenario.factions.get(target_faction) else {
+                        return Err(ScenarioError::Custom(format!(
+                            "kill chain {cid} phase {pid} declares \
+                             LeadershipDecapitation against unknown \
+                             faction `{target_faction}`"
+                        )));
+                    };
+                    if target.leadership.is_none() {
+                        return Err(ScenarioError::Custom(format!(
+                            "kill chain {cid} phase {pid} declares \
+                             LeadershipDecapitation against faction \
+                             `{target_faction}`, which has no \
+                             `leadership` cadre — the strike would \
+                             be a runtime no-op. Either add a cadre or \
+                             use `PhaseOutput::Custom` for analytics-only \
+                             counters."
+                        )));
+                    }
+                    if !morale_shock.is_finite() || *morale_shock < 0.0 || *morale_shock > 1.0 {
+                        return Err(ScenarioError::ValueOutOfRange {
+                            field: format!(
+                                "kill chain {cid} phase {pid} \
+                                 LeadershipDecapitation.morale_shock"
+                            ),
+                            value: *morale_shock,
+                            expected: "[0.0, 1.0]".into(),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -262,53 +306,6 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                         value: rank.effectiveness,
                         expected: "[0.0, 1.0]".into(),
                     });
-                }
-            }
-        }
-    }
-
-    // Leadership-targeted phase outputs (Epic D). A
-    // `LeadershipDecapitation` against a faction without a declared
-    // cadre is a no-op at runtime — almost certainly an authoring
-    // mistake. Reject loudly so the analyst gets a diagnostic instead
-    // of a silently-empty Leadership Cadres section. Also catches
-    // unknown faction ids and non-finite / out-of-range morale_shock.
-    for (cid, chain) in &scenario.kill_chains {
-        for (pid, phase) in &chain.phases {
-            for output in &phase.outputs {
-                if let faultline_types::campaign::PhaseOutput::LeadershipDecapitation {
-                    target_faction,
-                    morale_shock,
-                } = output
-                {
-                    let Some(target) = scenario.factions.get(target_faction) else {
-                        return Err(ScenarioError::Custom(format!(
-                            "kill chain {cid} phase {pid} declares \
-                             LeadershipDecapitation against unknown \
-                             faction `{target_faction}`"
-                        )));
-                    };
-                    if target.leadership.is_none() {
-                        return Err(ScenarioError::Custom(format!(
-                            "kill chain {cid} phase {pid} declares \
-                             LeadershipDecapitation against faction \
-                             `{target_faction}`, which has no \
-                             `leadership` cadre — the strike would \
-                             be a runtime no-op. Either add a cadre or \
-                             use `PhaseOutput::Custom` for analytics-only \
-                             counters."
-                        )));
-                    }
-                    if !morale_shock.is_finite() || *morale_shock < 0.0 || *morale_shock > 1.0 {
-                        return Err(ScenarioError::ValueOutOfRange {
-                            field: format!(
-                                "kill chain {cid} phase {pid} \
-                                 LeadershipDecapitation.morale_shock"
-                            ),
-                            value: *morale_shock,
-                            expected: "[0.0, 1.0]".into(),
-                        });
-                    }
                 }
             }
         }

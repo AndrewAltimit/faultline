@@ -3726,6 +3726,13 @@ fn or_any_inner_probability_consumes_rng_only_when_reached() {
 
 #[test]
 fn leadership_no_cadre_means_no_morale_cap() {
+    // Belt-and-suspenders: this scenario would fail `validate_scenario`
+    // (decapitation against a faction with no cadre is rejected as an
+    // authoring mistake), but we drive the engine directly to pin the
+    // runtime defensive behavior — `apply_leadership_caps` must remain
+    // a no-op for cadre-less factions even if validation is bypassed.
+    // Do not "fix" this to validation-pass; it would destroy what the
+    // test is asserting.
     use faultline_types::campaign::{
         BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
     };
