@@ -205,9 +205,12 @@ pub fn run_morris(
             // If the candidate would leave the bounds, flip the sign.
             // This keeps the trajectory inside `[lo, hi]^k` without
             // skipping a step (which would lose a degree of freedom).
+            // Clamp after the flip: when `delta_fraction > 0.5` both
+            // directions can overshoot, so the flipped candidate is
+            // clamped rather than silently passed out-of-bounds.
             let candidate = if candidate < lo || candidate > hi {
                 step = -step;
-                x_prev[param_idx] + step
+                (x_prev[param_idx] + step).clamp(lo, hi)
             } else {
                 candidate
             };

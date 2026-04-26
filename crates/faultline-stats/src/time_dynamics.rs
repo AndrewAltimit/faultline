@@ -324,7 +324,7 @@ pub fn pareto_frontier(runs: &[RunResult], scenario: &Scenario) -> Option<Pareto
     }
     let chain_count = scenario.kill_chains.len() as f64;
 
-    let mut points: Vec<ParetoPoint> = runs
+    let points: Vec<ParetoPoint> = runs
         .iter()
         .map(|run| {
             let mut attacker_cost = 0.0_f64;
@@ -352,11 +352,7 @@ pub fn pareto_frontier(runs: &[RunResult], scenario: &Scenario) -> Option<Pareto
                     max_detection = chain_max;
                 }
             }
-            let success = if chain_count > 0.0 {
-                f64::from(succeeded_chains) / chain_count
-            } else {
-                0.0
-            };
+            let success = f64::from(succeeded_chains) / chain_count;
             let stealth = (1.0 - max_detection).clamp(0.0, 1.0);
             ParetoPoint {
                 run_index: run.run_index,
@@ -391,8 +387,6 @@ pub fn pareto_frontier(runs: &[RunResult], scenario: &Scenario) -> Option<Pareto
             frontier.push(candidate.clone());
         }
     }
-    points.clear(); // hint to the allocator that the scratch is done
-
     frontier.sort_by(|a, b| a.attacker_cost.total_cmp(&b.attacker_cost));
 
     Some(ParetoFrontier {

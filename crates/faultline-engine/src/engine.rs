@@ -330,8 +330,15 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
 /// `0` means no escalation-threshold branches exist anywhere — the
 /// engine skips the per-tick metric snapshot in that case to keep the
 /// hot path allocation-free for legacy scenarios.
+///
+/// When at least one `EscalationThreshold` branch exists, the return
+/// value is always `>= 1` even when every branch sets `sustained_ticks
+/// = 0`. This ensures `push_metric_snapshot` always populates the
+/// buffer, which `escalation_threshold_satisfied` requires to evaluate
+/// the "must currently be on the right side" (`need = 1`) contract.
 fn max_escalation_window(scenario: &Scenario) -> usize {
     let mut max_window: u32 = 0;
+    let mut found_any = false;
     for chain in scenario.kill_chains.values() {
         for phase in chain.phases.values() {
             for branch in &phase.branches {
@@ -339,15 +346,17 @@ fn max_escalation_window(scenario: &Scenario) -> usize {
                     sustained_ticks, ..
                 } = &branch.condition
                 {
+                    found_any = true;
                     max_window = max_window.max(*sustained_ticks);
                 }
             }
         }
     }
-    // The hysteresis check needs the last `sustained_ticks` snapshots,
-    // so size the buffer exactly to that. `0` is the no-branches
-    // fallthrough — `push_metric_snapshot(0)` is a documented no-op.
-    max_window as usize
+    if found_any {
+        (max_window as usize).max(1)
+    } else {
+        0
+    }
 }
 
 /// Take a snapshot of the current simulation state.
