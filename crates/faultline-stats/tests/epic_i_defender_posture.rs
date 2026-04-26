@@ -185,7 +185,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
     summary.win_rates.insert(FactionId::from("blue"), 0.5);
 
     let baseline = SearchTrial {
-        trial_index: u32::MAX,
+        trial_index: None,
         assignments: vec![],
         objective_values: BTreeMap::new(),
         summary: summary.clone(),
@@ -193,7 +193,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
     let result = SearchResult {
         method: SearchMethod::Grid,
         trials: vec![SearchTrial {
-            trial_index: 0,
+            trial_index: Some(0),
             assignments: vec![],
             objective_values: BTreeMap::new(),
             summary,

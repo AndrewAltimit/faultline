@@ -127,8 +127,10 @@ impl SearchConfig {
 /// One trial's worth of decisions and their evaluated objectives.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchTrial {
-    /// 0-based index in [`SearchResult::trials`].
-    pub trial_index: u32,
+    /// 0-based index in [`SearchResult::trials`]. `None` for the
+    /// baseline trial in [`SearchResult::baseline`], which is not part
+    /// of the indexed trial sequence.
+    pub trial_index: Option<u32>,
     /// The variable assignments applied for this trial. Stored as
     /// `ParamOverride`s so an analyst can copy any single trial back as
     /// a `--counterfactual` invocation to reproduce it standalone.
@@ -276,7 +278,7 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
         }
 
         trials.push(SearchTrial {
-            trial_index,
+            trial_index: Some(trial_index),
             assignments: assignment,
             objective_values,
             summary: mc.summary,
@@ -295,11 +297,12 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
             objective_values.insert(objective.label(), v);
         }
         // The baseline reuses the trial schema so the report renderer
-        // can iterate it just like a normal trial. `trial_index` is set
-        // to a sentinel u32::MAX so the renderer can detect "this is
-        // the baseline" without a separate type.
+        // can read its objective values like a normal trial. Its
+        // `trial_index` is `None` because it isn't part of the indexed
+        // trial sequence — the baseline lives in its own `baseline`
+        // field on `SearchResult`.
         Some(SearchTrial {
-            trial_index: u32::MAX,
+            trial_index: None,
             assignments: Vec::new(),
             objective_values,
             summary: mc.summary,
@@ -991,7 +994,7 @@ mod tests {
         // dominance check without re-running a full MC batch.
         use faultline_types::stats::MonteCarloSummary;
         let mk = |idx: u32, win: f64, det: f64| SearchTrial {
-            trial_index: idx,
+            trial_index: Some(idx),
             assignments: vec![],
             objective_values: {
                 let mut m = BTreeMap::new();
@@ -1038,7 +1041,7 @@ mod tests {
     fn best_by_objective_picks_correct_direction() {
         use faultline_types::stats::MonteCarloSummary;
         let mk = |idx: u32, win: f64, det: f64| SearchTrial {
-            trial_index: idx,
+            trial_index: Some(idx),
             assignments: vec![],
             objective_values: {
                 let mut m = BTreeMap::new();
@@ -1119,7 +1122,7 @@ mod tests {
             m.insert((*k).to_string(), *v);
         }
         SearchTrial {
-            trial_index: idx,
+            trial_index: Some(idx),
             assignments: vec![],
             objective_values: m,
             summary: empty_summary(),
@@ -1625,7 +1628,10 @@ mod tests {
         ];
         let result = run_search(&s, &c).expect("search with baseline");
         let baseline = result.baseline.as_ref().expect("baseline present");
-        assert_eq!(baseline.trial_index, u32::MAX, "baseline uses sentinel idx");
+        assert!(
+            baseline.trial_index.is_none(),
+            "baseline carries no trial index"
+        );
         assert!(
             baseline.assignments.is_empty(),
             "baseline carries no assignments"

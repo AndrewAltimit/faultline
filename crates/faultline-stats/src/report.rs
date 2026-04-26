@@ -979,16 +979,24 @@ fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenar
                 .unwrap_or(0.0);
             let tv = trial.objective_values.get(&label).copied().unwrap_or(0.0);
             let raw_delta = tv - bv;
-            let improved = if obj.maximize() {
-                raw_delta > 0.0
-            } else {
-                raw_delta < 0.0
-            };
+            // Sub-epsilon deltas (floating-point noise from re-running
+            // the same MC config with the same seed) read as "no
+            // change" — otherwise the table renders misleading
+            // `+0.0000` / `−0.0000` cells for effectively identical
+            // baselines.
+            const DELTA_EPSILON: f64 = 1e-9;
+            let is_zero = raw_delta.abs() < DELTA_EPSILON;
+            let improved = !is_zero
+                && if obj.maximize() {
+                    raw_delta > 0.0
+                } else {
+                    raw_delta < 0.0
+                };
             let direction = if obj.maximize() { "max" } else { "min" };
-            let delta_glyph = if improved {
-                "+"
-            } else if raw_delta == 0.0 {
+            let delta_glyph = if is_zero {
                 "·"
+            } else if improved {
+                "+"
             } else {
                 "−"
             };
@@ -1087,7 +1095,13 @@ fn render_search_trials(out: &mut String, result: &SearchResult) {
 }
 
 fn render_search_trial(out: &mut String, trial: &SearchTrial, objectives: &[SearchObjective]) {
-    let _ = writeln!(out, "### Trial `#{}`", trial.trial_index);
+    // Trials in `SearchResult.trials` always carry an index; the
+    // baseline lives in its own field and is never rendered here.
+    let label = match trial.trial_index {
+        Some(i) => format!("#{i}"),
+        None => "baseline".to_string(),
+    };
+    let _ = writeln!(out, "### Trial `{label}`");
     if !trial.assignments.is_empty() {
         let _ = writeln!(out, "Assignments:");
         for ov in &trial.assignments {
