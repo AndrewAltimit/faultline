@@ -883,6 +883,12 @@ fn render_search_pareto(out: &mut String, result: &SearchResult) {
 // Counter-Recommendation (Epic I)
 // ---------------------------------------------------------------------------
 
+/// Sub-epsilon deltas (floating-point noise from re-running the same
+/// MC config with the same seed against the baseline) read as "no
+/// change" — otherwise the table renders misleading
+/// `+0.0000` / `−0.0000` cells for effectively identical baselines.
+const DELTA_EPSILON: f64 = 1e-9;
+
 /// Render the Counter-Recommendation section: ranks Pareto-frontier
 /// trials by per-objective improvement against the search's
 /// "do-nothing" baseline, with Wilson CIs on rate-valued metrics.
@@ -985,12 +991,6 @@ fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenar
                 .unwrap_or(0.0);
             let tv = trial.objective_values.get(&label).copied().unwrap_or(0.0);
             let raw_delta = tv - bv;
-            // Sub-epsilon deltas (floating-point noise from re-running
-            // the same MC config with the same seed) read as "no
-            // change" — otherwise the table renders misleading
-            // `+0.0000` / `−0.0000` cells for effectively identical
-            // baselines.
-            const DELTA_EPSILON: f64 = 1e-9;
             let is_zero = raw_delta.abs() < DELTA_EPSILON;
             let improved = !is_zero
                 && if obj.maximize() {
