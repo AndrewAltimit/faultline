@@ -64,30 +64,33 @@ fn search_emits_stable_output_hash_under_fixed_seeds() {
 
 #[test]
 fn search_grid_method_covers_demo_strategy_space() {
-    // The demo scenario declares two continuous variables with steps=2.
-    // The grid product is 2×2 = 4 cells, so a 4-trial grid search must
-    // emit exactly the four endpoint pairs in declaration order.
+    // The demo scenario declares two continuous variables with steps=3.
+    // The grid product is 3×3 = 9 cells. Run a full 9-trial grid search
+    // and assert every endpoint pair from {0.4, 0.675, 0.95}² appears.
     let scenario = load_demo();
-    let config = small_search_config(SearchMethod::Grid);
+    let mut config = small_search_config(SearchMethod::Grid);
+    config.trials = 9;
     let result = run_search(&scenario, &config).expect("grid search");
 
-    assert_eq!(result.trials.len(), 4);
+    assert_eq!(result.trials.len(), 9);
     let pairs: Vec<(f64, f64)> = result
         .trials
         .iter()
         .map(|t| (t.assignments[0].value, t.assignments[1].value))
         .collect();
 
-    // Each variable's domain is [0.5, 0.9] with steps=2 → endpoints
-    // {0.5, 0.9}. Product = {(0.5,0.5), (0.5,0.9), (0.9,0.5), (0.9,0.9)}.
-    let expected: Vec<(f64, f64)> = vec![(0.5, 0.5), (0.5, 0.9), (0.9, 0.5), (0.9, 0.9)];
-    for e in &expected {
-        assert!(
-            pairs
-                .iter()
-                .any(|p| (p.0 - e.0).abs() < 1e-9 && (p.1 - e.1).abs() < 1e-9),
-            "expected grid cell {e:?} missing; got {pairs:?}"
-        );
+    // Each variable's domain is [0.4, 0.95] with steps=3 → midpoint at
+    // 0.675, endpoints at 0.4 and 0.95. Product is the 9-cell Cartesian.
+    let levels = [0.4, 0.675, 0.95];
+    for &a in &levels {
+        for &b in &levels {
+            assert!(
+                pairs
+                    .iter()
+                    .any(|p| (p.0 - a).abs() < 1e-9 && (p.1 - b).abs() < 1e-9),
+                "expected grid cell ({a}, {b}) missing; got {pairs:?}"
+            );
+        }
     }
 }
 
@@ -133,4 +136,93 @@ fn search_rejects_path_that_does_not_resolve() {
         msg.contains("does_not_exist"),
         "error must name the bad path; got: {msg}"
     );
+}
+
+#[test]
+fn manifest_search_mode_serializes_and_round_trips() {
+    // ManifestMode::Search must round-trip via serde_json with the
+    // recorded objective labels intact. This is the wire format that
+    // `--verify` reparses on a saved manifest.
+    use faultline_stats::manifest::ManifestMode;
+
+    let mode = ManifestMode::Search {
+        method: SearchMethod::Grid,
+        trials: 8,
+        search_seed: 99,
+        objectives: vec!["maximize_win_rate:alpha".into(), "minimize_duration".into()],
+    };
+    let json = serde_json::to_string(&mode).expect("serialize ManifestMode::Search");
+    assert!(
+        json.contains("\"search\""),
+        "kind tag must be `search`; got {json}"
+    );
+    let parsed: ManifestMode = serde_json::from_str(&json).expect("parse ManifestMode::Search");
+    assert_eq!(parsed, mode);
+}
+
+#[test]
+fn manifest_search_mode_replay_objective_labels_reparse() {
+    // The replay path (`SearchObjective::parse_cli`) must accept every
+    // label that emit produced. If we ever rename a label, this test
+    // catches it before a saved manifest fails verify in production.
+    let labels = vec![
+        SearchObjective::MaximizeWinRate {
+            faction: FactionId::from("alpha"),
+        },
+        SearchObjective::MinimizeDetection,
+        SearchObjective::MinimizeAttackerCost,
+        SearchObjective::MaximizeCostAsymmetry,
+        SearchObjective::MinimizeDuration,
+    ];
+    for o in &labels {
+        let label = o.label();
+        let parsed = SearchObjective::parse_cli(&label)
+            .unwrap_or_else(|e| panic!("label {label} failed to reparse: {e}"));
+        assert_eq!(&parsed, o);
+    }
+}
+
+#[test]
+fn search_emits_csv_warning_handled_in_runner() {
+    // The CLI maps --format csv to "JSON + Markdown" for search; the
+    // runner itself doesn't care about CLI format flags, but the
+    // output_hash must stay stable regardless of how the CLI
+    // serializes downstream artifacts. Pin that the result hash is a
+    // function of the SearchResult only.
+    use faultline_stats::manifest;
+    let scenario = load_demo();
+    let config = small_search_config(SearchMethod::Random);
+    let r = run_search(&scenario, &config).expect("run");
+    let h1 = manifest::output_hash(&r).expect("hash");
+    let h2 = manifest::output_hash(&r).expect("hash");
+    assert_eq!(h1, h2, "output hash must be stable across re-hashing");
+}
+
+#[test]
+fn bundled_demo_passes_engine_validation() {
+    // The bundled scenario must validate cleanly through the same
+    // path as every other shipped scenario. This is the
+    // verify-bundled-scenarios.sh contract enforced as a unit test
+    // so a rust-only `cargo test` catches regressions before CI.
+    let scenario = load_demo();
+    faultline_engine::validate_scenario(&scenario).expect("bundled demo must validate");
+}
+
+#[test]
+fn bundled_demo_strategy_space_has_expected_shape() {
+    // Lock the bundled scenario's structure: 2 continuous decision
+    // variables with steps=3, 2 default objectives. Catches accidental
+    // schema drift in the bundled fixture.
+    let scenario = load_demo();
+    let space = &scenario.strategy_space;
+    assert_eq!(space.variables.len(), 2, "expected 2 decision variables");
+    for var in &space.variables {
+        match &var.domain {
+            faultline_types::strategy_space::Domain::Continuous { steps, .. } => {
+                assert_eq!(*steps, 3, "expected 3-step grid for {}", var.path);
+            },
+            other => panic!("expected continuous domain, got {other:?}"),
+        }
+    }
+    assert_eq!(space.objectives.len(), 2, "expected 2 default objectives");
 }

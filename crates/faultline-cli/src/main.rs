@@ -129,12 +129,17 @@ struct Cli {
     /// via Monte Carlo, and emits a search report identifying the
     /// best-by-objective trial and the non-dominated Pareto frontier.
     ///
-    /// Mutually exclusive with the other run modes. Use
-    /// `--search-objective` repeatedly to evaluate multiple objectives;
-    /// the Pareto frontier spans all of them.
+    /// Mutually exclusive with the other run modes (`--single-run`,
+    /// `--sensitivity`, `--counterfactual`, `--compare`, `--verify`,
+    /// `--validate`, `--migrate`). Use `--search-objective` repeatedly
+    /// to evaluate multiple objectives; the Pareto frontier spans all
+    /// of them.
     #[arg(
         long = "search",
-        conflicts_with_all = ["single_run", "sensitivity", "counterfactual", "compare"]
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "verify", "validate", "migrate"
+        ]
     )]
     search: bool,
 
@@ -898,16 +903,23 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
         manifest::output_hash(&result).with_context(|| "failed to hash search result")?;
     let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
 
-    // Re-emit the search report's JSON path with the manifest header
-    // line at the top of the markdown.
-    if matches!(cli.format, OutputFormat::Both | OutputFormat::Json) {
-        let md_path = cli.output.join("search_report.md");
-        let body = faultline_stats::report::render_search_markdown(&result, scenario);
-        let md = with_manifest_front_matter(&body, Some(&manifest_obj));
-        fs::write(&md_path, md)
-            .with_context(|| format!("failed to write {}", md_path.display()))?;
-        info!(path = %md_path.display(), "wrote search Markdown report");
+    // Search has no per-trial CSV shape that maps cleanly (every trial
+    // carries a full `MonteCarloSummary` — flattening that into rows
+    // would lose information without a bespoke schema), so we always
+    // emit the Markdown alongside the JSON regardless of `--format`.
+    // `--format csv` is treated as "still emit JSON+MD"; CSV is a
+    // no-op here. This matches the comparison-mode handling.
+    if matches!(cli.format, OutputFormat::Csv) {
+        tracing::warn!(
+            "--format csv is not meaningful for strategy-search output \
+             (per-trial CSV shape doesn't apply); falling back to JSON + Markdown"
+        );
     }
+    let md_path = cli.output.join("search_report.md");
+    let body = faultline_stats::report::render_search_markdown(&result, scenario);
+    let md = with_manifest_front_matter(&body, Some(&manifest_obj));
+    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
+    info!(path = %md_path.display(), "wrote search Markdown report");
 
     write_manifest_object(cli, &manifest_obj)?;
     Ok(())
@@ -1523,4 +1535,120 @@ fn write_event_log(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing tests
+// ---------------------------------------------------------------------------
+//
+// These tests pin the clap-level conflict declarations on `--search`
+// against the other run-mode flags. Clap surfaces an `ArgumentConflict`
+// kind at parse time when two mutually-exclusive flags appear together.
+// We assert on the kind (not the message text) so future clap upgrades
+// that change wording don't break the test.
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn search_and_verify_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--verify",
+            "manifest.json",
+        ]);
+        let err = res.expect_err("--search + --verify must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_validate_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--validate"]);
+        let err = res.expect_err("--search + --validate must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_migrate_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--migrate"]);
+        let err = res.expect_err("--search + --migrate must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_compare_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--compare",
+            "other.toml",
+        ]);
+        let err = res.expect_err("--search + --compare must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_counterfactual_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--counterfactual",
+            "x=1",
+        ]);
+        let err = res.expect_err("--search + --counterfactual must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_sensitivity_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--sensitivity"]);
+        let err = res.expect_err("--search + --sensitivity must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_single_run_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--single-run"]);
+        let err = res.expect_err("--search + --single-run must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_subflags_require_search() {
+        // `--search-trials 8` without `--search` should be rejected by
+        // the `requires = "search"` declaration.
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search-trials", "8"]);
+        let err = res.expect_err("--search-trials without --search must reject");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn search_method_default_is_random() {
+        // Sanity check on the clap default: --search alone resolves to
+        // SearchMethod::Random.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--search"])
+            .expect("--search alone must parse");
+        assert!(matches!(cli.search_method, super::CliSearchMethod::Random));
+    }
+
+    #[test]
+    fn search_objective_can_be_repeated() {
+        let cli = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--search-objective",
+            "minimize_detection",
+            "--search-objective",
+            "minimize_duration",
+        ])
+        .expect("repeated --search-objective must parse");
+        assert_eq!(cli.search_objective.len(), 2);
+    }
 }

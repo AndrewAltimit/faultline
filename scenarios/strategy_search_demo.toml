@@ -1,14 +1,26 @@
 # Strategy Search Demo (Epic H)
 #
-# Minimal scenario for exercising the `--search` strategy-search mode.
-# Two factions on a 4-region grid; alpha's `initial_morale` and bravo's
-# `initial_morale` are declared as decision variables so the search
-# layer can sweep both axes simultaneously and surface a Pareto frontier
-# trading off alpha's win rate against the asymmetry of the morale gap.
+# Minimal scenario for exercising the `--search` strategy-search mode
+# end-to-end inside CI. Two symmetric factions on a 4-region grid;
+# both factions' `initial_morale` is declared as a decision variable
+# so a 3×3 grid search produces 9 deterministic trials in <1s.
+#
+# **Smoke-test scenario, not an analytical example.** Because the two
+# factions are perfectly symmetric in force structure and terrain, no
+# combination of starting morale alone is enough to trigger either
+# `MilitaryDominance` victory condition before `max_ticks`. Every
+# trial is therefore expected to produce a stalemate (win rate 0.0,
+# duration == max_ticks) — what the scenario *demonstrates* is that
+# the `--search` machinery runs deterministically end-to-end, that
+# the bundled manifest replays bit-identically via `--verify`, and
+# that the canonical TOML round-trips cleanly through
+# `verify-bundled-scenarios.sh` and `verify-migration.sh`. Real
+# analytical scenarios should tune force / terrain / event structure
+# so the declared decision variables actually move the objectives.
 #
 # CLI:
 #   cargo run -p faultline-cli -- scenarios/strategy_search_demo.toml \
-#     --search --search-trials 16 --search-runs 50 \
+#     --search --search-trials 9 --search-runs 50 \
 #     --search-method grid \
 #     --search-objective maximize_win_rate:alpha \
 #     --search-objective minimize_duration
@@ -181,7 +193,7 @@ internet_availability = 0.9
 [events]
 
 [simulation]
-max_ticks = 30
+max_ticks = 80
 monte_carlo_runs = 50
 fog_of_war = false
 snapshot_interval = 0
@@ -193,23 +205,23 @@ Days = 1
 [simulation.attrition_model]
 Stochastic = { noise = 0.1 }
 
-[victory_conditions.alpha_control]
-id = "alpha_control"
-name = "Alpha Strategic Control"
+[victory_conditions.alpha_dominance]
+id = "alpha_dominance"
+name = "Alpha Military Dominance"
 faction = "alpha"
 
-[victory_conditions.alpha_control.condition]
-type = "StrategicControl"
-threshold = 0.75
+[victory_conditions.alpha_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 0.3
 
-[victory_conditions.bravo_control]
-id = "bravo_control"
-name = "Bravo Strategic Control"
+[victory_conditions.bravo_dominance]
+id = "bravo_dominance"
+name = "Bravo Military Dominance"
 faction = "bravo"
 
-[victory_conditions.bravo_control.condition]
-type = "StrategicControl"
-threshold = 0.75
+[victory_conditions.bravo_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 0.3
 
 # -- Strategy Search Space (Epic H) -----------------------------------------
 #
@@ -227,9 +239,9 @@ owner = "alpha"
 
 [strategy_space.variables.domain]
 kind = "continuous"
-low = 0.5
-high = 0.9
-steps = 2
+low = 0.4
+high = 0.95
+steps = 3
 
 [[strategy_space.variables]]
 path = "faction.bravo.initial_morale"
@@ -237,9 +249,9 @@ owner = "bravo"
 
 [strategy_space.variables.domain]
 kind = "continuous"
-low = 0.5
-high = 0.9
-steps = 2
+low = 0.4
+high = 0.95
+steps = 3
 
 [[strategy_space.objectives]]
 metric = "maximize_win_rate"

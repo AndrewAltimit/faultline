@@ -61,8 +61,11 @@ use crate::{MonteCarloRunner, StatsError};
 #[serde(rename_all = "snake_case")]
 pub enum SearchMethod {
     /// Uniform random sampling. For continuous domains, draw uniformly
-    /// in `[low, high]`. For discrete domains, pick uniformly from
-    /// `values`. Trial count == `SearchConfig.trials`.
+    /// from `[low, high)` (the high endpoint is approached arbitrarily
+    /// closely but never sampled exactly — this is `rand::Rng::gen_range`
+    /// semantics; use `Grid` if endpoint coverage matters). For discrete
+    /// domains, pick uniformly from `values`. Trial count ==
+    /// `SearchConfig.trials`.
     Random,
     /// Cartesian-product grid. Continuous variables expand into `steps`
     /// evenly-spaced values inclusive of both endpoints. Discrete
@@ -139,8 +142,18 @@ pub struct SearchResult {
 ///
 /// Returns `Err(StatsError::InvalidConfig)` if the scenario declares no
 /// strategy space, the requested objectives list is empty, the trial
-/// count is zero, or any decision-variable path fails to resolve via
-/// `set_param` on a clone of the scenario.
+/// count is zero, any decision-variable domain is structurally
+/// malformed (empty discrete values, inverted continuous bounds,
+/// non-finite bounds, zero `steps`, NaN values), or any decision-
+/// variable path fails to resolve via `set_param` on a clone of the
+/// scenario.
+///
+/// Direct callers should typically have already passed the scenario
+/// through `faultline_engine::validate_scenario`, which performs the
+/// same structural checks at scenario load time. This function
+/// re-validates anyway so a programmer wiring `run_search` against a
+/// hand-constructed `Scenario` (e.g. in a test or a custom workflow)
+/// gets the same guarantees as the CLI path.
 pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchResult, StatsError> {
     let space = &scenario.strategy_space;
     if space.is_empty() {
@@ -162,6 +175,13 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
                 .into(),
         ));
     }
+
+    // Structural validation of every decision variable's domain.
+    // Mirrors the engine-side `validate_scenario` checks so direct
+    // callers (tests, custom workflows) that bypassed the engine
+    // validator get the same guarantees. Cheap to repeat — the work
+    // is bounded by `space.variables.len()`.
+    validate_search_inputs(space)?;
 
     // Path-resolution sanity check: refuse the run if any variable's
     // path doesn't resolve. We try a no-op assignment (read the current
@@ -236,6 +256,68 @@ pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchRe
 }
 
 // ---------------------------------------------------------------------------
+// Structural validation
+// ---------------------------------------------------------------------------
+
+/// Re-validate domain shapes for direct callers who skipped
+/// `validate_scenario`. Same invariants as the engine validator.
+fn validate_search_inputs(space: &StrategySpace) -> Result<(), StatsError> {
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for var in &space.variables {
+        if var.path.is_empty() {
+            return Err(StatsError::InvalidConfig(
+                "strategy_space variable has empty path".into(),
+            ));
+        }
+        if !seen.insert(var.path.as_str()) {
+            return Err(StatsError::InvalidConfig(format!(
+                "strategy_space variable path `{}` declared more than once",
+                var.path
+            )));
+        }
+        match &var.domain {
+            Domain::Continuous { low, high, steps } => {
+                if !low.is_finite() || !high.is_finite() {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "strategy_space variable `{}` has non-finite continuous bounds",
+                        var.path
+                    )));
+                }
+                if low > high {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "strategy_space variable `{}` has low ({low}) > high ({high})",
+                        var.path
+                    )));
+                }
+                if *steps == 0 {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "strategy_space variable `{}` has steps == 0",
+                        var.path
+                    )));
+                }
+            },
+            Domain::Discrete { values } => {
+                if values.is_empty() {
+                    return Err(StatsError::InvalidConfig(format!(
+                        "strategy_space variable `{}` has empty discrete values",
+                        var.path
+                    )));
+                }
+                for v in values {
+                    if !v.is_finite() {
+                        return Err(StatsError::InvalidConfig(format!(
+                            "strategy_space variable `{}` has non-finite discrete value {v}",
+                            var.path
+                        )));
+                    }
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Sampling
 // ---------------------------------------------------------------------------
 
@@ -282,10 +364,11 @@ fn sample_random_value(rng: &mut ChaCha8Rng, var: &DecisionVariable) -> f64 {
             }
         },
         Domain::Discrete { values } => {
-            // The validator rejects empty `values` at load time, so an
-            // empty list reaching here is a programmer error — pick the
-            // safest defensive default (zero) instead of panicking,
-            // since we deny `unwrap`.
+            // `validate_search_inputs` rejects empty `values` before
+            // sampling starts, so the empty branch here is unreachable
+            // under the public API. Keep the defensive `0.0` so an
+            // internal caller that bypasses validation can't panic
+            // (workspace lints deny `unwrap`).
             if values.is_empty() {
                 0.0
             } else {
@@ -898,5 +981,389 @@ mod tests {
             Some(&1u32),
             "min-detection should pick trial 1 (lowest detection)"
         );
+    }
+
+    // ----- Helper for hand-constructed trials in invariant tests -----
+
+    fn empty_summary() -> faultline_types::stats::MonteCarloSummary {
+        faultline_types::stats::MonteCarloSummary {
+            total_runs: 1,
+            win_rates: BTreeMap::new(),
+            win_rate_cis: BTreeMap::new(),
+            average_duration: 0.0,
+            metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
+            campaign_summaries: BTreeMap::new(),
+            feasibility_matrix: vec![],
+            seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
+            defender_capacity: Vec::new(),
+        }
+    }
+
+    fn trial_with_values(idx: u32, kvs: &[(&str, f64)]) -> SearchTrial {
+        let mut m = BTreeMap::new();
+        for (k, v) in kvs {
+            m.insert((*k).to_string(), *v);
+        }
+        SearchTrial {
+            trial_index: idx,
+            assignments: vec![],
+            objective_values: m,
+            summary: empty_summary(),
+        }
+    }
+
+    // ----- Pareto invariant tests -----
+
+    #[test]
+    fn pareto_frontier_is_idempotent_under_recomputation() {
+        // Recomputing the frontier on the same input always returns
+        // the same indices in the same order.
+        let trials = vec![
+            trial_with_values(
+                0,
+                &[
+                    ("maximize_win_rate:alpha", 0.8),
+                    ("minimize_detection", 0.4),
+                ],
+            ),
+            trial_with_values(
+                1,
+                &[
+                    ("maximize_win_rate:alpha", 0.4),
+                    ("minimize_detection", 0.1),
+                ],
+            ),
+            trial_with_values(
+                2,
+                &[
+                    ("maximize_win_rate:alpha", 0.6),
+                    ("minimize_detection", 0.2),
+                ],
+            ),
+        ];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let a = compute_pareto_frontier(&trials, &objectives);
+        let b = compute_pareto_frontier(&trials, &objectives);
+        assert_eq!(a, b, "frontier must be deterministic across recomputation");
+    }
+
+    #[test]
+    fn pareto_frontier_single_trial_includes_self() {
+        let trials = vec![trial_with_values(
+            0,
+            &[
+                ("maximize_win_rate:alpha", 0.5),
+                ("minimize_detection", 0.5),
+            ],
+        )];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let frontier = compute_pareto_frontier(&trials, &objectives);
+        assert_eq!(
+            frontier,
+            vec![0],
+            "the only trial must be on its own frontier"
+        );
+    }
+
+    #[test]
+    fn pareto_frontier_keeps_identical_objective_values() {
+        // Two trials with identical objective vectors: neither
+        // strictly-dominates the other, both survive on the frontier.
+        let trials = vec![
+            trial_with_values(
+                0,
+                &[
+                    ("maximize_win_rate:alpha", 0.7),
+                    ("minimize_detection", 0.3),
+                ],
+            ),
+            trial_with_values(
+                1,
+                &[
+                    ("maximize_win_rate:alpha", 0.7),
+                    ("minimize_detection", 0.3),
+                ],
+            ),
+        ];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let frontier = compute_pareto_frontier(&trials, &objectives);
+        assert_eq!(frontier, vec![0, 1]);
+    }
+
+    #[test]
+    fn pareto_frontier_all_dominated_by_one() {
+        // Trial 0 strictly dominates 1 and 2. Frontier is just [0].
+        let trials = vec![
+            trial_with_values(
+                0,
+                &[
+                    ("maximize_win_rate:alpha", 0.9),
+                    ("minimize_detection", 0.1),
+                ],
+            ),
+            trial_with_values(
+                1,
+                &[
+                    ("maximize_win_rate:alpha", 0.4),
+                    ("minimize_detection", 0.4),
+                ],
+            ),
+            trial_with_values(
+                2,
+                &[
+                    ("maximize_win_rate:alpha", 0.2),
+                    ("minimize_detection", 0.5),
+                ],
+            ),
+        ];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let frontier = compute_pareto_frontier(&trials, &objectives);
+        assert_eq!(frontier, vec![0]);
+    }
+
+    #[test]
+    fn best_by_objective_ties_resolve_to_lowest_index() {
+        // Two trials tied on the objective value: the lower-index
+        // trial wins so output is reproducible.
+        let trials = vec![
+            trial_with_values(0, &[("minimize_duration", 30.0)]),
+            trial_with_values(1, &[("minimize_duration", 30.0)]),
+            trial_with_values(2, &[("minimize_duration", 60.0)]),
+        ];
+        let objectives = vec![SearchObjective::MinimizeDuration];
+        let best = compute_best_by_objective(&trials, &objectives);
+        assert_eq!(
+            best.get(&SearchObjective::MinimizeDuration.label()),
+            Some(&0u32),
+            "ties must resolve to lowest index"
+        );
+    }
+
+    // ----- Domain enumeration tests -----
+
+    #[test]
+    fn enumerate_levels_continuous_steps_one_uses_midpoint() {
+        let levels = enumerate_levels(&Domain::Continuous {
+            low: 0.2,
+            high: 0.8,
+            steps: 1,
+        });
+        assert_eq!(levels.len(), 1);
+        assert!((levels[0] - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn enumerate_levels_continuous_includes_endpoints() {
+        let levels = enumerate_levels(&Domain::Continuous {
+            low: 0.0,
+            high: 1.0,
+            steps: 5,
+        });
+        assert_eq!(levels.len(), 5);
+        assert!((levels[0] - 0.0).abs() < 1e-9);
+        assert!((levels[4] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn enumerate_levels_discrete_passes_through() {
+        let levels = enumerate_levels(&Domain::Discrete {
+            values: vec![0.1, 0.5, 0.9],
+        });
+        assert_eq!(levels, vec![0.1, 0.5, 0.9]);
+    }
+
+    // ----- Objective evaluation edge cases -----
+
+    #[test]
+    fn evaluate_minimize_detection_empty_chains_returns_zero() {
+        // No campaign_summaries → fold() over empty iterator with 0.0
+        // initial value returns 0.0. Document and pin the behaviour.
+        let summary = empty_summary();
+        let v = evaluate_objective(&SearchObjective::MinimizeDetection, &summary);
+        assert_eq!(v, 0.0);
+    }
+
+    #[test]
+    fn evaluate_maximize_cost_asymmetry_empty_chains_clamped_to_zero() {
+        // Empty fold seed is NEG_INFINITY; the .max(0.0) post-fold
+        // clamps to a sane "no chains, no asymmetry" value.
+        let summary = empty_summary();
+        let v = evaluate_objective(&SearchObjective::MaximizeCostAsymmetry, &summary);
+        assert_eq!(v, 0.0);
+    }
+
+    // ----- Structural validation -----
+
+    #[test]
+    fn run_search_validates_empty_discrete_directly() {
+        // Validator catches this at scenario load, but the runner must
+        // also catch it for direct callers who hand-built a Scenario.
+        let mut s = search_scenario();
+        s.strategy_space.variables = vec![DecisionVariable {
+            path: "faction.alpha.initial_morale".into(),
+            owner: None,
+            domain: Domain::Discrete { values: vec![] },
+        }];
+        let err = run_search(&s, &config(SearchMethod::Random, 4))
+            .expect_err("empty discrete must reject");
+        match err {
+            StatsError::InvalidConfig(msg) => {
+                assert!(msg.contains("empty discrete"), "unexpected message: {msg}");
+            },
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_search_validates_inverted_continuous_directly() {
+        let mut s = search_scenario();
+        s.strategy_space.variables = vec![DecisionVariable {
+            path: "faction.alpha.initial_morale".into(),
+            owner: None,
+            domain: Domain::Continuous {
+                low: 0.9,
+                high: 0.1,
+                steps: 2,
+            },
+        }];
+        let err =
+            run_search(&s, &config(SearchMethod::Random, 4)).expect_err("low > high must reject");
+        match err {
+            StatsError::InvalidConfig(msg) => assert!(msg.contains("low")),
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_search_validates_duplicate_paths_directly() {
+        let mut s = search_scenario();
+        let dup = DecisionVariable {
+            path: "faction.alpha.initial_morale".into(),
+            owner: None,
+            domain: Domain::Continuous {
+                low: 0.1,
+                high: 0.9,
+                steps: 4,
+            },
+        };
+        s.strategy_space.variables = vec![dup.clone(), dup];
+        let err = run_search(&s, &config(SearchMethod::Random, 4))
+            .expect_err("duplicate path must reject");
+        match err {
+            StatsError::InvalidConfig(msg) => assert!(msg.contains("declared more than once")),
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        }
+    }
+
+    // ----- Discrete domain sampling -----
+
+    #[test]
+    fn random_discrete_only_samples_declared_values() {
+        // Every drawn value must appear in the declared `values`.
+        let mut s = search_scenario();
+        s.strategy_space.variables = vec![DecisionVariable {
+            path: "faction.alpha.initial_morale".into(),
+            owner: None,
+            domain: Domain::Discrete {
+                values: vec![0.3, 0.6, 0.9],
+            },
+        }];
+        let result = run_search(&s, &config(SearchMethod::Random, 32)).expect("random search");
+        for trial in &result.trials {
+            let v = trial.assignments[0].value;
+            assert!(
+                [0.3, 0.6, 0.9].iter().any(|d| (d - v).abs() < 1e-9),
+                "drawn value {v} not in declared discrete set"
+            );
+        }
+    }
+
+    // ----- TOML / JSON round-trips -----
+
+    #[test]
+    fn strategy_space_round_trips_through_toml() {
+        // Serialize a Scenario with a strategy_space, parse it back,
+        // and assert the strategy_space is byte-identical.
+        let mut s = search_scenario();
+        s.strategy_space = StrategySpace {
+            variables: vec![
+                DecisionVariable {
+                    path: "faction.alpha.initial_morale".into(),
+                    owner: Some(FactionId::from("alpha")),
+                    domain: Domain::Continuous {
+                        low: 0.3,
+                        high: 0.9,
+                        steps: 4,
+                    },
+                },
+                DecisionVariable {
+                    path: "political_climate.tension".into(),
+                    owner: None,
+                    domain: Domain::Discrete {
+                        values: vec![0.2, 0.5, 0.8],
+                    },
+                },
+            ],
+            objectives: vec![
+                SearchObjective::MaximizeWinRate {
+                    faction: FactionId::from("alpha"),
+                },
+                SearchObjective::MinimizeDuration,
+            ],
+        };
+        let toml_str = toml::to_string(&s).expect("serialize TOML");
+        let parsed: Scenario = toml::from_str(&toml_str).expect("parse TOML");
+        assert_eq!(
+            parsed.strategy_space, s.strategy_space,
+            "strategy_space must round-trip through TOML"
+        );
+    }
+
+    #[test]
+    fn search_result_round_trips_through_json() {
+        // The full SearchResult shape (including SearchMethod and
+        // objective enum variants) must round-trip via serde_json so
+        // the search.json artifact can be reloaded without loss.
+        let s = search_scenario();
+        let result = run_search(&s, &config(SearchMethod::Grid, 4)).expect("grid search");
+        let json = serde_json::to_string(&result).expect("serialize JSON");
+        let parsed: SearchResult = serde_json::from_str(&json).expect("parse JSON");
+        let json2 = serde_json::to_string(&parsed).expect("re-serialize JSON");
+        assert_eq!(json, json2, "SearchResult must round-trip via JSON");
+    }
+
+    #[test]
+    fn search_method_serde_round_trip_snake_case() {
+        // Pin the wire format: variants are serialized as
+        // snake_case strings in JSON.
+        let m = SearchMethod::Random;
+        let s = serde_json::to_string(&m).expect("serialize");
+        assert_eq!(s, r#""random""#);
+        let m: SearchMethod = serde_json::from_str(r#""grid""#).expect("parse");
+        assert_eq!(m, SearchMethod::Grid);
     }
 }

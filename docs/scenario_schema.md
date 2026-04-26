@@ -875,7 +875,7 @@ metric = "minimize_detection"
 | `continuous` | `low`, `high`, `steps` | uniform draw in `[low, high)` | `steps` evenly-spaced values inclusive of both endpoints; `steps == 1` uses the midpoint |
 | `discrete` | `values` (non-empty array of `f64`) | uniform pick | enumerates each value |
 
-Validation rejects: empty `path`, duplicate paths, `low > high`, `steps == 0`, empty discrete `values`, non-finite bounds, unknown `owner` factions, and unknown `MaximizeWinRate.faction` references — all at scenario load time.
+Validation rejects: empty `path`, duplicate paths, `low > high`, `steps == 0`, empty discrete `values`, non-finite bounds, non-finite discrete values, unknown `owner` factions, and unknown `MaximizeWinRate.faction` references — all at scenario load time. The same structural checks are repeated by `faultline_stats::search::run_search` so library callers who hand-build a `Scenario` (in tests or custom workflows) get the same guarantees as the CLI path.
 
 Built-in `SearchObjective` variants (round one):
 
@@ -890,6 +890,8 @@ Built-in `SearchObjective` variants (round one):
 Pareto frontier semantics: a trial is *dominated* iff some other trial is at least as good on every objective (direction-aware) and strictly better on at least one. Returned `pareto_indices` are sorted ascending. `best_by_objective` ties resolve by lowest trial index for reproducibility.
 
 The search layer uses two independent seeds — `search_seed` drives assignment sampling, `mc_config.seed` drives the inner Monte Carlo evaluation — so search-then-evaluate is bit-identical under fixed inputs and trial-to-trial deltas reflect parameter changes only, not sampling noise. See `crates/faultline-stats/src/search.rs` for the determinism contract.
+
+`--search` is mutually exclusive with the other run modes (`--single-run`, `--sensitivity`, `--counterfactual`, `--compare`, `--verify`, `--validate`, `--migrate`); clap rejects any combination at parse time. `--search-trials`, `--search-runs`, `--search-method`, `--search-seed`, and `--search-objective` all require `--search` and are similarly rejected when passed alone.
 
 ---
 
