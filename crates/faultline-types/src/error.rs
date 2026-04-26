@@ -145,6 +145,15 @@ pub enum ScenarioError {
         value: f64,
     },
 
+    #[error(
+        "kill chain {chain} phase {phase} declares an OrAny branch \
+         condition with an empty `conditions` vector; an empty OR is \
+         ambiguous (vacuously false vs. an unfilled author template) \
+         and would silently never fire — supply at least one inner \
+         condition or remove the branch"
+    )]
+    EmptyOrAnyBranch { chain: KillChainId, phase: PhaseId },
+
     #[error("{0}")]
     Custom(String),
 }

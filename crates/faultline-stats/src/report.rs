@@ -256,6 +256,8 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 
     render_policy_implications(&mut out, scenario);
     render_countermeasure_analysis(&mut out, scenario);
+    render_environment_schedule(&mut out, scenario);
+    render_leadership_disruption(&mut out, scenario);
 
     let _ = writeln!(out, "## Methodology & Confidence");
     let _ = writeln!(out, "{}", METHODOLOGY_APPENDIX.trim_start());
@@ -493,14 +495,156 @@ fn observable_label(d: &ObservableDiscipline) -> &str {
 /// Escape user-supplied strings for inclusion in a Markdown table cell.
 ///
 /// A literal `|` closes the cell early and breaks table rendering;
-/// `\n` / `\r` would split the row across multiple table rows. Both
-/// can appear in author-supplied scenario fields (phase / indicator
-/// names, custom discipline labels, escalation-rung action lists), so
-/// escape them at the boundary rather than relying on author hygiene.
+/// `\n` / `\r` would split the row across multiple table rows;
+/// backticks open inline code spans that can leak formatting into
+/// neighboring cells when unbalanced. All can appear in author-
+/// supplied scenario fields (phase / indicator names, custom
+/// discipline labels, escalation-rung action lists, environment-
+/// window IDs), so escape them at the boundary rather than relying
+/// on author hygiene.
 fn escape_md_cell(s: &str) -> String {
     s.replace('\\', r"\\")
         .replace('|', r"\|")
+        .replace('`', r"\`")
         .replace(['\n', '\r'], " ")
+}
+
+// ---------------------------------------------------------------------------
+// Leadership disruption (Epic D — decapitation + succession)
+// ---------------------------------------------------------------------------
+
+/// Render the declarative leadership cadre table per faction.
+///
+/// Surfaces the *structure* of every faction's leadership cadre
+/// (ranks, succession parameters) so analysts can read the
+/// decapitation surface a scenario exposes without having to grep the
+/// TOML. The dynamic per-run decapitation tally is emitted only in
+/// single-run mode (per-run `RunResult.final_state` carries the
+/// cumulative counters); cross-run aggregation is left for a follow-up
+/// epic that adds decap analytics to `MonteCarloSummary`. Elided when
+/// no faction declares a cadre.
+fn render_leadership_disruption(out: &mut String, scenario: &Scenario) {
+    let cadre_factions: Vec<&Faction> = scenario
+        .factions
+        .values()
+        .filter(|f| f.leadership.is_some())
+        .collect();
+    if cadre_factions.is_empty() {
+        return;
+    }
+
+    let _ = writeln!(out, "## Leadership Cadres");
+    let _ = writeln!(
+        out,
+        "Declared decapitation surface per faction. A `LeadershipDecapitation` phase output advances the rank index by one and applies a morale shock; the new rank's effectiveness × `succession_floor` caps the target's morale during the recovery ramp."
+    );
+    let _ = writeln!(out);
+
+    for faction in cadre_factions {
+        let cadre = faction
+            .leadership
+            .as_ref()
+            .expect("cadre_factions filtered to leadership.is_some()");
+        let _ = writeln!(
+            out,
+            "### `{}` — {}",
+            escape_md_cell(&faction.id.0),
+            escape_md_cell(&faction.name)
+        );
+        let _ = writeln!(
+            out,
+            "Recovery: {} ticks, succession floor {:.2}.",
+            cadre.succession_recovery_ticks, cadre.succession_floor
+        );
+        let _ = writeln!(out);
+        let _ = writeln!(out, "| Rank | Name | Effectiveness |");
+        let _ = writeln!(out, "|---|---|---|");
+        for (idx, rank) in cadre.ranks.iter().enumerate() {
+            let _ = writeln!(
+                out,
+                "| {} | `{}` ({}) | {:.2} |",
+                idx,
+                escape_md_cell(&rank.id),
+                escape_md_cell(&rank.name),
+                rank.effectiveness,
+            );
+        }
+        let _ = writeln!(out);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Environment schedule (Epic D — weather, time-of-day)
+// ---------------------------------------------------------------------------
+
+/// Render the environment-schedule section.
+///
+/// Elided when the scenario declares no windows — readers of legacy
+/// scenarios see the report unchanged. When windows exist, surface
+/// each one with its activation summary and any non-unity factors so
+/// analysts can audit which environmental effects shaped the run.
+fn render_environment_schedule(out: &mut String, scenario: &Scenario) {
+    use faultline_types::map::Activation;
+
+    if scenario.environment.windows.is_empty() {
+        return;
+    }
+
+    let _ = writeln!(out, "## Environment Schedule");
+    let _ = writeln!(
+        out,
+        "Active environmental windows. Per-terrain factors apply when the engaged region's terrain is in `applies_to` (empty = every terrain). The `detection` factor is global — it multiplies every kill-chain phase's per-tick detection probability regardless of region."
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "| Window | Activation | Applies to | Movement | Defense | Visibility | Detection |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|");
+    for w in &scenario.environment.windows {
+        let activation = match &w.activation {
+            Activation::Always => "Always".to_string(),
+            Activation::TickRange { start, end } => {
+                format!("Ticks {start}–{end}")
+            },
+            Activation::Cycle {
+                period,
+                phase,
+                duration,
+            } => {
+                format!("Cycle p={period} φ={phase} d={duration}")
+            },
+        };
+        let applies = if w.applies_to.is_empty() {
+            "all".to_string()
+        } else {
+            w.applies_to
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let fmt_factor = |f: f64| {
+            if (f - 1.0).abs() < 1e-9 {
+                "—".to_string()
+            } else {
+                format!("{f:.2}×")
+            }
+        };
+        let _ = writeln!(
+            out,
+            "| `{}` ({}) | {} | {} | {} | {} | {} | {} |",
+            escape_md_cell(&w.id),
+            escape_md_cell(&w.name),
+            activation,
+            escape_md_cell(&applies),
+            fmt_factor(w.movement_factor),
+            fmt_factor(w.defense_factor),
+            fmt_factor(w.visibility_factor),
+            fmt_factor(w.detection_factor),
+        );
+    }
+    let _ = writeln!(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -1211,6 +1355,7 @@ mod tests {
             kill_chains: BTreeMap::new(),
             defender_budget: None,
             attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
         }
     }
 
@@ -1319,11 +1464,14 @@ mod tests {
     #[test]
     fn escape_md_cell_neutralizes_pipes_and_newlines() {
         // Bare strings: pipe must be escaped, newlines collapsed, backslash
-        // doubled so the escape itself is not ambiguous.
+        // doubled so the escape itself is not ambiguous, backticks escaped
+        // so an unbalanced one can't open an inline code span that bleeds
+        // into adjacent cells.
         assert_eq!(escape_md_cell("a|b"), r"a\|b");
         assert_eq!(escape_md_cell("line1\nline2"), "line1 line2");
         assert_eq!(escape_md_cell("line1\r\nline2"), "line1  line2");
         assert_eq!(escape_md_cell(r"back\slash"), r"back\\slash");
+        assert_eq!(escape_md_cell("a`b"), r"a\`b");
         assert_eq!(escape_md_cell("clean"), "clean");
     }
 }

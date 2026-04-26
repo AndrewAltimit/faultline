@@ -86,6 +86,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         doctrine: Doctrine::Conventional,
         escalation_rules: None,
         defender_capacities: BTreeMap::new(),
+        leadership: None,
     }
 }
 
@@ -251,6 +252,7 @@ fn chain_scenario(detection_per_tick: f64, success: f64) -> Scenario {
         kill_chains,
         defender_budget: None,
         attacker_budget: None,
+        environment: faultline_types::map::EnvironmentSchedule::default(),
     }
 }
 
@@ -724,6 +726,9 @@ fn correlation_matrix_diagonal_is_identity_for_varying_series() {
                     controlled_regions: vec![],
                     total_strength: 100.0 - f64::from(i) * 10.0,
                     institution_loyalty: BTreeMap::new(),
+                    current_leadership_rank: 0,
+                    leadership_decapitations: 0,
+                    last_decapitation_tick: None,
                 },
             );
             run.final_state.faction_states = fs;

@@ -245,7 +245,16 @@ pub fn campaign_phase(
             // visibility, independent of load), while the load-
             // adjusted draw decides whether the defender actually
             // catches it this tick.
-            let dp = phase.detection_probability_per_tick;
+            //
+            // Environment factor (Epic D — weather / time-of-day) is
+            // applied multiplicatively *into* `dp` itself, before the
+            // saturation gate, so a Night window simultaneously
+            // shrinks the unattenuated and the saturated rolls (the
+            // attacker is harder to see at night regardless of
+            // defender load) and naturally narrows the
+            // shadow-detection window between them.
+            let env_factor = crate::tick::environment_detection_factor(scenario, state.tick);
+            let dp = (phase.detection_probability_per_tick * env_factor).clamp(0.0, 1.0);
             if dp > 0.0 {
                 let prev = campaign
                     .detection_accumulation
@@ -485,6 +494,13 @@ fn branch_matches(
             *direction,
             *sustained_ticks,
         ),
+        // Short-circuit OR: stops at the first matching inner condition.
+        // Probability inner conditions still consume their RNG draw
+        // when reached, so the run remains deterministic given the
+        // declared inner-condition order.
+        BranchCondition::OrAny { conditions } => conditions
+            .iter()
+            .any(|inner| branch_matches(inner, status, rng, metric_history)),
     }
 }
 
@@ -578,6 +594,62 @@ fn apply_phase_output(
                 (state.non_kinetic.political_cost + delta).clamp(0.0, 1.0);
         },
         PhaseOutput::Custom { .. } => {},
+        PhaseOutput::LeadershipDecapitation {
+            target_faction,
+            morale_shock,
+        } => {
+            apply_leadership_decapitation(state, scenario, target_faction, *morale_shock);
+        },
+    }
+}
+
+/// Apply a leadership decapitation to `target_faction`.
+///
+/// Mutates the runtime faction state — advances the rank index,
+/// records the strike tick, increments the cumulative count, and
+/// applies a one-shot morale drop.
+///
+/// Scenario validation rejects `LeadershipDecapitation` against any
+/// faction that does not declare a `LeadershipCadre`, so the runtime
+/// path here can assume the cadre exists when the target's faction
+/// state does. The defensive `cadre_len` lookup remains so a
+/// counterfactual override that mutates `leadership` post-validation
+/// (or a hand-built `Scenario` that bypasses `validate_scenario`) does
+/// not advance into a non-existent rank list.
+fn apply_leadership_decapitation(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    target: &FactionId,
+    morale_shock: f64,
+) {
+    // Look up the cadre on the scenario side to decide whether to
+    // advance the rank counter at all.
+    let cadre_len = scenario
+        .factions
+        .get(target)
+        .and_then(|f| f.leadership.as_ref())
+        .map(|c| c.ranks.len() as u32);
+
+    let Some(fs) = state.faction_states.get_mut(target) else {
+        return;
+    };
+
+    fs.leadership_decapitations = fs.leadership_decapitations.saturating_add(1);
+    fs.last_decapitation_tick = Some(state.tick);
+
+    if let Some(len) = cadre_len {
+        // Saturate at len — once past the end the faction is
+        // leaderless. `saturating_add` plus `.min(len)` prevents both
+        // u32 overflow on pathological repeat-strike scenarios and
+        // nonsensical large indices in the report.
+        fs.current_leadership_rank = fs.current_leadership_rank.saturating_add(1).min(len);
+    }
+
+    // morale_shock NaN is rejected at validation, but we keep the
+    // `> 0.0` guard so a hand-built scenario that bypasses validation
+    // produces a no-op rather than a NaN-poisoned morale value.
+    if morale_shock > 0.0 {
+        fs.morale = (fs.morale - morale_shock).clamp(0.0, 1.0);
     }
 }
 

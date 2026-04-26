@@ -181,6 +181,7 @@ fn make_test_scenario() -> Scenario {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         },
     );
     factions.insert(
@@ -206,6 +207,7 @@ fn make_test_scenario() -> Scenario {
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
+            leadership: None,
         },
     );
 
@@ -277,6 +279,7 @@ fn make_test_scenario() -> Scenario {
         kill_chains: BTreeMap::new(),
         defender_budget: None,
         attacker_budget: None,
+        environment: faultline_types::map::EnvironmentSchedule::default(),
     }
 }
 

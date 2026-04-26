@@ -277,6 +277,28 @@ pub enum PhaseOutput {
         key: String,
         value: f64,
     },
+    /// Decapitate the named faction's top leader (Epic D).
+    ///
+    /// Advances the target faction's leadership rank index by one and
+    /// applies a one-shot morale shock. During the
+    /// `succession_recovery_ticks` window after the strike, the
+    /// target's morale is capped at the new rank's
+    /// recovery-interpolated effectiveness.
+    ///
+    /// No-op if the target has no [`LeadershipCadre`] declared
+    /// (legacy factions cannot be decapitated). When the rank index
+    /// advances past the end of the cadre, the faction enters a
+    /// terminal "leaderless" state — effectiveness collapses and
+    /// further decapitations are recorded but cannot drop the cap
+    /// any further.
+    LeadershipDecapitation {
+        target_faction: FactionId,
+        /// One-time morale drop applied to the target on the
+        /// strike tick. Clamped to `[0.0, 1.0]` against current
+        /// morale.
+        #[serde(default)]
+        morale_shock: f64,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +342,19 @@ pub enum BranchCondition {
         direction: ThresholdDirection,
         sustained_ticks: u32,
     },
+    /// Branch taken when **any** of the inner conditions match.
+    ///
+    /// Lets a single branch fire on multiple equivalent triggers
+    /// (e.g. `OnDetection` OR `EscalationThreshold(Tension > 0.7)`)
+    /// without having to declare two branches that point at the same
+    /// `next_phase`. Inner conditions are evaluated short-circuit
+    /// left-to-right, matching the declared `Vec` order.
+    ///
+    /// Nesting is allowed (an `OrAny` inside another `OrAny`) but
+    /// rarely useful. An empty `conditions` vector is rejected at
+    /// scenario validation since "OR over nothing" is ambiguous
+    /// (vacuously false vs. an unfilled author template).
+    OrAny { conditions: Vec<BranchCondition> },
 }
 
 /// Global metrics an [`BranchCondition::EscalationThreshold`] can read.

@@ -70,6 +70,9 @@ fn make_ai_test_state() -> SimulationState {
             tech_deployed: vec![],
             region_hold_ticks: BTreeMap::new(),
             eliminated: false,
+            current_leadership_rank: 0,
+            last_decapitation_tick: None,
+            leadership_decapitations: 0,
         },
     );
     faction_states.insert(
@@ -86,6 +89,9 @@ fn make_ai_test_state() -> SimulationState {
             tech_deployed: vec![],
             region_hold_ticks: BTreeMap::new(),
             eliminated: false,
+            current_leadership_rank: 0,
+            last_decapitation_tick: None,
+            leadership_decapitations: 0,
         },
     );
 

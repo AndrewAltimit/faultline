@@ -218,6 +218,9 @@ mod tests {
                 controlled_regions: vec![rid.clone()],
                 total_strength: 80.0,
                 institution_loyalty: BTreeMap::new(),
+                current_leadership_rank: 0,
+                leadership_decapitations: 0,
+                last_decapitation_tick: None,
             },
         );
 

@@ -850,6 +850,7 @@ mod tests {
             kill_chains: chains,
             defender_budget: None,
             attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
         };
 
         // Run 0: detected at tick 3.

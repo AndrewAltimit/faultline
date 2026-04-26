@@ -10,7 +10,7 @@ use faultline_politics::{self, TensionDelta};
 use faultline_types::events::EventEffect;
 use faultline_types::faction::ForceUnit;
 use faultline_types::ids::{FactionId, ForceId, RegionId};
-use faultline_types::map::TerrainType;
+use faultline_types::map::{EnvironmentSchedule, EnvironmentWindow, TerrainType};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::Outcome;
 use faultline_types::strategy::FactionAction;
@@ -330,8 +330,14 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
 
         // Get terrain info for this region.
         let terrain_info = scenario.map.terrain.iter().find(|t| t.region == *region);
-        let terrain_defense = terrain_info.map_or(1.0, |t| t.defense_modifier);
+        let base_terrain_defense = terrain_info.map_or(1.0, |t| t.defense_modifier);
         let terrain_type = terrain_info.map_or(TerrainType::Rural, |t| t.terrain_type.clone());
+
+        // Apply environmental defense modifier (Epic D — weather /
+        // time-of-day). Multiplies the base terrain defense; resolves
+        // to 1.0 when no windows are declared or none are active.
+        let env_defense_factor = environment_defense_factor(scenario, &terrain_type, state.tick);
+        let terrain_defense = base_terrain_defense * env_defense_factor;
 
         // Pairwise combat: all faction pairs engage each other.
         let factions: Vec<&FactionId> = faction_forces.keys().collect();
@@ -974,6 +980,149 @@ pub fn update_region_control(state: &mut SimulationState, _scenario: &Scenario) 
         }
         for rid in &fs.controlled_regions {
             *fs.region_hold_ticks.entry(rid.clone()).or_insert(0) += 1;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// Environment helpers (Epic D — weather, time-of-day)
+// -----------------------------------------------------------------------
+
+/// Whether `window` applies to a region of the given terrain.
+fn window_covers(window: &EnvironmentWindow, terrain: &TerrainType) -> bool {
+    window.applies_to.is_empty() || window.applies_to.contains(terrain)
+}
+
+/// Multiplicative product of every active window's `defense_factor`
+/// that covers `terrain` at `tick`. Empty schedule resolves to 1.0,
+/// so legacy scenarios are unchanged.
+pub fn environment_defense_factor(scenario: &Scenario, terrain: &TerrainType, tick: u32) -> f64 {
+    multiplicative_factor(&scenario.environment, tick, |w| {
+        if window_covers(w, terrain) {
+            Some(w.defense_factor)
+        } else {
+            None
+        }
+    })
+}
+
+/// Multiplicative product of every active window's `detection_factor`,
+/// applied globally to kill-chain phase rolls. `applies_to` does not
+/// gate this — see [`EnvironmentWindow::detection_factor`] for why.
+pub fn environment_detection_factor(scenario: &Scenario, tick: u32) -> f64 {
+    multiplicative_factor(&scenario.environment, tick, |w| Some(w.detection_factor))
+}
+
+fn multiplicative_factor(
+    schedule: &EnvironmentSchedule,
+    tick: u32,
+    extract: impl Fn(&EnvironmentWindow) -> Option<f64>,
+) -> f64 {
+    let mut acc = 1.0_f64;
+    for window in &schedule.windows {
+        if !window.activation.is_active_at(tick) {
+            continue;
+        }
+        if let Some(factor) = extract(window) {
+            acc *= factor;
+        }
+    }
+    acc
+}
+
+// -----------------------------------------------------------------------
+// Leadership caps (Epic D — decapitation + succession)
+// -----------------------------------------------------------------------
+
+/// Compute the effective leadership multiplier for `faction_id` at
+/// `tick`. Returns `1.0` (no effect) for any faction without a
+/// declared cadre — legacy scenarios pay zero per-tick overhead.
+///
+/// Formula:
+/// - `current_rank.effectiveness * recovery_ramp(elapsed)`
+/// - where `recovery_ramp` linearly interpolates from
+///   `succession_floor` to `1.0` over `succession_recovery_ticks`,
+///   measured from the most recent decapitation.
+/// - Returns `0.0` when the rank index has advanced past the end of
+///   the cadre — the faction is leaderless, morale floors at zero.
+pub fn effective_leadership_factor(
+    state: &SimulationState,
+    scenario: &Scenario,
+    faction_id: &FactionId,
+    tick: u32,
+) -> f64 {
+    let Some(faction) = scenario.factions.get(faction_id) else {
+        return 1.0;
+    };
+    let Some(cadre) = faction.leadership.as_ref() else {
+        return 1.0;
+    };
+    let Some(fs) = state.faction_states.get(faction_id) else {
+        return 1.0;
+    };
+
+    // Past the end of the cadre: leaderless terminal state.
+    let idx = fs.current_leadership_rank as usize;
+    if idx >= cadre.ranks.len() {
+        return 0.0;
+    }
+    let rank = &cadre.ranks[idx];
+
+    // No decapitation yet? Full effectiveness immediately.
+    let Some(strike_tick) = fs.last_decapitation_tick else {
+        return rank.effectiveness;
+    };
+    if cadre.succession_recovery_ticks == 0 {
+        return rank.effectiveness;
+    }
+
+    let elapsed = tick.saturating_sub(strike_tick);
+    if elapsed >= cadre.succession_recovery_ticks {
+        return rank.effectiveness;
+    }
+    let progress = f64::from(elapsed) / f64::from(cadre.succession_recovery_ticks);
+    let ramp = cadre.succession_floor + (1.0 - cadre.succession_floor) * progress;
+    rank.effectiveness * ramp
+}
+
+/// Cap each faction's morale at its current `effective_leadership_factor`.
+///
+/// Iterates over every faction with a declared cadre and clamps
+/// `morale` from above. Faction morale stays at or below the
+/// leadership ceiling for the whole recovery window, which is what
+/// makes the decapitation observable in combat outcomes
+/// (combat reads `morale` directly).
+///
+/// No-op when no faction declares a `leadership` cadre — the
+/// per-faction loop body short-circuits via the `1.0` return.
+pub fn apply_leadership_caps(state: &mut SimulationState, scenario: &Scenario) {
+    // Legacy scenarios with no cadres pay only this scan instead of
+    // cloning every FactionId and computing a no-op factor per tick.
+    if !scenario.factions.values().any(|f| f.leadership.is_some()) {
+        return;
+    }
+    // Snapshot tick before borrowing the faction map mutably.
+    let tick = state.tick;
+    // Collect the cap values first so we don't hold an immutable
+    // borrow while writing.
+    let caps: Vec<(FactionId, f64)> = state
+        .faction_states
+        .keys()
+        .map(|fid| {
+            let cap = effective_leadership_factor(state, scenario, fid, tick);
+            (fid.clone(), cap)
+        })
+        .collect();
+    for (fid, cap) in caps {
+        if cap >= 1.0 - f64::EPSILON {
+            // No effect — common path for legacy factions; skip the
+            // write to keep the morale field untouched.
+            continue;
+        }
+        if let Some(fs) = state.faction_states.get_mut(&fid)
+            && fs.morale > cap
+        {
+            fs.morale = cap.clamp(0.0, 1.0);
         }
     }
 }
