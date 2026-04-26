@@ -311,6 +311,109 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Strategy space (Epic H). Structural invariants only — the path
+    // string itself is validated against the `set_param` resolver in
+    // the search runner since that helper lives in `faultline-stats`
+    // (engine cannot depend on stats without creating a crate cycle).
+    // Catch the silent-no-op shapes here: empty discrete domain, NaN /
+    // inf bounds, inverted continuous range, zero grid steps.
+    {
+        let space = &scenario.strategy_space;
+        let mut seen_paths: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for var in &space.variables {
+            if var.path.is_empty() {
+                return Err(ScenarioError::Custom(
+                    "strategy_space variable has empty path; expected the same dotted form \
+                     accepted by --counterfactual / --sensitivity"
+                        .into(),
+                ));
+            }
+            if !seen_paths.insert(var.path.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "strategy_space variable path `{}` is declared more than once; \
+                     two variables overriding the same field would race deterministically \
+                     on the assignment order, which is almost always an authoring mistake",
+                    var.path
+                )));
+            }
+            if let Some(owner) = &var.owner
+                && !scenario.factions.contains_key(owner)
+            {
+                return Err(ScenarioError::UnknownFaction(owner.clone()));
+            }
+            validate_decision_domain(&var.path, &var.domain)?;
+        }
+        for objective in &space.objectives {
+            validate_search_objective(scenario, objective)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_decision_domain(
+    path: &str,
+    domain: &faultline_types::strategy_space::Domain,
+) -> Result<(), ScenarioError> {
+    use faultline_types::strategy_space::Domain;
+    match domain {
+        Domain::Continuous { low, high, steps } => {
+            if !low.is_finite() || !high.is_finite() {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("strategy_space variable `{path}` continuous bounds"),
+                    value: if low.is_finite() { *high } else { *low },
+                    expected: "finite".into(),
+                });
+            }
+            if low > high {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("strategy_space variable `{path}` continuous low"),
+                    value: *low,
+                    expected: format!("<= high ({high})"),
+                });
+            }
+            if *steps == 0 {
+                // Grid mode would silently produce zero trial values. Random
+                // mode ignores `steps`, but we reject zero unconditionally
+                // so analysts see the diagnostic before flipping methods.
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("strategy_space variable `{path}` continuous steps"),
+                    value: 0.0,
+                    expected: ">= 1".into(),
+                });
+            }
+        },
+        Domain::Discrete { values } => {
+            if values.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "strategy_space variable `{path}` has empty discrete `values`; \
+                     a discrete domain with no choices would silently never trial",
+                )));
+            }
+            for v in values {
+                if !v.is_finite() {
+                    return Err(ScenarioError::ValueOutOfRange {
+                        field: format!("strategy_space variable `{path}` discrete value"),
+                        value: *v,
+                        expected: "finite".into(),
+                    });
+                }
+            }
+        },
+    }
+    Ok(())
+}
+
+fn validate_search_objective(
+    scenario: &Scenario,
+    objective: &faultline_types::strategy_space::SearchObjective,
+) -> Result<(), ScenarioError> {
+    use faultline_types::strategy_space::SearchObjective;
+    if let SearchObjective::MaximizeWinRate { faction } = objective
+        && !scenario.factions.contains_key(faction)
+    {
+        return Err(ScenarioError::UnknownFaction(faction.clone()));
+    }
     Ok(())
 }
 
@@ -541,6 +644,7 @@ mod tests {
             defender_budget: None,
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
+            strategy_space: faultline_types::strategy_space::StrategySpace::default(),
         }
     }
 
@@ -1074,6 +1178,184 @@ mod tests {
         );
 
         validate_scenario(&scenario).expect("well-formed Epic D scenario must validate");
+    }
+
+    // -----------------------------------------------------------------------
+    // Epic H validation tests (strategy_space)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_rejects_empty_path_in_strategy_space() {
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: String::new(),
+                owner: None,
+                domain: Domain::Continuous {
+                    low: 0.0,
+                    high: 1.0,
+                    steps: 2,
+                },
+            }],
+            objectives: vec![],
+        };
+        let err = validate_scenario(&scenario).expect_err("empty path must reject");
+        assert!(format!("{err}").contains("empty path"));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_strategy_space_paths() {
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        let dup = DecisionVariable {
+            path: "faction.gov.initial_morale".into(),
+            owner: None,
+            domain: Domain::Continuous {
+                low: 0.1,
+                high: 0.9,
+                steps: 4,
+            },
+        };
+        scenario.strategy_space = StrategySpace {
+            variables: vec![dup.clone(), dup],
+            objectives: vec![],
+        };
+        let err = validate_scenario(&scenario).expect_err("duplicate paths must reject");
+        assert!(format!("{err}").contains("declared more than once"));
+    }
+
+    #[test]
+    fn validate_rejects_inverted_continuous_range() {
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.gov.initial_morale".into(),
+                owner: None,
+                domain: Domain::Continuous {
+                    low: 0.9,
+                    high: 0.1,
+                    steps: 2,
+                },
+            }],
+            objectives: vec![],
+        };
+        let err = validate_scenario(&scenario).expect_err("low > high must reject");
+        assert!(format!("{err}").contains("<= high"));
+    }
+
+    #[test]
+    fn validate_rejects_zero_steps_continuous_domain() {
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.gov.initial_morale".into(),
+                owner: None,
+                domain: Domain::Continuous {
+                    low: 0.0,
+                    high: 1.0,
+                    steps: 0,
+                },
+            }],
+            objectives: vec![],
+        };
+        let err = validate_scenario(&scenario).expect_err("steps == 0 must reject");
+        assert!(format!("{err}").contains("steps"));
+    }
+
+    #[test]
+    fn validate_rejects_empty_discrete_domain() {
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.gov.initial_morale".into(),
+                owner: None,
+                domain: Domain::Discrete { values: vec![] },
+            }],
+            objectives: vec![],
+        };
+        let err = validate_scenario(&scenario).expect_err("empty discrete values must reject");
+        assert!(format!("{err}").contains("empty discrete"));
+    }
+
+    #[test]
+    fn validate_rejects_unknown_owner_faction() {
+        use faultline_types::ids::FactionId;
+        use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.gov.initial_morale".into(),
+                owner: Some(FactionId::from("ghost")),
+                domain: Domain::Continuous {
+                    low: 0.0,
+                    high: 1.0,
+                    steps: 2,
+                },
+            }],
+            objectives: vec![],
+        };
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_objective_faction() {
+        use faultline_types::ids::FactionId;
+        use faultline_types::strategy_space::{
+            DecisionVariable, Domain, SearchObjective, StrategySpace,
+        };
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.gov.initial_morale".into(),
+                owner: None,
+                domain: Domain::Continuous {
+                    low: 0.0,
+                    high: 1.0,
+                    steps: 2,
+                },
+            }],
+            objectives: vec![SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("ghost"),
+            }],
+        };
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    #[test]
+    fn validate_passes_for_well_formed_strategy_space() {
+        use faultline_types::ids::FactionId;
+        use faultline_types::strategy_space::{
+            DecisionVariable, Domain, SearchObjective, StrategySpace,
+        };
+        let mut scenario = minimal_scenario();
+        scenario.strategy_space = StrategySpace {
+            variables: vec![
+                DecisionVariable {
+                    path: "faction.gov.initial_morale".into(),
+                    owner: Some(FactionId::from("gov")),
+                    domain: Domain::Continuous {
+                        low: 0.3,
+                        high: 0.9,
+                        steps: 4,
+                    },
+                },
+                DecisionVariable {
+                    path: "political_climate.tension".into(),
+                    owner: None,
+                    domain: Domain::Discrete {
+                        values: vec![0.4, 0.6, 0.8],
+                    },
+                },
+            ],
+            objectives: vec![SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("gov"),
+            }],
+        };
+        validate_scenario(&scenario).expect("well-formed strategy_space must validate");
     }
 
     #[test]

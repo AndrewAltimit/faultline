@@ -11,6 +11,7 @@ pub mod delta;
 pub mod manifest;
 pub mod morris;
 pub mod report;
+pub mod search;
 pub mod sensitivity;
 pub mod time_dynamics;
 pub mod uncertainty;
@@ -1056,6 +1057,7 @@ mod tests {
             defender_budget: None,
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
+            strategy_space: faultline_types::strategy_space::StrategySpace::default(),
         }
     }
 

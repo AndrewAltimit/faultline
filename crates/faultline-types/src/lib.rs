@@ -10,6 +10,7 @@ pub mod scenario;
 pub mod simulation;
 pub mod stats;
 pub mod strategy;
+pub mod strategy_space;
 pub mod tech;
 pub mod victory;
 

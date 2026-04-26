@@ -12,11 +12,13 @@ use faultline_engine::{Engine, validate_scenario};
 use faultline_stats::compute_summary;
 use faultline_stats::counterfactual::{ComparisonReport, ParamOverride};
 use faultline_stats::manifest::{self, ManifestMcConfig, ManifestMode, RunManifest, VerifyResult};
+use faultline_stats::search::{SearchConfig, SearchMethod, SearchResult};
 use faultline_types::migration::{
     self, CURRENT_SCHEMA_VERSION, LoadedScenario, load_scenario_str, migrate_scenario_str,
 };
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{MonteCarloConfig, MonteCarloResult, RunResult};
+use faultline_types::strategy_space::SearchObjective;
 
 // ---------------------------------------------------------------------------
 // CLI arguments
@@ -120,6 +122,72 @@ struct Cli {
     #[arg(long = "compare", value_name = "OTHER_SCENARIO")]
     compare: Option<PathBuf>,
 
+    /// Run strategy search (Epic H).
+    ///
+    /// Reads the scenario's `[strategy_space]` declaration, samples
+    /// trial assignments according to `--search-method`, evaluates each
+    /// via Monte Carlo, and emits a search report identifying the
+    /// best-by-objective trial and the non-dominated Pareto frontier.
+    ///
+    /// Mutually exclusive with the other run modes (`--single-run`,
+    /// `--sensitivity`, `--counterfactual`, `--compare`, `--verify`,
+    /// `--validate`, `--migrate`). Use `--search-objective` repeatedly
+    /// to evaluate multiple objectives; the Pareto frontier spans all
+    /// of them.
+    #[arg(
+        long = "search",
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "verify", "validate", "migrate"
+        ]
+    )]
+    search: bool,
+
+    /// Sampling method for `--search`. `random` draws uniform
+    /// assignments from each variable's domain (count = `--search-trials`).
+    /// `grid` enumerates the Cartesian product of per-variable level
+    /// sets, truncated to `--search-trials`.
+    #[arg(
+        long = "search-method",
+        value_name = "METHOD",
+        default_value = "random",
+        requires = "search"
+    )]
+    search_method: CliSearchMethod,
+
+    /// Number of search trials. Each trial runs an independent inner
+    /// Monte Carlo batch sized by `--search-runs`.
+    #[arg(long = "search-trials", default_value_t = 32, requires = "search")]
+    search_trials: u32,
+
+    /// Inner Monte Carlo run count for each search trial. Smaller
+    /// values give noisier objective estimates but let an analyst
+    /// explore more of the strategy space within a fixed compute
+    /// budget. Defaults to 100.
+    #[arg(long = "search-runs", default_value_t = 100, requires = "search")]
+    search_runs: u32,
+
+    /// Search-only RNG seed. Independent of `--seed` (the inner Monte
+    /// Carlo seed). Re-using the same `--search-seed` reproduces the
+    /// trial assignments; re-using the same `--seed` reproduces each
+    /// trial's evaluation.
+    #[arg(long = "search-seed", requires = "search")]
+    search_seed: Option<u64>,
+
+    /// Search objective. Pass repeatedly to declare multi-objective
+    /// search. Format: `<metric>` or `<metric>:<argument>`. Supported
+    /// metrics: `maximize_win_rate:<faction>`, `minimize_detection`,
+    /// `minimize_attacker_cost`, `maximize_cost_asymmetry`,
+    /// `minimize_duration`. When omitted, the runner falls back to the
+    /// scenario's `[strategy_space].objectives` (if present); if both
+    /// are empty the run fails with a clear error.
+    #[arg(
+        long = "search-objective",
+        value_name = "OBJECTIVE",
+        requires = "search"
+    )]
+    search_objective: Vec<String>,
+
     /// Verify a saved run by replaying it from a manifest.
     ///
     /// Loads the manifest from `<MANIFEST_PATH>`, hashes the
@@ -187,6 +255,23 @@ enum OutputFormat {
     Json,
     Csv,
     Both,
+}
+
+/// CLI form of `faultline_stats::search::SearchMethod` so clap can
+/// parse it without depending on `clap` from the stats crate.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliSearchMethod {
+    Random,
+    Grid,
+}
+
+impl From<CliSearchMethod> for SearchMethod {
+    fn from(m: CliSearchMethod) -> Self {
+        match m {
+            CliSearchMethod::Random => SearchMethod::Random,
+            CliSearchMethod::Grid => SearchMethod::Grid,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +361,10 @@ fn main() -> Result<()> {
 
     if let Some(ref alt_path) = cli.compare {
         return run_compare_analysis(&cli, &scenario, alt_path);
+    }
+
+    if cli.search {
+        return run_search_analysis(&cli, &scenario);
     }
 
     // Monte Carlo run.
@@ -748,6 +837,109 @@ fn write_sensitivity_output(
 }
 
 // ---------------------------------------------------------------------------
+// Strategy search (Epic H)
+// ---------------------------------------------------------------------------
+
+fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    // Objective resolution: CLI flags override the scenario's embedded
+    // list. If both are empty the runner returns a clear error from
+    // `run_search`, so we don't pre-emptively reject here — that keeps
+    // the error message in one place.
+    let objectives: Vec<SearchObjective> = if cli.search_objective.is_empty() {
+        scenario.strategy_space.objectives.clone()
+    } else {
+        cli.search_objective
+            .iter()
+            .map(|s| SearchObjective::parse_cli(s).map_err(anyhow::Error::msg))
+            .collect::<Result<Vec<_>>>()
+            .with_context(|| "failed to parse --search-objective")?
+    };
+
+    let mc_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+    let search_seed = cli
+        .search_seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+
+    let mc_config = MonteCarloConfig {
+        num_runs: cli.search_runs,
+        seed: Some(mc_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let method: SearchMethod = cli.search_method.into();
+    let config = SearchConfig {
+        trials: cli.search_trials,
+        method,
+        search_seed,
+        mc_config,
+        objectives: objectives.clone(),
+    };
+
+    info!(
+        trials = cli.search_trials,
+        method = ?method,
+        search_seed,
+        mc_seed,
+        objectives = objectives.len(),
+        "starting strategy search"
+    );
+
+    let result = faultline_stats::search::run_search(scenario, &config)
+        .with_context(|| "strategy search failed")?;
+
+    write_search_outputs(cli, &result)?;
+
+    let manifest_mc = ManifestMcConfig::from_config(&config.mc_config, mc_seed);
+    let mode = ManifestMode::Search {
+        method,
+        trials: cli.search_trials,
+        search_seed,
+        objectives: objectives.iter().map(SearchObjective::label).collect(),
+    };
+    let output_hash =
+        manifest::output_hash(&result).with_context(|| "failed to hash search result")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    // Search has no per-trial CSV shape that maps cleanly (every trial
+    // carries a full `MonteCarloSummary` — flattening that into rows
+    // would lose information without a bespoke schema), so we always
+    // emit the Markdown alongside the JSON regardless of `--format`.
+    // `--format csv` is treated as "still emit JSON+MD"; CSV is a
+    // no-op here. This matches the comparison-mode handling.
+    if matches!(cli.format, OutputFormat::Csv) {
+        tracing::warn!(
+            "--format csv is not meaningful for strategy-search output \
+             (per-trial CSV shape doesn't apply); falling back to JSON + Markdown"
+        );
+    }
+    let md_path = cli.output.join("search_report.md");
+    let body = faultline_stats::report::render_search_markdown(&result, scenario);
+    let md = with_manifest_front_matter(&body, Some(&manifest_obj));
+    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
+    info!(path = %md_path.display(), "wrote search Markdown report");
+
+    write_manifest_object(cli, &manifest_obj)?;
+    Ok(())
+}
+
+fn write_search_outputs(cli: &Cli, result: &SearchResult) -> Result<()> {
+    // Search emits a structured JSON artifact unconditionally — the
+    // analyst's full record of what was tried and what each trial
+    // scored. The Markdown is written separately in
+    // `run_search_analysis` so the manifest header can land on top.
+    let json_path = cli.output.join("search.json");
+    let json = serde_json::to_string_pretty(result)
+        .with_context(|| "failed to serialize search result")?;
+    fs::write(&json_path, json)
+        .with_context(|| format!("failed to write {}", json_path.display()))?;
+    info!(path = %json_path.display(), "wrote search JSON");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Schema migration (Epic O)
 // ---------------------------------------------------------------------------
 
@@ -1083,6 +1275,47 @@ fn replay_manifest_mode(
                 h,
             )
         },
+        ManifestMode::Search {
+            method,
+            trials,
+            search_seed,
+            objectives,
+        } => {
+            // Reparse the recorded objective labels back into the
+            // structured form. Recording the labels (not the structured
+            // enum) keeps the manifest stable across future objective
+            // additions; reparsing here checks the recorded labels are
+            // still recognised by the current build.
+            let parsed_objectives: Vec<SearchObjective> = objectives
+                .iter()
+                .map(|s| SearchObjective::parse_cli(s).map_err(anyhow::Error::msg))
+                .collect::<Result<Vec<_>>>()
+                .with_context(|| {
+                    "failed to reparse search objective labels from manifest \
+                     (a recorded label is no longer recognised)"
+                })?;
+            let inner_config = config.clone();
+            let search_config = SearchConfig {
+                trials: *trials,
+                method: *method,
+                search_seed: *search_seed,
+                mc_config: inner_config,
+                objectives: parsed_objectives,
+            };
+            let result = faultline_stats::search::run_search(scenario, &search_config)
+                .with_context(|| "search replay failed")?;
+            let h =
+                manifest::output_hash(&result).with_context(|| "failed to hash search replay")?;
+            (
+                ManifestMode::Search {
+                    method: *method,
+                    trials: *trials,
+                    search_seed: *search_seed,
+                    objectives: objectives.clone(),
+                },
+                h,
+            )
+        },
         ManifestMode::Sensitivity {
             param,
             low,
@@ -1221,6 +1454,7 @@ fn with_manifest_front_matter(body: &str, manifest_obj: Option<&RunManifest>) ->
         ManifestMode::Counterfactual { .. } => "counterfactual".to_string(),
         ManifestMode::Compare { .. } => "compare".to_string(),
         ManifestMode::Sensitivity { .. } => "sensitivity".to_string(),
+        ManifestMode::Search { .. } => "search".to_string(),
     };
     format!(
         "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
@@ -1301,4 +1535,120 @@ fn write_event_log(cli: &Cli, result: &MonteCarloResult) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing tests
+// ---------------------------------------------------------------------------
+//
+// These tests pin the clap-level conflict declarations on `--search`
+// against the other run-mode flags. Clap surfaces an `ArgumentConflict`
+// kind at parse time when two mutually-exclusive flags appear together.
+// We assert on the kind (not the message text) so future clap upgrades
+// that change wording don't break the test.
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn search_and_verify_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--verify",
+            "manifest.json",
+        ]);
+        let err = res.expect_err("--search + --verify must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_validate_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--validate"]);
+        let err = res.expect_err("--search + --validate must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_migrate_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--migrate"]);
+        let err = res.expect_err("--search + --migrate must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_compare_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--compare",
+            "other.toml",
+        ]);
+        let err = res.expect_err("--search + --compare must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_counterfactual_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--counterfactual",
+            "x=1",
+        ]);
+        let err = res.expect_err("--search + --counterfactual must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_sensitivity_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--sensitivity"]);
+        let err = res.expect_err("--search + --sensitivity must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_and_single_run_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search", "--single-run"]);
+        let err = res.expect_err("--search + --single-run must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn search_subflags_require_search() {
+        // `--search-trials 8` without `--search` should be rejected by
+        // the `requires = "search"` declaration.
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--search-trials", "8"]);
+        let err = res.expect_err("--search-trials without --search must reject");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn search_method_default_is_random() {
+        // Sanity check on the clap default: --search alone resolves to
+        // SearchMethod::Random.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--search"])
+            .expect("--search alone must parse");
+        assert!(matches!(cli.search_method, super::CliSearchMethod::Random));
+    }
+
+    #[test]
+    fn search_objective_can_be_repeated() {
+        let cli = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--search",
+            "--search-objective",
+            "minimize_detection",
+            "--search-objective",
+            "minimize_duration",
+        ])
+        .expect("repeated --search-objective must parse");
+        assert_eq!(cli.search_objective.len(), 2);
+    }
 }

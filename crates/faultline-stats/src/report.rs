@@ -18,6 +18,8 @@ use faultline_types::stats::{
 };
 
 use crate::counterfactual::{ComparisonReport, ParamOverride};
+use crate::search::{SearchMethod, SearchResult, SearchTrial};
+use faultline_types::strategy_space::SearchObjective;
 
 /// Render a Markdown feasibility / cost asymmetry / seam analysis
 /// report for a single Monte Carlo run.
@@ -757,6 +759,161 @@ fn render_override_line(out: &mut String, ov: &ParamOverride) {
     let _ = writeln!(out, "  - `{}` = **{}**", ov.path, ov.value);
 }
 
+// ---------------------------------------------------------------------------
+// Strategy search report (Epic H)
+// ---------------------------------------------------------------------------
+
+/// Render the Markdown report for a strategy-search batch.
+///
+/// Layout:
+///
+/// 1. Setup block (method, trials, objectives) so the reader sees the
+///    search scope before any rankings.
+/// 2. Best-by-objective table — one row per objective, naming the
+///    winning trial and its objective value.
+/// 3. Pareto frontier table — every non-dominated trial with its
+///    full objective-value vector.
+/// 4. Per-trial detail — assignments + objective values, one line per
+///    trial. Truncated to the first 64 trials with a hint when the
+///    search is larger, since the JSON artifact carries the rest.
+pub fn render_search_markdown(result: &SearchResult, scenario: &Scenario) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "# Faultline Strategy Search Report");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "## Scenario: {}", scenario.meta.name);
+    let _ = writeln!(out);
+    let method_label = match result.method {
+        SearchMethod::Random => "random",
+        SearchMethod::Grid => "grid",
+    };
+    let _ = writeln!(out, "- **Method:** `{method_label}`");
+    let _ = writeln!(out, "- **Trials evaluated:** {}", result.trials.len());
+    let _ = writeln!(out, "- **Objectives:** {}", result.objectives.len());
+    if !scenario.strategy_space.variables.is_empty() {
+        let _ = writeln!(
+            out,
+            "- **Decision variables:** {}",
+            scenario.strategy_space.variables.len()
+        );
+    }
+    let _ = writeln!(out);
+
+    if result.trials.is_empty() {
+        let _ = writeln!(
+            out,
+            "_No trials evaluated; nothing to report. Increase `--search-trials` or check the scenario's strategy space._"
+        );
+        return out;
+    }
+
+    render_best_by_objective(&mut out, result);
+    render_search_pareto(&mut out, result);
+    render_search_trials(&mut out, result);
+
+    out
+}
+
+fn render_best_by_objective(out: &mut String, result: &SearchResult) {
+    let _ = writeln!(out, "## Best Trial Per Objective");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "| Objective | Direction | Trial | Value |");
+    let _ = writeln!(out, "|---|---|---|---|");
+    for obj in &result.objectives {
+        let label = obj.label();
+        let direction = if obj.maximize() { "max" } else { "min" };
+        let cell = match result.best_by_objective.get(&label) {
+            Some(idx) => {
+                let v = result
+                    .trials
+                    .get(*idx as usize)
+                    .and_then(|t| t.objective_values.get(&label))
+                    .copied()
+                    .unwrap_or(0.0);
+                format!("`#{idx}` | **{:.4}**", v)
+            },
+            None => "—".to_string(),
+        };
+        let _ = writeln!(
+            out,
+            "| `{label}` | {direction} | {cell} |",
+            label = label,
+            direction = direction,
+            cell = cell,
+        );
+    }
+    let _ = writeln!(out);
+}
+
+fn render_search_pareto(out: &mut String, result: &SearchResult) {
+    let _ = writeln!(out, "## Pareto Frontier");
+    let _ = writeln!(out);
+    if result.pareto_indices.is_empty() {
+        let _ = writeln!(out, "_No non-dominated trials._");
+        let _ = writeln!(out);
+        return;
+    }
+    let _ = writeln!(
+        out,
+        "Non-dominated trials across all declared objectives. A trial is on the frontier when no other trial is at least as good on every objective and strictly better on at least one (direction-aware)."
+    );
+    let _ = writeln!(out);
+    let mut header = String::from("| Trial |");
+    let mut rule = String::from("|---|");
+    for obj in &result.objectives {
+        header.push_str(&format!(" {} |", obj.label()));
+        rule.push_str("---|");
+    }
+    let _ = writeln!(out, "{header}");
+    let _ = writeln!(out, "{rule}");
+    for idx in &result.pareto_indices {
+        if let Some(t) = result.trials.get(*idx as usize) {
+            let mut row = format!("| `#{}` |", idx);
+            for obj in &result.objectives {
+                let v = t.objective_values.get(&obj.label()).copied().unwrap_or(0.0);
+                row.push_str(&format!(" {:.4} |", v));
+            }
+            let _ = writeln!(out, "{row}");
+        }
+    }
+    let _ = writeln!(out);
+}
+
+const SEARCH_TRIAL_RENDER_LIMIT: usize = 64;
+
+fn render_search_trials(out: &mut String, result: &SearchResult) {
+    let _ = writeln!(out, "## Trial Detail");
+    let _ = writeln!(out);
+    let total = result.trials.len();
+    let shown = total.min(SEARCH_TRIAL_RENDER_LIMIT);
+    if shown < total {
+        let _ = writeln!(
+            out,
+            "_Showing first {shown} of {total} trials. Full set lives in `search.json`._"
+        );
+        let _ = writeln!(out);
+    }
+    for t in result.trials.iter().take(shown) {
+        render_search_trial(out, t, &result.objectives);
+    }
+}
+
+fn render_search_trial(out: &mut String, trial: &SearchTrial, objectives: &[SearchObjective]) {
+    let _ = writeln!(out, "### Trial `#{}`", trial.trial_index);
+    if !trial.assignments.is_empty() {
+        let _ = writeln!(out, "Assignments:");
+        for ov in &trial.assignments {
+            let _ = writeln!(out, "- `{}` = **{:.4}**", ov.path, ov.value);
+        }
+    }
+    let _ = writeln!(out, "Objective values:");
+    for obj in objectives {
+        let label = obj.label();
+        let v = trial.objective_values.get(&label).copied().unwrap_or(0.0);
+        let _ = writeln!(out, "- `{label}` = {:.4}", v);
+    }
+    let _ = writeln!(out);
+}
+
 const METHODOLOGY_APPENDIX: &str = r#"
 This report combines two distinct sources of uncertainty. Mixing them up is a common way to get analysis wrong, so they are reported separately:
 
@@ -1356,6 +1513,7 @@ mod tests {
             defender_budget: None,
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
+            strategy_space: faultline_types::strategy_space::StrategySpace::default(),
         }
     }
 

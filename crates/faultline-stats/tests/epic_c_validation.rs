@@ -253,6 +253,7 @@ fn chain_scenario(detection_per_tick: f64, success: f64) -> Scenario {
         defender_budget: None,
         attacker_budget: None,
         environment: faultline_types::map::EnvironmentSchedule::default(),
+        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
     }
 }
 

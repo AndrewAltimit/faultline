@@ -836,6 +836,65 @@ threshold = 0.75
 
 ---
 
+## `[strategy_space]` (Epic H — strategy search)
+
+Optional. Declares which scenario parameters are *decision variables* for the `--search` CLI mode. Each variable names a parameter via the same dotted path layer used by `--counterfactual` and `--sensitivity`, plus a domain to sample from. When present, `faultline-cli ... --search` walks the declared space and reports best-by-objective + Pareto-frontier results; when absent, the field is omitted from the serialized scenario entirely so legacy bundles stay byte-identical.
+
+```toml
+[strategy_space]
+
+[[strategy_space.variables]]
+path = "faction.alpha.initial_morale"
+owner = "alpha"          # optional; surfaces grouping in the report
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.5
+high = 0.9
+steps = 4                # grid mode emits 4 evenly-spaced values; ignored in random mode
+
+[[strategy_space.variables]]
+path = "kill_chain.exfil.phase.move.detection_probability_per_tick"
+
+[strategy_space.variables.domain]
+kind = "discrete"
+values = [0.05, 0.10, 0.20]
+
+[[strategy_space.objectives]]
+metric = "maximize_win_rate"
+faction = "alpha"
+
+[[strategy_space.objectives]]
+metric = "minimize_detection"
+```
+
+`Domain` variants:
+
+| `kind` | Fields | Random sampling | Grid sampling |
+|---|---|---|---|
+| `continuous` | `low`, `high`, `steps` | uniform draw in `[low, high)` | `steps` evenly-spaced values inclusive of both endpoints; `steps == 1` uses the midpoint |
+| `discrete` | `values` (non-empty array of `f64`) | uniform pick | enumerates each value |
+
+Validation rejects: empty `path`, duplicate paths, `low > high`, `steps == 0`, empty discrete `values`, non-finite bounds, non-finite discrete values, unknown `owner` factions, and unknown `MaximizeWinRate.faction` references — all at scenario load time. The same structural checks are repeated by `faultline_stats::search::run_search` so library callers who hand-build a `Scenario` (in tests or custom workflows) get the same guarantees as the CLI path.
+
+Built-in `SearchObjective` variants (round one):
+
+| `metric` | Direction | Argument | Source field |
+|---|---|---|---|
+| `maximize_win_rate` | max | `faction` | `MonteCarloSummary.win_rates[faction]` |
+| `minimize_detection` | min | — | `max(CampaignSummary.detection_rate)` over chains |
+| `minimize_attacker_cost` | min | — | sum of `CampaignSummary.mean_attacker_spend` |
+| `maximize_cost_asymmetry` | max | — | `max(CampaignSummary.cost_asymmetry_ratio)` over chains |
+| `minimize_duration` | min | — | `MonteCarloSummary.average_duration` |
+
+Pareto frontier semantics: a trial is *dominated* iff some other trial is at least as good on every objective (direction-aware) and strictly better on at least one. Returned `pareto_indices` are sorted ascending. `best_by_objective` ties resolve by lowest trial index for reproducibility.
+
+The search layer uses two independent seeds — `search_seed` drives assignment sampling, `mc_config.seed` drives the inner Monte Carlo evaluation — so search-then-evaluate is bit-identical under fixed inputs and trial-to-trial deltas reflect parameter changes only, not sampling noise. See `crates/faultline-stats/src/search.rs` for the determinism contract.
+
+`--search` is mutually exclusive with the other run modes (`--single-run`, `--sensitivity`, `--counterfactual`, `--compare`, `--verify`, `--validate`, `--migrate`); clap rejects any combination at parse time. `--search-trials`, `--search-runs`, `--search-method`, `--search-seed`, and `--search-objective` all require `--search` and are similarly rejected when passed alone.
+
+---
+
 ## Determinism guarantees
 
 Given the same scenario file and the same `seed`, the engine produces bit-identical results on native and WASM. Two practical consequences:
