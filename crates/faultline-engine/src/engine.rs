@@ -10,12 +10,12 @@ use faultline_geo::{self, GameMap};
 use faultline_types::campaign::BranchCondition;
 use faultline_types::ids::{EventId, FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{EventRecord, Outcome, RunResult, StateSnapshot};
+use faultline_types::stats::{DefenderQueueReport, EventRecord, Outcome, RunResult, StateSnapshot};
 use faultline_types::strategy::FactionState;
 
 use crate::campaign::{self, CampaignState};
 use crate::error::EngineError;
-use crate::state::{RuntimeFactionState, SimulationState};
+use crate::state::{DefenderQueueState, RuntimeFactionState, SimulationState};
 use crate::tick::{self, TickResult};
 
 /// The core simulation engine.
@@ -187,6 +187,7 @@ impl Engine {
                     snapshots: self.state.snapshots.clone(),
                     event_log,
                     campaign_reports: campaign::reports(&self.campaigns),
+                    defender_queue_reports: collect_queue_reports(&self.state),
                 });
             }
 
@@ -206,6 +207,7 @@ impl Engine {
                     snapshots: self.state.snapshots.clone(),
                     event_log,
                     campaign_reports: campaign::reports(&self.campaigns),
+                    defender_queue_reports: collect_queue_reports(&self.state),
                 });
             }
         }
@@ -309,6 +311,8 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         }
     }
 
+    let defender_queues = initialize_defender_queues(scenario);
+
     Ok(SimulationState {
         tick: 0,
         faction_states,
@@ -321,7 +325,35 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         snapshots: Vec::new(),
         non_kinetic: Default::default(),
         metric_history: Vec::new(),
+        defender_queues,
     })
+}
+
+/// Build the per-(faction, role) defender queue map from the scenario.
+///
+/// Returns an empty outer map when no faction declares
+/// `defender_capacities`, which lets the campaign phase skip its
+/// queue-service step on the legacy hot path. Each registered queue
+/// starts at depth 0 (no pre-existing backlog) — pre-saturated initial
+/// states would be a future schema addition, not a v1 concern.
+fn initialize_defender_queues(
+    scenario: &Scenario,
+) -> BTreeMap<FactionId, BTreeMap<faultline_types::ids::DefenderRoleId, DefenderQueueState>> {
+    let mut out: BTreeMap<FactionId, BTreeMap<_, _>> = BTreeMap::new();
+    for (fid, faction) in &scenario.factions {
+        if faction.defender_capacities.is_empty() {
+            continue;
+        }
+        let mut roles = BTreeMap::new();
+        for (rid, cap) in &faction.defender_capacities {
+            roles.insert(
+                rid.clone(),
+                DefenderQueueState::new(cap.queue_depth, cap.service_rate.max(0.0)),
+            );
+        }
+        out.insert(fid.clone(), roles);
+    }
+    out
 }
 
 /// Walk the scenario's branch graph and return the longest
@@ -357,6 +389,42 @@ fn max_escalation_window(scenario: &Scenario) -> usize {
     } else {
         0
     }
+}
+
+/// Convert the in-memory queue state map to per-(faction, role) report
+/// rows. Iteration is `BTreeMap`-ordered so the output is
+/// deterministic and the manifest hash is stable.
+fn collect_queue_reports(state: &SimulationState) -> Vec<DefenderQueueReport> {
+    let mut out = Vec::new();
+    for (fid, roles) in &state.defender_queues {
+        for (rid, q) in roles {
+            let mean_depth = if q.ticks_observed == 0 {
+                0.0
+            } else {
+                q.total_depth_sum as f64 / f64::from(q.ticks_observed)
+            };
+            let utilization = if q.capacity == 0 {
+                0.0
+            } else {
+                (mean_depth / f64::from(q.capacity)).clamp(0.0, 1.0)
+            };
+            out.push(DefenderQueueReport {
+                faction: fid.clone(),
+                role: rid.clone(),
+                capacity: q.capacity,
+                final_depth: q.depth,
+                mean_depth,
+                max_depth: q.max_depth,
+                utilization,
+                total_enqueued: q.total_enqueued,
+                total_serviced: q.total_serviced,
+                total_dropped: q.total_dropped,
+                time_to_saturation: q.first_saturated_at,
+                shadow_detections: q.shadow_detections,
+            });
+        }
+    }
+    out
 }
 
 /// Take a snapshot of the current simulation state.

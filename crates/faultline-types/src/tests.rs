@@ -1278,6 +1278,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         seam_scores: BTreeMap::new(),
         correlation_matrix: None,
         pareto_frontier: None,
+        defender_capacity: Vec::new(),
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

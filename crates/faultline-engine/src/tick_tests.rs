@@ -180,6 +180,7 @@ fn make_test_scenario() -> Scenario {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         },
     );
     factions.insert(
@@ -204,6 +205,7 @@ fn make_test_scenario() -> Scenario {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         },
     );
 

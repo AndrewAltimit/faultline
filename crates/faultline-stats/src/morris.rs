@@ -520,6 +520,7 @@ mod tests {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         }
     }
 

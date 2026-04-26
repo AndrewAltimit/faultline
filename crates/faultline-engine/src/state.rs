@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use faultline_types::faction::{ForceUnit, UnitType};
 use faultline_types::ids::{
-    EventId, FactionId, ForceId, InfraId, InstitutionId, RegionId, TechCardId,
+    DefenderRoleId, EventId, FactionId, ForceId, InfraId, InstitutionId, RegionId, TechCardId,
 };
 use faultline_types::politics::PoliticalClimate;
 use faultline_types::stats::StateSnapshot;
@@ -42,6 +42,102 @@ pub struct SimulationState {
     /// [`Self::push_metric_snapshot`].
     #[serde(default)]
     pub metric_history: Vec<MetricSnapshot>,
+    /// Per-(faction, role) defender investigative queue state (Epic K).
+    /// Empty when no scenario faction declares `defender_capacities`;
+    /// the campaign phase skips its queue-service step entirely in
+    /// that case so legacy scenarios pay zero overhead.
+    #[serde(default)]
+    pub defender_queues: BTreeMap<FactionId, BTreeMap<DefenderRoleId, DefenderQueueState>>,
+}
+
+/// Per-tick mutable state for one defender role's investigative queue.
+///
+/// All counters are cumulative across the run; the post-run report
+/// derives utilization / max-depth / time-to-saturation from these.
+/// `service_accumulator` lets sub-unit service rates work without
+/// rounding (rate = 0.5 means one item every two ticks).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderQueueState {
+    /// Current items waiting in the queue.
+    pub depth: u32,
+    /// Capacity threshold copied from the scenario for cheap saturation
+    /// checks — avoids resolving the role definition on the hot path.
+    pub capacity: u32,
+    pub service_rate: f64,
+    /// Carries fractional service across ticks so sub-1.0 rates
+    /// produce the right long-run throughput.
+    pub service_accumulator: f64,
+    /// Lifetime totals for analyst reporting.
+    pub total_enqueued: u64,
+    pub total_serviced: u64,
+    pub total_dropped: u64,
+    pub max_depth: u32,
+    /// Sum of `depth` across observed ticks — divide by
+    /// `ticks_observed` for mean utilization.
+    pub total_depth_sum: u64,
+    pub ticks_observed: u32,
+    /// Tick at which `depth >= capacity` first became true. `None`
+    /// when never saturated; the run is right-censored for the
+    /// time-to-saturation analytic.
+    pub first_saturated_at: Option<u32>,
+    /// Detection rolls suppressed by saturation: original probability
+    /// would have fired but the saturated multiplier did not. Pure
+    /// post-hoc count, computed from a single uniform draw per roll
+    /// (see `campaign::roll_detection_with_capacity`) so determinism
+    /// is preserved.
+    pub shadow_detections: u32,
+}
+
+impl DefenderQueueState {
+    pub fn new(capacity: u32, service_rate: f64) -> Self {
+        Self {
+            depth: 0,
+            capacity,
+            service_rate,
+            service_accumulator: 0.0,
+            total_enqueued: 0,
+            total_serviced: 0,
+            total_dropped: 0,
+            max_depth: 0,
+            total_depth_sum: 0,
+            ticks_observed: 0,
+            first_saturated_at: None,
+            shadow_detections: 0,
+        }
+    }
+
+    /// Whether the queue is at or above its declared capacity.
+    pub fn is_saturated(&self) -> bool {
+        self.depth >= self.capacity
+    }
+
+    /// Drain up to `service_rate` items, carrying fractional capacity
+    /// across ticks via `service_accumulator`. Returns the number of
+    /// items actually serviced this tick.
+    pub fn service(&mut self) -> u32 {
+        if self.service_rate <= 0.0 || self.depth == 0 {
+            return 0;
+        }
+        self.service_accumulator += self.service_rate;
+        // Floor + take. Using floor (not round) avoids occasional
+        // double-count rounding when rate fractional part > 0.5 — the
+        // accumulator carries the leftover into the next tick.
+        let mut to_serve = self.service_accumulator.floor() as u64;
+        if to_serve == 0 {
+            return 0;
+        }
+        let depth_u64 = u64::from(self.depth);
+        if to_serve > depth_u64 {
+            to_serve = depth_u64;
+        }
+        // Subtract whole-units serviced from the accumulator;
+        // never negative because we floored it.
+        self.service_accumulator -= to_serve as f64;
+        let to_serve_u32 = u32::try_from(to_serve).unwrap_or(u32::MAX);
+        self.depth -= to_serve_u32;
+        self.total_serviced += u64::from(to_serve_u32);
+        to_serve_u32
+    }
 }
 
 /// One row of the rolling metric history. Captured at the end of each

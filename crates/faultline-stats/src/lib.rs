@@ -130,6 +130,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             seam_scores: BTreeMap::new(),
             correlation_matrix: None,
             pareto_frontier: None,
+            defender_capacity: Vec::new(),
         };
     }
 
@@ -280,6 +281,10 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     let correlation_matrix = time_dynamics::output_correlation_matrix(runs, scenario);
     let pareto_frontier = time_dynamics::pareto_frontier(runs, scenario);
 
+    // Defender capacity rollup (Epic K). Pure post-processing of
+    // per-run queue reports; preserves determinism.
+    let defender_capacity = compute_defender_capacity_summary(runs);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -293,7 +298,100 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         seam_scores,
         correlation_matrix,
         pareto_frontier,
+        defender_capacity,
     }
+}
+
+/// Aggregate per-(faction, role) defender queue analytics across runs.
+///
+/// Pure post-processing over the per-run [`DefenderQueueReport`]s the
+/// engine emitted — no re-runs, no new RNG draws, so the rollup is
+/// fully determined by the same `(scenario, seed)` inputs that
+/// produced the runs themselves.
+///
+/// `time_to_saturation` is right-censored: runs where the queue never
+/// hit capacity contribute to `right_censored` rather than being
+/// treated as instant or infinite saturation. The shape mirrors
+/// [`time_dynamics::time_to_first_detection`] so report renderers can
+/// reuse the same "right-censored distribution" template.
+fn compute_defender_capacity_summary(
+    runs: &[RunResult],
+) -> Vec<faultline_types::stats::DefenderCapacitySummary> {
+    use faultline_types::stats::{DefenderCapacitySummary, TimeToSaturation};
+
+    if runs.is_empty() {
+        return Vec::new();
+    }
+
+    // Group reports by (faction, role) — preserve `BTreeMap` ordering
+    // so output is deterministic.
+    let mut grouped: BTreeMap<
+        (FactionId, faultline_types::ids::DefenderRoleId),
+        Vec<&faultline_types::stats::DefenderQueueReport>,
+    > = BTreeMap::new();
+    for run in runs {
+        for report in &run.defender_queue_reports {
+            grouped
+                .entry((report.faction.clone(), report.role.clone()))
+                .or_default()
+                .push(report);
+        }
+    }
+
+    let mut out = Vec::new();
+    for ((faction, role), reports) in grouped {
+        let n = reports.len() as f64;
+        let n_runs = u32::try_from(reports.len()).unwrap_or(u32::MAX);
+        let capacity = reports.iter().map(|r| r.capacity).max().unwrap_or(0);
+
+        let mean_utilization = reports.iter().map(|r| r.utilization).sum::<f64>() / n;
+        let max_utilization = reports
+            .iter()
+            .map(|r| r.utilization)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
+        let mean_max_depth = reports.iter().map(|r| f64::from(r.max_depth)).sum::<f64>() / n;
+        let mean_dropped = reports.iter().map(|r| r.total_dropped as f64).sum::<f64>() / n;
+        let mean_shadow_detections = reports
+            .iter()
+            .map(|r| f64::from(r.shadow_detections))
+            .sum::<f64>()
+            / n;
+
+        let mut sat_samples: Vec<u32> = reports
+            .iter()
+            .filter_map(|r| r.time_to_saturation)
+            .collect();
+        sat_samples.sort_unstable();
+        let saturated_runs = u32::try_from(sat_samples.len()).unwrap_or(u32::MAX);
+        let right_censored = n_runs.saturating_sub(saturated_runs);
+        let stats = if sat_samples.is_empty() {
+            None
+        } else {
+            let as_f64: Vec<f64> = sat_samples.iter().map(|t| f64::from(*t)).collect();
+            Some(compute_distribution_inner(&as_f64, None))
+        };
+        let time_to_saturation = TimeToSaturation {
+            saturated_runs,
+            right_censored,
+            samples: sat_samples,
+            stats,
+        };
+
+        out.push(DefenderCapacitySummary {
+            faction,
+            role,
+            capacity,
+            n_runs,
+            mean_utilization,
+            max_utilization,
+            mean_max_depth,
+            mean_dropped,
+            mean_shadow_detections,
+            time_to_saturation,
+        });
+    }
+    out
 }
 
 /// Aggregate per-kill-chain statistics across runs.
@@ -830,6 +928,7 @@ mod tests {
             snapshots: vec![],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         }
     }
 
@@ -1016,6 +1115,7 @@ mod tests {
             snapshots: vec![],
             event_log,
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         }
     }
 
@@ -1549,6 +1649,7 @@ mod tests {
             diplomacy: vec![],
             doctrine: Doctrine::Conventional,
             escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
         }
     }
 }

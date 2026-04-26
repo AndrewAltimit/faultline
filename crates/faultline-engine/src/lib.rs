@@ -78,7 +78,45 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Defender capacity references (Epic K): every (faction, role)
+    // named by `gated_by_defender` or `defender_noise` on a kill-chain
+    // phase must resolve to a declared `defender_capacities` entry.
+    // Catching this at load time turns a silent "queue not found, no
+    // gating, no enqueue" runtime no-op into a loud configuration
+    // error.
+    for chain in scenario.kill_chains.values() {
+        for phase in chain.phases.values() {
+            if let Some(rr) = &phase.gated_by_defender
+                && !defender_role_exists(scenario, &rr.faction, &rr.role)
+            {
+                return Err(ScenarioError::UnknownDefenderRole {
+                    faction: rr.faction.clone(),
+                    role: rr.role.clone(),
+                });
+            }
+            for noise in &phase.defender_noise {
+                if !defender_role_exists(scenario, &noise.defender, &noise.role) {
+                    return Err(ScenarioError::UnknownDefenderRole {
+                        faction: noise.defender.clone(),
+                        role: noise.role.clone(),
+                    });
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn defender_role_exists(
+    scenario: &Scenario,
+    faction: &faultline_types::ids::FactionId,
+    role: &faultline_types::ids::DefenderRoleId,
+) -> bool {
+    scenario
+        .factions
+        .get(faction)
+        .is_some_and(|f| f.defender_capacities.contains_key(role))
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +178,7 @@ mod tests {
                 diplomacy: vec![],
                 doctrine: Doctrine::Conventional,
                 escalation_rules: None,
+                defender_capacities: BTreeMap::new(),
             },
         );
 

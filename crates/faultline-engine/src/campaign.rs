@@ -10,9 +10,11 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use faultline_types::campaign::{
-    BranchCondition, CampaignPhase, EscalationMetric, KillChain, PhaseOutput, ThresholdDirection,
+    BranchCondition, CampaignPhase, DefenderRoleRef, EscalationMetric, KillChain, PhaseOutput,
+    ThresholdDirection,
 };
-use faultline_types::ids::{KillChainId, PhaseId, RegionId};
+use faultline_types::faction::OverflowPolicy;
+use faultline_types::ids::{DefenderRoleId, FactionId, KillChainId, PhaseId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{CampaignReport, PhaseOutcome};
 
@@ -171,13 +173,31 @@ pub fn initialize_campaigns(scenario: &Scenario) -> BTreeMap<KillChainId, Campai
 
 /// Advance all in-flight kill chains by one tick.
 ///
-/// * Activates `Pending` phases whose prerequisites are satisfied
-///   (entry phase is always activatable).
-/// * Rolls per-tick detection against active phases.
-/// * Resolves phases whose duration has elapsed: rolls success against
-///   `base_success_probability + prerequisite_success_boost * succeeded_prereqs`.
-/// * Applies `PhaseOutput`s to world state on success.
-/// * Evaluates branches and activates the next phase if matched.
+/// Per-tick order is **arrive → assess → service**, which mirrors
+/// how a real SOC shift actually unfolds: alerts pile up first, the
+/// analyst sees the current backlog, then they spend the shift
+/// working through it.
+///
+/// 1. For each chain, activate eligible pending phases.
+/// 2. For each active phase, in this order: enqueue the phase's
+///    `defender_noise` so the saturation check below reads post-
+///    arrival depth; then roll detection against that depth (when a
+///    phase declares `gated_by_defender` and the queue is at capacity,
+///    detection probability is multiplied by the role's
+///    `saturated_detection_factor`, with a single uniform draw
+///    covering both the actual roll and the "shadow detection"
+///    bookkeeping — a draw below the unattenuated `dp` but above the
+///    saturated `dp` counts as a shadow detection); then run
+///    completion / branching as usual.
+/// 3. **Service** every defender queue once at its declared per-tick
+///    rate. Done at end-of-tick so a noise-flooded queue stays at
+///    saturation through *this tick's* detection rolls — that
+///    persistence is what reproduces the alert-fatigue effect when
+///    a sequential phase 2 inherits the backlog phase 1 created.
+/// 4. **Sample** per-queue stats (max-depth, first-saturation tick,
+///    rolling depth-sum for mean utilization). Sampled after service
+///    so the depth-sum reflects the post-service residual the
+///    defender carries into the next shift.
 pub fn campaign_phase(
     state: &mut SimulationState,
     scenario: &Scenario,
@@ -213,7 +233,18 @@ pub fn campaign_phase(
                 None => continue,
             };
 
-            // Detection roll.
+            // Enqueue this phase's noise *before* the detection roll
+            // so the saturation check reads the post-arrival depth.
+            // See `campaign_phase`'s docstring for why this ordering
+            // matters for the alert-fatigue archetype.
+            enqueue_phase_noise(state, scenario, phase, rng);
+
+            // Detection roll. The unattenuated `dp` is used for
+            // accumulating exposure (the attribution / detection-rate
+            // analytics still report the operation's intrinsic
+            // visibility, independent of load), while the load-
+            // adjusted draw decides whether the defender actually
+            // catches it this tick.
             let dp = phase.detection_probability_per_tick;
             if dp > 0.0 {
                 let prev = campaign
@@ -226,7 +257,21 @@ pub fn campaign_phase(
                     .detection_accumulation
                     .insert(pid.clone(), new_accum);
 
-                if rng.r#gen::<f64>() < dp {
+                let saturated_factor =
+                    saturated_factor_for(state, scenario, phase.gated_by_defender.as_ref());
+                let effective_dp = (dp * saturated_factor).clamp(0.0, 1.0);
+                let draw: f64 = rng.r#gen();
+                let detected = draw < effective_dp;
+                let shadow = !detected && draw < dp;
+
+                if let Some(role_ref) = phase.gated_by_defender.as_ref()
+                    && shadow
+                    && let Some(q) = queue_mut(state, &role_ref.faction, &role_ref.role)
+                {
+                    q.shadow_detections += 1;
+                }
+
+                if detected {
                     campaign
                         .phase_status
                         .insert(pid.clone(), PhaseStatus::Detected { tick: state.tick });
@@ -296,6 +341,15 @@ pub fn campaign_phase(
             }
         }
     }
+
+    // Step 3: end-of-tick service. Drain whatever the analysts could
+    // get to this shift; whatever's left is tomorrow's backlog.
+    service_all_queues(state);
+
+    // Step 4: sample queue depth and update saturation timestamps.
+    // Done after service so the depth-sample reflects post-service
+    // residual rather than the briefly-elevated post-enqueue peak.
+    sample_queue_stats(state);
 }
 
 fn activate_ready_phases(
@@ -548,6 +602,178 @@ fn damage_infra_in_region(
 }
 
 // ---------------------------------------------------------------------------
+// Defender capacity / queue dynamics (Epic K)
+// ---------------------------------------------------------------------------
+
+/// Drain every defender queue once per tick at its declared service
+/// rate. No-op when the scenario declares no `defender_capacities`.
+fn service_all_queues(state: &mut SimulationState) {
+    for roles in state.defender_queues.values_mut() {
+        for q in roles.values_mut() {
+            q.service();
+        }
+    }
+}
+
+/// Look up a queue by `(faction, role)`. Returns `None` when the
+/// faction has no defender capacities or the role is unknown — the
+/// engine treats those as "no gating" rather than erroring, since
+/// scenario validation already rejected references to undeclared
+/// roles at load time.
+fn queue_mut<'a>(
+    state: &'a mut SimulationState,
+    faction: &FactionId,
+    role: &DefenderRoleId,
+) -> Option<&'a mut crate::state::DefenderQueueState> {
+    state
+        .defender_queues
+        .get_mut(faction)
+        .and_then(|roles| roles.get_mut(role))
+}
+
+/// Resolve the saturated-detection multiplier for a phase that names a
+/// defender role.
+///
+/// Returns `1.0` (no penalty) when the phase doesn't declare
+/// `gated_by_defender`, the named faction or role is missing from the
+/// runtime state, or the queue is below capacity. Otherwise returns
+/// the role's `saturated_detection_factor` from the scenario.
+fn saturated_factor_for(
+    state: &SimulationState,
+    scenario: &Scenario,
+    role_ref: Option<&DefenderRoleRef>,
+) -> f64 {
+    let Some(rr) = role_ref else {
+        return 1.0;
+    };
+    let Some(roles) = state.defender_queues.get(&rr.faction) else {
+        return 1.0;
+    };
+    let Some(q) = roles.get(&rr.role) else {
+        return 1.0;
+    };
+    if !q.is_saturated() {
+        return 1.0;
+    }
+    scenario
+        .factions
+        .get(&rr.faction)
+        .and_then(|f| f.defender_capacities.get(&rr.role))
+        .map_or(1.0, |cap| cap.saturated_detection_factor)
+}
+
+/// Push synthetic work items into defender queues for one active
+/// phase. Items are sampled from a Poisson distribution with mean
+/// `items_per_tick`; the engine RNG is the source so determinism
+/// holds bit-for-bit. Called per-phase from the campaign tick *before*
+/// that phase's detection roll, so the saturation check reads the
+/// post-arrival depth.
+fn enqueue_phase_noise(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    phase: &CampaignPhase,
+    rng: &mut impl Rng,
+) {
+    for noise in &phase.defender_noise {
+        let count = sample_poisson(rng, noise.items_per_tick.max(0.0));
+        if count == 0 {
+            continue;
+        }
+        let policy = scenario
+            .factions
+            .get(&noise.defender)
+            .and_then(|f| f.defender_capacities.get(&noise.role))
+            .map(|cap| cap.overflow)
+            .unwrap_or(OverflowPolicy::DropNew);
+        if let Some(q) = queue_mut(state, &noise.defender, &noise.role) {
+            enqueue_with_policy(q, count, policy);
+        }
+    }
+}
+
+/// Apply `count` enqueues to `q` under `policy`. Updates lifetime
+/// counters for both successful enqueues and dropped items.
+fn enqueue_with_policy(
+    q: &mut crate::state::DefenderQueueState,
+    count: u32,
+    policy: OverflowPolicy,
+) {
+    q.total_enqueued += u64::from(count);
+    if q.capacity == 0 {
+        // Degenerate: a role with capacity 0 drops everything regardless.
+        q.total_dropped += u64::from(count);
+        return;
+    }
+    match policy {
+        OverflowPolicy::DropNew => {
+            let headroom = q.capacity.saturating_sub(q.depth);
+            let accepted = count.min(headroom);
+            let dropped = count - accepted;
+            q.depth += accepted;
+            q.total_dropped += u64::from(dropped);
+        },
+        OverflowPolicy::DropOldest => {
+            // Oldest-eviction in a depth-only queue (no per-item
+            // identity) collapses to: accept up to capacity, count
+            // the rest as effective drops of older items. Net depth
+            // never exceeds capacity.
+            let new_depth = q.capacity.min(q.depth.saturating_add(count));
+            let dropped_count = (q.depth + count).saturating_sub(new_depth);
+            q.total_dropped += u64::from(dropped_count);
+            q.depth = new_depth;
+        },
+        OverflowPolicy::Backlog => {
+            q.depth = q.depth.saturating_add(count);
+        },
+    }
+}
+
+/// Inverse-transform Poisson sampling. Used over the `rand_distr`
+/// crate so the engine doesn't pick up a new dependency just for
+/// this one variate. For the small means we sample (typically `< 50`)
+/// the simple Knuth method is both correct and faster than the
+/// rejection-based variants in `rand_distr`.
+fn sample_poisson(rng: &mut impl Rng, mean: f64) -> u32 {
+    if mean <= 0.0 || !mean.is_finite() {
+        return 0;
+    }
+    let l = (-mean).exp();
+    let mut k: u32 = 0;
+    let mut p: f64 = 1.0;
+    loop {
+        k += 1;
+        p *= rng.r#gen::<f64>();
+        if p <= l {
+            return k - 1;
+        }
+        // Defensive cap: at extreme means, the loop is bounded
+        // anyway (E[k] = mean), but a stuck draw under arithmetic
+        // pathologies returns the mean rather than spinning.
+        if k > 100_000 {
+            return mean as u32;
+        }
+    }
+}
+
+/// At the end of the tick: update `max_depth`, `first_saturated_at`,
+/// and the running depth-sum used for mean-utilization reporting.
+fn sample_queue_stats(state: &mut SimulationState) {
+    let tick = state.tick;
+    for roles in state.defender_queues.values_mut() {
+        for q in roles.values_mut() {
+            q.ticks_observed = q.ticks_observed.saturating_add(1);
+            q.total_depth_sum = q.total_depth_sum.saturating_add(u64::from(q.depth));
+            if q.depth > q.max_depth {
+                q.max_depth = q.depth;
+            }
+            if q.is_saturated() && q.first_saturated_at.is_none() {
+                q.first_saturated_at = Some(tick);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests for EscalationThreshold (Epic C)
 // ---------------------------------------------------------------------------
 
@@ -662,5 +888,123 @@ mod escalation_tests {
             ThresholdDirection::Above,
             1,
         ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests for defender capacity / queue dynamics (Epic K)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+    use crate::state::DefenderQueueState;
+
+    fn q(capacity: u32, service_rate: f64) -> DefenderQueueState {
+        DefenderQueueState::new(capacity, service_rate)
+    }
+
+    #[test]
+    fn enqueue_drop_new_caps_at_depth_and_counts_dropped() {
+        // DropNew: queue saturates at capacity, excess counted as dropped.
+        let mut s = q(10, 1.0);
+        enqueue_with_policy(&mut s, 7, OverflowPolicy::DropNew);
+        assert_eq!(s.depth, 7);
+        assert_eq!(s.total_dropped, 0);
+        // Pushing 5 more — only 3 fit, 2 are dropped.
+        enqueue_with_policy(&mut s, 5, OverflowPolicy::DropNew);
+        assert_eq!(s.depth, 10);
+        assert_eq!(s.total_dropped, 2);
+        assert_eq!(s.total_enqueued, 12);
+    }
+
+    #[test]
+    fn enqueue_backlog_grows_unbounded_no_drops() {
+        // Backlog: depth grows past capacity, total_dropped stays 0.
+        let mut s = q(10, 1.0);
+        enqueue_with_policy(&mut s, 50, OverflowPolicy::Backlog);
+        assert_eq!(s.depth, 50);
+        assert_eq!(s.total_dropped, 0);
+        assert!(
+            s.is_saturated(),
+            "backlog depth above capacity is saturated"
+        );
+    }
+
+    #[test]
+    fn enqueue_drop_oldest_caps_at_depth_treats_evictions_as_drops() {
+        // DropOldest in a depth-only queue: depth caps at capacity,
+        // any enqueues past capacity count as evictions of older
+        // items.
+        let mut s = q(10, 1.0);
+        enqueue_with_policy(&mut s, 8, OverflowPolicy::DropOldest);
+        assert_eq!(s.depth, 8);
+        // Push 5 more — depth caps at 10, 3 evicted.
+        enqueue_with_policy(&mut s, 5, OverflowPolicy::DropOldest);
+        assert_eq!(s.depth, 10);
+        assert_eq!(s.total_dropped, 3);
+    }
+
+    #[test]
+    fn service_drains_at_declared_rate() {
+        let mut s = q(100, 5.0);
+        s.depth = 50;
+        let drained = s.service();
+        assert_eq!(drained, 5);
+        assert_eq!(s.depth, 45);
+        assert_eq!(s.total_serviced, 5);
+    }
+
+    #[test]
+    fn service_accumulator_carries_fractional_rate_across_ticks() {
+        // service_rate = 0.5 means one item every two ticks. Without
+        // accumulator carry the queue would never drain.
+        let mut s = q(100, 0.5);
+        s.depth = 10;
+        assert_eq!(s.service(), 0, "tick 1: accumulator at 0.5, no whole");
+        assert_eq!(s.depth, 10);
+        assert_eq!(s.service(), 1, "tick 2: accumulator at 1.0, drains 1");
+        assert_eq!(s.depth, 9);
+        assert_eq!(s.service(), 0, "tick 3: accumulator at 0.5 again");
+        assert_eq!(s.depth, 9);
+    }
+
+    #[test]
+    fn service_clamps_to_remaining_depth() {
+        // service rate 100 against depth 3 only drains 3, not 100.
+        let mut s = q(50, 100.0);
+        s.depth = 3;
+        assert_eq!(s.service(), 3);
+        assert_eq!(s.depth, 0);
+    }
+
+    #[test]
+    fn poisson_sampler_returns_zero_for_zero_mean() {
+        let mut rng = seeded_rng(42);
+        for _ in 0..50 {
+            assert_eq!(sample_poisson(&mut rng, 0.0), 0);
+        }
+    }
+
+    #[test]
+    fn poisson_sampler_mean_matches_input_in_aggregate() {
+        // 5000 Poisson(10) draws should average ≈ 10. Loose bound
+        // because variance of Poisson(10) is 10 — a few percent
+        // deviation is expected even at large N.
+        let mut rng = seeded_rng(123);
+        let mut total = 0u64;
+        for _ in 0..5000 {
+            total += u64::from(sample_poisson(&mut rng, 10.0));
+        }
+        let mean = total as f64 / 5000.0;
+        assert!(
+            (mean - 10.0).abs() < 0.5,
+            "Poisson(10) mean over 5000 draws should be near 10, got {mean}"
+        );
+    }
+
+    fn seeded_rng(seed: u64) -> rand_chacha::ChaCha8Rng {
+        use rand::SeedableRng;
+        rand_chacha::ChaCha8Rng::seed_from_u64(seed)
     }
 }

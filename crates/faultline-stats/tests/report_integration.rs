@@ -70,6 +70,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         diplomacy: vec![],
         doctrine: Doctrine::Conventional,
         escalation_rules: None,
+        defender_capacities: BTreeMap::new(),
     }
 }
 
@@ -148,6 +149,8 @@ fn flagged_chain_scenario() -> Scenario {
             }],
             parameter_confidence: Some(ConfidenceLevel::Low),
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
     phases.insert(
@@ -174,6 +177,8 @@ fn flagged_chain_scenario() -> Scenario {
             branches: vec![],
             parameter_confidence: None,
             warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
         },
     );
 

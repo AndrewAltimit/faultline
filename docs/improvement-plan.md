@@ -378,21 +378,50 @@ a first-class engine primitive and unlocks scenario classes the kill-
 chain primitive can't naturally express ("Process DoS", verification
 overload, alert-fatigue suppression of true positives).
 
-- [ ] `DefenderCapacity` schema — per-defender-role queue depth, mean
-      service rate, and overflow behavior (drop-oldest / drop-random /
-      backlog)
-- [ ] Phase outputs can enqueue defender work (e.g. "this phase
-      generates N synthetic tips per tick")
-- [ ] Queue-depth-dependent detection probability: a saturated queue
-      drops detection rate
-- [ ] Report: per-defender utilization curves, time-to-saturation
-      histograms, "shadow detections" (true positives that arrived
-      while the queue was full and got dropped)
-- [ ] Scenario archetypes: alert-fatigue, FOIA volume attack, forensic
-      inspection backlog under mass-incident response
+- [x] `DefenderCapacity` schema — per-defender-role queue depth, mean
+      service rate, and overflow behavior (`DropNew` / `DropOldest` /
+      `Backlog`)
+- [x] Phase outputs can enqueue defender work (e.g. "this phase
+      generates N synthetic tips per tick") — modeled as
+      `CampaignPhase.defender_noise` with per-active-tick Poisson
+      sampling against the engine RNG
+- [x] Queue-depth-dependent detection probability: a saturated queue
+      multiplies the per-tick detection roll by the role's
+      `saturated_detection_factor`, surfaced via the new
+      `gated_by_defender` field on `CampaignPhase`
+- [x] Report: per-defender utilization, time-to-saturation
+      distribution, "shadow detections" (true positives suppressed by
+      saturation — caught at idle, missed under load); per-run shape
+      on `RunResult.defender_queue_reports`, cross-run rollup on
+      `MonteCarloSummary.defender_capacity`
+- [x] Scenario archetypes: alert-fatigue (shipped:
+      `scenarios/alert_fatigue_soc.toml`); FOIA volume attack and
+      forensic inspection backlog left for follow-up scenarios using
+      the same primitives
 
-**Status:** deferred. Bridges the engine into non-kinetic threat
-classes that the projection-style assessments analyze.
+**Status:** Epic K **closed**. Single PR (branch
+`epic-k-capacity-queues`) added the `DefenderCapacity` /
+`OverflowPolicy` schema on `Faction`, the `defender_noise` and
+`gated_by_defender` fields on `CampaignPhase`, runtime queue state
+on `SimulationState.defender_queues`, the per-tick **arrive →
+assess → service** ordering in
+`crates/faultline-engine/src/campaign.rs::campaign_phase` (enqueue
+noise, then roll detection against post-arrival depth, then drain
+the queue at end-of-tick), and a deterministic Knuth Poisson
+sampler so the noise volume is RNG-deterministic under the same
+seed. Saturation gating uses a single uniform draw covering both
+the actual detection roll and the shadow-detection bookkeeping —
+draws below the unattenuated `dp` but above the saturated `dp`
+count as shadow detections, captured per-queue in `shadow_detections`
+and aggregated into `mean_shadow_detections` on the cross-run
+summary. Validation rejects unknown `(faction, role)` references at
+load time so author typos don't silently no-op. The `alert_fatigue_soc`
+bundled scenario produces ~85% tier-1 saturation, ~0.4 mean shadow
+detections per run, and a measurable red-win-rate uplift over the
+no-fatigue baseline — proving the mechanism is observable in the
+report. All 10 bundled scenarios still verify bit-identical via the
+manifest determinism contract; cargo deny / clippy / fmt /
+verify-bundled / verify-migration / grep-guard all clean.
 
 ### Epic L — Network & graph primitives
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{FactionId, ForceId, InstitutionId, RegionId, TechCardId};
+use crate::ids::{DefenderRoleId, FactionId, ForceId, InstitutionId, RegionId, TechCardId};
 use crate::strategy::Doctrine;
 
 /// A participant in the simulation.
@@ -33,6 +33,75 @@ pub struct Faction {
     /// assumes the faction would violate its own doctrine.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escalation_rules: Option<EscalationRules>,
+    /// Defender-side capacity model: per-role investigative queues
+    /// constraining how fast this faction can process incoming alerts /
+    /// tips / forensic work. Empty = legacy infinite-capacity assumption
+    /// (every detection roll is independent and unaffected by other
+    /// in-flight work). When kill-chain phases reference roles via
+    /// `gated_by_defender` or `defender_noise`, the engine maintains
+    /// per-role queues with deterministic FIFO service and applies the
+    /// `saturated_detection_factor` penalty when a queue is at depth.
+    /// Enables alert-fatigue, FOIA-flood, and forensic-backlog
+    /// scenarios; see `docs/scenario_schema.md` for the full model.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub defender_capacities: BTreeMap<DefenderRoleId, DefenderCapacity>,
+}
+
+/// One defender role with bounded investigative throughput.
+///
+/// The model is a single-server queue with discrete capacity and a
+/// fractional-rate accumulator: `service_rate = 0.5` services one item
+/// every two ticks. Items past `queue_depth` are handled per
+/// [`OverflowPolicy`]. When the queue is at full saturation, any
+/// kill-chain phase whose `gated_by_defender` names this role suffers a
+/// detection-probability multiplier of `saturated_detection_factor` —
+/// modelling alert fatigue, where a swamped SOC misses real signal even
+/// if it would have caught it idle.
+///
+/// All fields are serde-default-aware so a partial scenario edit (e.g.
+/// adding only `queue_depth` and `service_rate`) loads cleanly.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DefenderCapacity {
+    pub id: DefenderRoleId,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Maximum queue depth before [`OverflowPolicy`] applies.
+    pub queue_depth: u32,
+    /// Mean items serviced per tick. Fractional rates accumulate
+    /// (`0.5` = one item every two ticks). Must be `>= 0`.
+    pub service_rate: f64,
+    /// Behavior when an enqueue would exceed `queue_depth`.
+    #[serde(default)]
+    pub overflow: OverflowPolicy,
+    /// Detection-probability multiplier applied to phases gated by this
+    /// role when the queue is at full capacity. `1.0` = no penalty
+    /// (legacy behavior). Realistic alert-fatigue values are `0.2`–
+    /// `0.5`; the published SOC-effectiveness literature consistently
+    /// reports a 50–80% drop in true-positive rates under sustained
+    /// queue saturation.
+    #[serde(default = "default_saturated_factor")]
+    pub saturated_detection_factor: f64,
+}
+
+/// What the queue does when an enqueue would overflow `queue_depth`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OverflowPolicy {
+    /// Refuse the new item — most realistic for SOC alert pipes where
+    /// a full ticket queue silently drops the next page. Default.
+    #[default]
+    DropNew,
+    /// Evict the oldest queued item to make room. Models cache-style
+    /// alert systems and cookie-jar-bounded forensic pipelines.
+    DropOldest,
+    /// No drops — the queue grows unbounded past `queue_depth`. Use
+    /// only when the work is genuinely unbounded (FOIA backlog, court
+    /// calendar) and you want to track how far it gets behind.
+    Backlog,
+}
+
+fn default_saturated_factor() -> f64 {
+    1.0
 }
 
 /// A scenario-author-asserted escalation ladder for a faction.

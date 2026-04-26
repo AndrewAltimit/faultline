@@ -39,3 +39,4 @@ define_id!(SegmentId);
 define_id!(KillChainId);
 define_id!(PhaseId);
 define_id!(DomainId);
+define_id!(DefenderRoleId);

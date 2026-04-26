@@ -34,6 +34,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         snapshots: deltas,
         event_log: run.event_log.clone(),
         campaign_reports: run.campaign_reports.clone(),
+        defender_queue_reports: run.defender_queue_reports.clone(),
     }
 }
 
@@ -60,6 +61,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         snapshots,
         event_log: encoded.event_log.clone(),
         campaign_reports: encoded.campaign_reports.clone(),
+        defender_queue_reports: encoded.defender_queue_reports.clone(),
     }
 }
 
@@ -248,6 +250,7 @@ mod tests {
             snapshots: vec![snap],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -305,6 +308,7 @@ mod tests {
             snapshots: vec![snap1.clone(), snap2.clone(), snap3.clone()],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -358,6 +362,7 @@ mod tests {
             snapshots: vec![snap1, snap2.clone()],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -382,6 +387,7 @@ mod tests {
             snapshots: vec![snap1, snap2],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -424,6 +430,7 @@ mod tests {
             snapshots: vec![snap],
             event_log: event_log.clone(),
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -507,6 +514,7 @@ mod tests {
             snapshots: vec![snap1, snap2],
             event_log: vec![],
             campaign_reports: Default::default(),
+            defender_queue_reports: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

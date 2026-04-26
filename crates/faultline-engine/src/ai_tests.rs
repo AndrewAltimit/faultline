@@ -119,6 +119,7 @@ fn make_ai_test_state() -> SimulationState {
         snapshots: vec![],
         non_kinetic: Default::default(),
         metric_history: vec![],
+        defender_queues: BTreeMap::new(),
     }
 }
 

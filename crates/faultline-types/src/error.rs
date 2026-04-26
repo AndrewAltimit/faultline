@@ -1,4 +1,6 @@
-use crate::ids::{EventId, FactionId, InfraId, InstitutionId, RegionId, TechCardId, VictoryId};
+use crate::ids::{
+    DefenderRoleId, EventId, FactionId, InfraId, InstitutionId, RegionId, TechCardId, VictoryId,
+};
 
 /// Errors arising from scenario validation.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -67,6 +69,12 @@ pub enum ScenarioError {
 
     #[error("event chain cycle detected starting at: {0}")]
     EventChainCycle(EventId),
+
+    #[error("kill chain phase references unknown defender role: faction={faction} role={role}")]
+    UnknownDefenderRole {
+        faction: FactionId,
+        role: DefenderRoleId,
+    },
 
     #[error("{0}")]
     Custom(String),
