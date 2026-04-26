@@ -51,11 +51,15 @@ pub struct StrategySpace {
 }
 
 impl StrategySpace {
-    /// `true` when the scenario declared no decision variables — the
-    /// most common shape, since strategy search is opt-in. Used by the
-    /// CLI and validator to short-circuit search-mode dispatch.
+    /// `true` when nothing useful is declared — neither variables nor
+    /// objectives. Used as the `skip_serializing_if` predicate on
+    /// `Scenario.strategy_space`, so a programmatically-constructed
+    /// space with embedded `objectives` but no `variables` still
+    /// round-trips through TOML/JSON instead of being silently dropped
+    /// (the runner's "no variables to search" error is the right place
+    /// to reject that shape, not the serializer).
     pub fn is_empty(&self) -> bool {
-        self.variables.is_empty()
+        self.variables.is_empty() && self.objectives.is_empty()
     }
 }
 
@@ -228,5 +232,31 @@ mod tests {
     fn empty_strategy_space_is_empty() {
         let s = StrategySpace::default();
         assert!(s.is_empty());
+    }
+
+    #[test]
+    fn space_with_only_objectives_is_not_empty() {
+        // Regression: previously `is_empty` only checked `variables`,
+        // which meant a programmatically-built space with embedded
+        // objectives but no variables would be skipped on serialize.
+        // The serializer skips only when nothing useful is declared.
+        let s = StrategySpace {
+            variables: Vec::new(),
+            objectives: vec![SearchObjective::MinimizeDuration],
+        };
+        assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn space_with_only_objectives_round_trips_through_json() {
+        // Pin the round-trip: serialize → deserialize must preserve
+        // the objectives list even with no variables.
+        let s = StrategySpace {
+            variables: Vec::new(),
+            objectives: vec![SearchObjective::MinimizeDuration],
+        };
+        let json = serde_json::to_string(&s).expect("serialize");
+        let parsed: StrategySpace = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed, s);
     }
 }

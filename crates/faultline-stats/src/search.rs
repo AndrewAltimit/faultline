@@ -156,7 +156,10 @@ pub struct SearchResult {
 /// gets the same guarantees as the CLI path.
 pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchResult, StatsError> {
     let space = &scenario.strategy_space;
-    if space.is_empty() {
+    // Check `variables` directly rather than `StrategySpace::is_empty`:
+    // the latter returns false when only objectives are declared, but
+    // search needs at least one variable to have anything to sample.
+    if space.variables.is_empty() {
         return Err(StatsError::InvalidConfig(
             "scenario has no [strategy_space] declaration; \
              add a [strategy_space] block with at least one variable to use --search"
@@ -392,7 +395,17 @@ fn sample_grid(space: &StrategySpace, config: &SearchConfig) -> Vec<Vec<ParamOve
         // Shouldn't happen post-validation, but stay defensive.
         return Vec::new();
     }
-    let total: usize = levels.iter().map(|l| l.len()).product();
+    // Saturate the Cartesian-product size at usize::MAX. With no upper
+    // bound on per-variable `steps`, multiplying a few large counts can
+    // overflow usize and silently produce far fewer cells than the
+    // analyst requested (or panic in debug). The cap is min'd against
+    // `config.trials` immediately below, so a saturated total just means
+    // "trials wins" — which is already the correct truncation behaviour.
+    let total: usize = levels
+        .iter()
+        .map(|l| l.len())
+        .try_fold(1usize, usize::checked_mul)
+        .unwrap_or(usize::MAX);
     let cap = (config.trials as usize).min(total);
 
     let mut out = Vec::with_capacity(cap);
@@ -1194,6 +1207,55 @@ mod tests {
             values: vec![0.1, 0.5, 0.9],
         });
         assert_eq!(levels, vec![0.1, 0.5, 0.9]);
+    }
+
+    #[test]
+    fn sample_grid_saturates_on_overflowing_product() {
+        // Regression: the Cartesian-product size used to be computed
+        // with `iter().map(...).product()`, which overflows usize
+        // silently in release mode (or panics in debug). With nine
+        // discrete variables of 256 values each, the product is
+        // 256^9 = 2^72, which exceeds usize::MAX on a 64-bit target.
+        // The fix saturates the product at usize::MAX so `cap` falls
+        // back to `trials` and sampling proceeds normally.
+        let levels: Vec<f64> = (0..256).map(|i| i as f64).collect();
+        let variables: Vec<DecisionVariable> = (0..9)
+            .map(|i| DecisionVariable {
+                path: format!("synthetic.var.{i}"),
+                owner: None,
+                domain: Domain::Discrete {
+                    values: levels.clone(),
+                },
+            })
+            .collect();
+        let space = StrategySpace {
+            variables,
+            objectives: vec![],
+        };
+        let cfg = SearchConfig {
+            trials: 4,
+            method: SearchMethod::Grid,
+            search_seed: 0,
+            mc_config: MonteCarloConfig {
+                num_runs: 1,
+                seed: Some(0),
+                collect_snapshots: false,
+                parallel: false,
+            },
+            objectives: vec![SearchObjective::MinimizeDuration],
+        };
+        // Direct call to sample_grid bypasses run_search's path-resolution
+        // probe (the synthetic paths don't exist in any real scenario).
+        let cells = sample_grid(&space, &cfg);
+        assert_eq!(
+            cells.len(),
+            4,
+            "trial cap must be honored even when the product overflows"
+        );
+        // Each cell carries one value per variable.
+        for cell in &cells {
+            assert_eq!(cell.len(), 9);
+        }
     }
 
     // ----- Objective evaluation edge cases -----
