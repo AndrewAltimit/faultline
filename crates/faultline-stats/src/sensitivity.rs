@@ -433,6 +433,7 @@ mod tests {
             defender_budget: None,
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
+            strategy_space: faultline_types::strategy_space::StrategySpace::default(),
         }
     }
 

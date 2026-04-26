@@ -10,6 +10,7 @@ use crate::map::{EnvironmentSchedule, MapConfig};
 use crate::politics::PoliticalClimate;
 use crate::simulation::SimulationConfig;
 use crate::stats::ConfidenceLevel;
+use crate::strategy_space::StrategySpace;
 use crate::tech::TechCard;
 use crate::victory::VictoryCondition;
 
@@ -40,6 +41,13 @@ pub struct Scenario {
     /// byte-identical (Epic D).
     #[serde(default, skip_serializing_if = "EnvironmentSchedule::is_empty")]
     pub environment: EnvironmentSchedule,
+    /// Optional strategy-search declaration (Epic H). Names which
+    /// scenario parameters are decision variables and what domain each
+    /// can take. Consumed by the `--search` CLI mode in `faultline-cli`
+    /// and `faultline_stats::search`. Skipped from serialization when
+    /// empty so legacy scenarios stay byte-identical.
+    #[serde(default, skip_serializing_if = "StrategySpace::is_empty")]
+    pub strategy_space: StrategySpace,
 }
 
 /// Metadata about the scenario.

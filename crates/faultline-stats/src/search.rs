@@ -1,0 +1,902 @@
+//! Strategy-search runner (Epic H — round one).
+//!
+//! Given a [`StrategySpace`](faultline_types::strategy_space::StrategySpace)
+//! declaration on a scenario plus a [`SearchConfig`], evaluate `trials`
+//! candidate assignments and surface:
+//!
+//! - the best assignment per objective,
+//! - the non-dominated (Pareto) frontier across all objectives,
+//! - the per-trial Monte Carlo summaries so an analyst can drill into
+//!   any single point in the strategy space without re-running.
+//!
+//! ## Determinism contract
+//!
+//! Two seeds are deliberately separated:
+//!
+//! - `SearchConfig.search_seed` — drives random sampling of decision-
+//!   variable assignments. Identical inputs (space, method, search_seed)
+//!   always produce the same trial list.
+//! - `mc_config.seed` — drives the inner Monte Carlo evaluation of each
+//!   trial. The inner seed is **identical across trials**, so trial-to-
+//!   trial deltas are pure parameter-change effects and not sampling
+//!   noise. This mirrors the Epic B counterfactual contract (same seed,
+//!   different parameters → reproducible delta).
+//!
+//! Search-then-evaluate is bit-identical: the `search_then_evaluate_is_deterministic`
+//! test below pins this behaviour.
+//!
+//! ## Round-one scope
+//!
+//! - Random and grid sampling of continuous and discrete domains.
+//! - Single-side optimization (one space against fixed opponents). The
+//!   space's `variables` may name parameters from any faction; the
+//!   runner does not enforce a single-owner constraint, so an analyst
+//!   can also use this layer to evaluate joint-optimal postures by
+//!   listing both sides' decision variables.
+//! - Adversarial co-evolution (alternating best-response loop) and a
+//!   first-class "defender posture" specialization (Epic I) are
+//!   deferred to follow-up rounds.
+
+use std::collections::BTreeMap;
+
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
+
+use faultline_types::scenario::Scenario;
+use faultline_types::stats::{MonteCarloConfig, MonteCarloSummary};
+use faultline_types::strategy_space::{DecisionVariable, Domain, SearchObjective, StrategySpace};
+
+use crate::counterfactual::ParamOverride;
+use crate::sensitivity::set_param;
+use crate::{MonteCarloRunner, StatsError};
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// Sampling strategy for a search run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMethod {
+    /// Uniform random sampling. For continuous domains, draw uniformly
+    /// in `[low, high]`. For discrete domains, pick uniformly from
+    /// `values`. Trial count == `SearchConfig.trials`.
+    Random,
+    /// Cartesian-product grid. Continuous variables expand into `steps`
+    /// evenly-spaced values inclusive of both endpoints. Discrete
+    /// variables enumerate their `values`. The first
+    /// `SearchConfig.trials` cells of the product are evaluated, in the
+    /// natural odometer order over the variable list. When the product
+    /// is smaller than `trials`, only the available cells run; when it
+    /// is larger, the truncated head is sampled deterministically (the
+    /// last variable cycles fastest).
+    Grid,
+}
+
+/// Inputs to a strategy-search run.
+#[derive(Clone, Debug)]
+pub struct SearchConfig {
+    /// Number of trials to evaluate.
+    pub trials: u32,
+    /// Sampling strategy.
+    pub method: SearchMethod,
+    /// Seed for the search-only RNG. Independent of `mc_config.seed`.
+    pub search_seed: u64,
+    /// Inner Monte Carlo configuration applied to every trial.
+    pub mc_config: MonteCarloConfig,
+    /// Objectives to evaluate. The runner computes each objective's
+    /// value on every trial; `best_by_objective` and `pareto_indices`
+    /// are derived afterwards. Empty `objectives` is rejected — a
+    /// search with no objectives produces no ranking.
+    pub objectives: Vec<SearchObjective>,
+}
+
+/// One trial's worth of decisions and their evaluated objectives.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchTrial {
+    /// 0-based index in [`SearchResult::trials`].
+    pub trial_index: u32,
+    /// The variable assignments applied for this trial. Stored as
+    /// `ParamOverride`s so an analyst can copy any single trial back as
+    /// a `--counterfactual` invocation to reproduce it standalone.
+    pub assignments: Vec<ParamOverride>,
+    /// Objective values keyed by `SearchObjective::label()`. Always one
+    /// entry per `SearchConfig.objectives` element.
+    pub objective_values: BTreeMap<String, f64>,
+    /// The Monte Carlo summary the objective values were derived from.
+    pub summary: MonteCarloSummary,
+}
+
+/// Aggregate result of a strategy-search run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    /// Method used, surfaced for the report.
+    pub method: SearchMethod,
+    /// Trials in the order they were sampled.
+    pub trials: Vec<SearchTrial>,
+    /// Indices into `trials` for the non-dominated frontier across all
+    /// objectives. Sorted ascending. A trial is dominated if some other
+    /// trial is at least as good on every objective and strictly better
+    /// on at least one. Returned indices respect the maximize/minimize
+    /// direction declared by each `SearchObjective`.
+    pub pareto_indices: Vec<u32>,
+    /// Best trial index per objective label. Ties resolve by lowest
+    /// trial index (i.e. the assignment that appears first in trial
+    /// order wins) so output is reproducible across re-runs.
+    pub best_by_objective: BTreeMap<String, u32>,
+    /// Echo of the objectives evaluated, in the order supplied. Lets
+    /// the report renderer iterate without redeclaring the order.
+    pub objectives: Vec<SearchObjective>,
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Run a strategy-search batch on the supplied scenario.
+///
+/// Returns `Err(StatsError::InvalidConfig)` if the scenario declares no
+/// strategy space, the requested objectives list is empty, the trial
+/// count is zero, or any decision-variable path fails to resolve via
+/// `set_param` on a clone of the scenario.
+pub fn run_search(scenario: &Scenario, config: &SearchConfig) -> Result<SearchResult, StatsError> {
+    let space = &scenario.strategy_space;
+    if space.is_empty() {
+        return Err(StatsError::InvalidConfig(
+            "scenario has no [strategy_space] declaration; \
+             add a [strategy_space] block with at least one variable to use --search"
+                .into(),
+        ));
+    }
+    if config.trials == 0 {
+        return Err(StatsError::InvalidConfig(
+            "search trials must be > 0".into(),
+        ));
+    }
+    if config.objectives.is_empty() {
+        return Err(StatsError::InvalidConfig(
+            "search requires at least one objective; \
+             pass --search-objective on the CLI or list `objectives` in [strategy_space]"
+                .into(),
+        ));
+    }
+
+    // Path-resolution sanity check: refuse the run if any variable's
+    // path doesn't resolve. We try a no-op assignment (read the current
+    // value via get_param, then set it back) on a scenario clone so the
+    // caller's scenario stays untouched. Catching this here turns a
+    // mid-run "trial 17 failed" surprise into an up-front validation
+    // error.
+    let mut probe = scenario.clone();
+    for var in &space.variables {
+        let current = crate::sensitivity::get_param(&probe, &var.path).map_err(|e| {
+            StatsError::InvalidConfig(format!("strategy_space variable `{}`: {e}", var.path))
+        })?;
+        set_param(&mut probe, &var.path, current).map_err(|e| {
+            StatsError::InvalidConfig(format!(
+                "strategy_space variable `{}` failed to round-trip via set_param: {e}",
+                var.path
+            ))
+        })?;
+    }
+
+    info!(
+        method = ?config.method,
+        trials = config.trials,
+        variables = space.variables.len(),
+        objectives = config.objectives.len(),
+        "starting strategy search"
+    );
+
+    let assignments = sample_assignments(space, config);
+    let mut trials = Vec::with_capacity(assignments.len());
+    for (i, assignment) in assignments.into_iter().enumerate() {
+        let trial_index = u32::try_from(i).expect("trial count fits u32");
+        debug!(trial_index, "evaluating trial");
+
+        let mut variant = scenario.clone();
+        for ov in &assignment {
+            set_param(&mut variant, &ov.path, ov.value)?;
+        }
+
+        let mc = MonteCarloRunner::run(&config.mc_config, &variant)?;
+
+        let mut objective_values = BTreeMap::new();
+        for objective in &config.objectives {
+            let v = evaluate_objective(objective, &mc.summary);
+            objective_values.insert(objective.label(), v);
+        }
+
+        trials.push(SearchTrial {
+            trial_index,
+            assignments: assignment,
+            objective_values,
+            summary: mc.summary,
+        });
+    }
+
+    let pareto_indices = compute_pareto_frontier(&trials, &config.objectives);
+    let best_by_objective = compute_best_by_objective(&trials, &config.objectives);
+
+    info!(
+        completed = trials.len(),
+        pareto = pareto_indices.len(),
+        "strategy search complete"
+    );
+
+    Ok(SearchResult {
+        method: config.method,
+        trials,
+        pareto_indices,
+        best_by_objective,
+        objectives: config.objectives.clone(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Sampling
+// ---------------------------------------------------------------------------
+
+/// Build the list of trial assignments according to method/seed.
+///
+/// Each entry is a list of `ParamOverride`s — one per declared decision
+/// variable, in declaration order so the trial layout is deterministic
+/// even when adding a new variable shifts later trials.
+fn sample_assignments(space: &StrategySpace, config: &SearchConfig) -> Vec<Vec<ParamOverride>> {
+    match config.method {
+        SearchMethod::Random => sample_random(space, config),
+        SearchMethod::Grid => sample_grid(space, config),
+    }
+}
+
+fn sample_random(space: &StrategySpace, config: &SearchConfig) -> Vec<Vec<ParamOverride>> {
+    let mut rng = ChaCha8Rng::seed_from_u64(config.search_seed);
+    let mut out = Vec::with_capacity(config.trials as usize);
+    for _ in 0..config.trials {
+        let mut assignment = Vec::with_capacity(space.variables.len());
+        for var in &space.variables {
+            let value = sample_random_value(&mut rng, var);
+            assignment.push(ParamOverride {
+                path: var.path.clone(),
+                value,
+            });
+        }
+        out.push(assignment);
+    }
+    out
+}
+
+fn sample_random_value(rng: &mut ChaCha8Rng, var: &DecisionVariable) -> f64 {
+    match &var.domain {
+        Domain::Continuous { low, high, .. } => {
+            // Half-open `[low, high)` from `gen_range` is fine for our
+            // purposes — the high endpoint is approached arbitrarily
+            // closely and grid mode separately enumerates exactly the
+            // endpoints. If `low == high`, return `low` (degenerate).
+            if low >= high {
+                *low
+            } else {
+                rng.gen_range(*low..*high)
+            }
+        },
+        Domain::Discrete { values } => {
+            // The validator rejects empty `values` at load time, so an
+            // empty list reaching here is a programmer error — pick the
+            // safest defensive default (zero) instead of panicking,
+            // since we deny `unwrap`.
+            if values.is_empty() {
+                0.0
+            } else {
+                let idx = rng.gen_range(0..values.len());
+                values[idx]
+            }
+        },
+    }
+}
+
+fn sample_grid(space: &StrategySpace, config: &SearchConfig) -> Vec<Vec<ParamOverride>> {
+    // Pre-compute each variable's discrete enumeration. Continuous with
+    // `steps == 1` collapses to a single midpoint — that lets an author
+    // pin a continuous variable while exploring others.
+    let levels: Vec<Vec<f64>> = space
+        .variables
+        .iter()
+        .map(|v| enumerate_levels(&v.domain))
+        .collect();
+    if levels.iter().any(|l| l.is_empty()) {
+        // Shouldn't happen post-validation, but stay defensive.
+        return Vec::new();
+    }
+    let total: usize = levels.iter().map(|l| l.len()).product();
+    let cap = (config.trials as usize).min(total);
+
+    let mut out = Vec::with_capacity(cap);
+    for cell in 0..cap {
+        let mut idx = cell;
+        let mut assignment = Vec::with_capacity(space.variables.len());
+        // Last variable cycles fastest (odometer over the levels).
+        // Iterate from last to first, then reverse the assignment to
+        // restore declaration order so the JSON output reads naturally.
+        let mut reverse = Vec::with_capacity(space.variables.len());
+        for (var, lvl) in space.variables.iter().rev().zip(levels.iter().rev()) {
+            let pick = idx % lvl.len();
+            idx /= lvl.len();
+            reverse.push(ParamOverride {
+                path: var.path.clone(),
+                value: lvl[pick],
+            });
+        }
+        reverse.reverse();
+        assignment.extend(reverse);
+        out.push(assignment);
+    }
+    out
+}
+
+fn enumerate_levels(domain: &Domain) -> Vec<f64> {
+    match domain {
+        Domain::Continuous { low, high, steps } => {
+            let s = *steps as usize;
+            if s == 0 {
+                Vec::new()
+            } else if s == 1 {
+                // Midpoint: lets a one-step grid pin the variable at the
+                // centre of its declared range.
+                vec![(low + high) / 2.0]
+            } else {
+                let span = high - low;
+                (0..s)
+                    .map(|i| {
+                        let t = (i as f64) / ((s - 1) as f64);
+                        low + span * t
+                    })
+                    .collect()
+            }
+        },
+        Domain::Discrete { values } => values.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Objective evaluation
+// ---------------------------------------------------------------------------
+
+fn evaluate_objective(objective: &SearchObjective, summary: &MonteCarloSummary) -> f64 {
+    use SearchObjective::*;
+    match objective {
+        MaximizeWinRate { faction } => summary.win_rates.get(faction).copied().unwrap_or(0.0),
+        MinimizeDetection => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.detection_rate)
+            .fold(0.0_f64, f64::max),
+        MinimizeAttackerCost => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.mean_attacker_spend)
+            .sum(),
+        MaximizeCostAsymmetry => summary
+            .campaign_summaries
+            .values()
+            .map(|cs| cs.cost_asymmetry_ratio)
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0),
+        MinimizeDuration => summary.average_duration,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pareto frontier + best-by-objective
+// ---------------------------------------------------------------------------
+
+/// Direction-aware "is `a` at least as good as `b` on this objective"
+/// relation. Used by the dominance check below.
+fn weakly_better(a: f64, b: f64, maximize: bool) -> bool {
+    if maximize { a >= b } else { a <= b }
+}
+
+/// Direction-aware strict-better.
+fn strictly_better(a: f64, b: f64, maximize: bool) -> bool {
+    if maximize { a > b } else { a < b }
+}
+
+fn compute_pareto_frontier(trials: &[SearchTrial], objectives: &[SearchObjective]) -> Vec<u32> {
+    let n = trials.len();
+    let mut frontier = Vec::new();
+    for i in 0..n {
+        let mut dominated = false;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            if dominates(&trials[j], &trials[i], objectives) {
+                dominated = true;
+                break;
+            }
+        }
+        if !dominated {
+            frontier.push(u32::try_from(i).expect("trial count fits u32"));
+        }
+    }
+    frontier
+}
+
+fn dominates(a: &SearchTrial, b: &SearchTrial, objectives: &[SearchObjective]) -> bool {
+    let mut strictly_any = false;
+    for obj in objectives {
+        let label = obj.label();
+        let av = a.objective_values.get(&label).copied().unwrap_or(0.0);
+        let bv = b.objective_values.get(&label).copied().unwrap_or(0.0);
+        let max = obj.maximize();
+        if !weakly_better(av, bv, max) {
+            return false;
+        }
+        if strictly_better(av, bv, max) {
+            strictly_any = true;
+        }
+    }
+    strictly_any
+}
+
+fn compute_best_by_objective(
+    trials: &[SearchTrial],
+    objectives: &[SearchObjective],
+) -> BTreeMap<String, u32> {
+    let mut out = BTreeMap::new();
+    for obj in objectives {
+        let label = obj.label();
+        let max = obj.maximize();
+        let mut best_idx: Option<usize> = None;
+        let mut best_val: Option<f64> = None;
+        for (i, t) in trials.iter().enumerate() {
+            let v = t.objective_values.get(&label).copied().unwrap_or(0.0);
+            let take = match best_val {
+                None => true,
+                Some(bv) => strictly_better(v, bv, max),
+            };
+            if take {
+                best_idx = Some(i);
+                best_val = Some(v);
+            }
+        }
+        if let Some(i) = best_idx {
+            out.insert(label, u32::try_from(i).expect("trial count fits u32"));
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::collections::BTreeMap;
+
+    use faultline_types::faction::{Faction, FactionType, ForceUnit, UnitType};
+    use faultline_types::ids::{FactionId, ForceId, RegionId, VictoryId};
+    use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
+    use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+    use faultline_types::scenario::{Scenario, ScenarioMeta};
+    use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+    use faultline_types::strategy::Doctrine;
+    use faultline_types::strategy_space::{
+        DecisionVariable, Domain, SearchObjective, StrategySpace,
+    };
+    use faultline_types::victory::{VictoryCondition, VictoryType};
+
+    fn minimal_scenario() -> Scenario {
+        let r1 = RegionId::from("region-a");
+        let r2 = RegionId::from("region-b");
+        let f_alpha = FactionId::from("alpha");
+        let f_bravo = FactionId::from("bravo");
+
+        let mut regions = BTreeMap::new();
+        regions.insert(
+            r1.clone(),
+            Region {
+                id: r1.clone(),
+                name: "Region A".into(),
+                population: 100_000,
+                urbanization: 0.5,
+                initial_control: Some(f_alpha.clone()),
+                strategic_value: 5.0,
+                borders: vec![r2.clone()],
+                centroid: None,
+            },
+        );
+        regions.insert(
+            r2.clone(),
+            Region {
+                id: r2.clone(),
+                name: "Region B".into(),
+                population: 50_000,
+                urbanization: 0.3,
+                initial_control: Some(f_bravo.clone()),
+                strategic_value: 3.0,
+                borders: vec![r1.clone()],
+                centroid: None,
+            },
+        );
+
+        let mut factions = BTreeMap::new();
+        factions.insert(
+            f_alpha.clone(),
+            make_faction(f_alpha.clone(), "Alpha", r1.clone()),
+        );
+        factions.insert(
+            f_bravo.clone(),
+            make_faction(f_bravo.clone(), "Bravo", r2.clone()),
+        );
+
+        let mut victory_conditions = BTreeMap::new();
+        let vc_id = VictoryId::from("alpha-win");
+        victory_conditions.insert(
+            vc_id.clone(),
+            VictoryCondition {
+                id: vc_id,
+                name: "Alpha Dominance".into(),
+                faction: f_alpha,
+                condition: VictoryType::MilitaryDominance {
+                    enemy_strength_below: 0.01,
+                },
+            },
+        );
+
+        Scenario {
+            meta: ScenarioMeta {
+                name: "Search Test Scenario".into(),
+                description: "Minimal scenario for search tests".into(),
+                author: "test".into(),
+                version: "0.1.0".into(),
+                tags: vec![],
+                confidence: None,
+                schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+            },
+            map: MapConfig {
+                source: MapSource::Grid {
+                    width: 2,
+                    height: 1,
+                },
+                regions,
+                infrastructure: BTreeMap::new(),
+                terrain: vec![
+                    TerrainModifier {
+                        region: r1,
+                        terrain_type: TerrainType::Urban,
+                        movement_modifier: 1.0,
+                        defense_modifier: 1.0,
+                        visibility: 0.8,
+                    },
+                    TerrainModifier {
+                        region: r2,
+                        terrain_type: TerrainType::Rural,
+                        movement_modifier: 1.0,
+                        defense_modifier: 1.0,
+                        visibility: 1.0,
+                    },
+                ],
+            },
+            factions,
+            technology: BTreeMap::new(),
+            political_climate: PoliticalClimate {
+                tension: 0.4,
+                institutional_trust: 0.5,
+                population_segments: vec![],
+                global_modifiers: vec![],
+                media_landscape: MediaLandscape {
+                    fragmentation: 0.3,
+                    disinformation_susceptibility: 0.3,
+                    state_control: 0.2,
+                    social_media_penetration: 0.5,
+                    internet_availability: 0.8,
+                },
+            },
+            events: BTreeMap::new(),
+            simulation: SimulationConfig {
+                max_ticks: 50,
+                tick_duration: TickDuration::Days(1),
+                monte_carlo_runs: 1,
+                seed: Some(0xCAFE),
+                fog_of_war: false,
+                attrition_model: AttritionModel::LanchesterLinear,
+                snapshot_interval: 0,
+            },
+            victory_conditions,
+            kill_chains: BTreeMap::new(),
+            defender_budget: None,
+            attacker_budget: None,
+            environment: faultline_types::map::EnvironmentSchedule::default(),
+            strategy_space: StrategySpace::default(),
+        }
+    }
+
+    fn make_faction(id: FactionId, name: &str, region: RegionId) -> Faction {
+        let force_id = ForceId::from(format!("{}-inf", id));
+        let mut forces = BTreeMap::new();
+        forces.insert(
+            force_id.clone(),
+            ForceUnit {
+                id: force_id,
+                name: format!("{name} Infantry"),
+                unit_type: UnitType::Infantry,
+                region,
+                strength: 100.0,
+                mobility: 1.0,
+                force_projection: None,
+                upkeep: 1.0,
+                morale_modifier: 0.0,
+                capabilities: vec![],
+            },
+        );
+        Faction {
+            id,
+            name: name.to_string(),
+            description: String::new(),
+            color: "#000000".into(),
+            faction_type: FactionType::Insurgent,
+            forces,
+            tech_access: vec![],
+            initial_morale: 0.7,
+            logistics_capacity: 10.0,
+            initial_resources: 100.0,
+            resource_rate: 5.0,
+            recruitment: None,
+            command_resilience: 0.5,
+            intelligence: 0.5,
+            diplomacy: vec![],
+            doctrine: Doctrine::Conventional,
+            escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
+            leadership: None,
+        }
+    }
+
+    fn search_scenario() -> Scenario {
+        let mut s = minimal_scenario();
+        s.strategy_space = StrategySpace {
+            variables: vec![DecisionVariable {
+                path: "faction.alpha.initial_morale".into(),
+                owner: Some(FactionId::from("alpha")),
+                domain: Domain::Continuous {
+                    low: 0.3,
+                    high: 0.9,
+                    steps: 4,
+                },
+            }],
+            objectives: vec![],
+        };
+        s
+    }
+
+    fn config(method: SearchMethod, trials: u32) -> SearchConfig {
+        SearchConfig {
+            trials,
+            method,
+            search_seed: 12345,
+            mc_config: MonteCarloConfig {
+                num_runs: 4,
+                seed: Some(0xBEEF),
+                collect_snapshots: false,
+                parallel: false,
+            },
+            objectives: vec![SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            }],
+        }
+    }
+
+    #[test]
+    fn search_rejects_empty_strategy_space() {
+        let s = minimal_scenario();
+        let err =
+            run_search(&s, &config(SearchMethod::Random, 4)).expect_err("empty space must reject");
+        match err {
+            StatsError::InvalidConfig(msg) => assert!(msg.contains("strategy_space")),
+            other => panic!("expected InvalidConfig, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_rejects_zero_trials() {
+        let s = search_scenario();
+        let err =
+            run_search(&s, &config(SearchMethod::Random, 0)).expect_err("zero trials must reject");
+        assert!(matches!(err, StatsError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn search_rejects_empty_objectives() {
+        let s = search_scenario();
+        let mut c = config(SearchMethod::Random, 4);
+        c.objectives.clear();
+        let err = run_search(&s, &c).expect_err("no objectives must reject");
+        assert!(matches!(err, StatsError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn search_then_evaluate_is_deterministic() {
+        // Two consecutive runs against the same scenario+config must
+        // produce bit-identical SearchResult JSON. This is the core
+        // determinism contract — without it the manifest replay path
+        // for --search would be unreachable.
+        let s = search_scenario();
+        let c = config(SearchMethod::Random, 6);
+        let r1 = run_search(&s, &c).expect("first search");
+        let r2 = run_search(&s, &c).expect("second search");
+        let j1 = serde_json::to_string(&r1).expect("serialize r1");
+        let j2 = serde_json::to_string(&r2).expect("serialize r2");
+        assert_eq!(j1, j2, "search must be deterministic under fixed seeds");
+    }
+
+    #[test]
+    fn search_seed_independent_of_mc_seed() {
+        // Changing the inner MC seed must change trial outcomes (the
+        // summary will be different) but must NOT change the trial
+        // *assignments* — the search seed is the sole driver of the
+        // assignment list.
+        let s = search_scenario();
+        let mut a = config(SearchMethod::Random, 4);
+        let mut b = config(SearchMethod::Random, 4);
+        a.mc_config.seed = Some(1);
+        b.mc_config.seed = Some(2);
+        let ra = run_search(&s, &a).expect("a");
+        let rb = run_search(&s, &b).expect("b");
+
+        let assignments_a: Vec<_> = ra
+            .trials
+            .iter()
+            .map(|t| {
+                t.assignments
+                    .iter()
+                    .map(|a| (a.path.clone(), a.value))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let assignments_b: Vec<_> = rb
+            .trials
+            .iter()
+            .map(|t| {
+                t.assignments
+                    .iter()
+                    .map(|a| (a.path.clone(), a.value))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            assignments_a, assignments_b,
+            "search assignments must be independent of mc_config.seed"
+        );
+    }
+
+    #[test]
+    fn grid_method_enumerates_endpoints() {
+        let s = search_scenario();
+        let c = config(SearchMethod::Grid, 8);
+        let r = run_search(&s, &c).expect("grid search");
+        // Variable has steps=4 over [0.3, 0.9] → expects {0.3, 0.5,
+        // 0.7, 0.9}. Only one variable, so trials = 4 (the cap clamps
+        // to product size).
+        assert_eq!(r.trials.len(), 4);
+        let values: Vec<f64> = r.trials.iter().map(|t| t.assignments[0].value).collect();
+        for &expected in &[0.3, 0.5, 0.7, 0.9] {
+            assert!(
+                values.iter().any(|v| (v - expected).abs() < 1e-9),
+                "grid must include endpoint {expected}, got {values:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pareto_frontier_drops_dominated_trials() {
+        // Hand-construct trials with two objectives so we exercise the
+        // dominance check without re-running a full MC batch.
+        use faultline_types::stats::MonteCarloSummary;
+        let mk = |idx: u32, win: f64, det: f64| SearchTrial {
+            trial_index: idx,
+            assignments: vec![],
+            objective_values: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    SearchObjective::MaximizeWinRate {
+                        faction: FactionId::from("alpha"),
+                    }
+                    .label(),
+                    win,
+                );
+                m.insert(SearchObjective::MinimizeDetection.label(), det);
+                m
+            },
+            summary: MonteCarloSummary {
+                total_runs: 1,
+                win_rates: BTreeMap::new(),
+                win_rate_cis: BTreeMap::new(),
+                average_duration: 0.0,
+                metric_distributions: BTreeMap::new(),
+                regional_control: BTreeMap::new(),
+                event_probabilities: BTreeMap::new(),
+                campaign_summaries: BTreeMap::new(),
+                feasibility_matrix: vec![],
+                seam_scores: BTreeMap::new(),
+                correlation_matrix: None,
+                pareto_frontier: None,
+                defender_capacity: Vec::new(),
+            },
+        };
+        // Trial 0 dominates trial 1 (better win, equal detection).
+        // Trial 2 is non-dominated (better detection, lower win).
+        let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.4), mk(2, 0.5, 0.1)];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let frontier = compute_pareto_frontier(&trials, &objectives);
+        assert_eq!(frontier, vec![0, 2]);
+    }
+
+    #[test]
+    fn best_by_objective_picks_correct_direction() {
+        use faultline_types::stats::MonteCarloSummary;
+        let mk = |idx: u32, win: f64, det: f64| SearchTrial {
+            trial_index: idx,
+            assignments: vec![],
+            objective_values: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    SearchObjective::MaximizeWinRate {
+                        faction: FactionId::from("alpha"),
+                    }
+                    .label(),
+                    win,
+                );
+                m.insert(SearchObjective::MinimizeDetection.label(), det);
+                m
+            },
+            summary: MonteCarloSummary {
+                total_runs: 1,
+                win_rates: BTreeMap::new(),
+                win_rate_cis: BTreeMap::new(),
+                average_duration: 0.0,
+                metric_distributions: BTreeMap::new(),
+                regional_control: BTreeMap::new(),
+                event_probabilities: BTreeMap::new(),
+                campaign_summaries: BTreeMap::new(),
+                feasibility_matrix: vec![],
+                seam_scores: BTreeMap::new(),
+                correlation_matrix: None,
+                pareto_frontier: None,
+                defender_capacity: Vec::new(),
+            },
+        };
+        let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
+        let objectives = vec![
+            SearchObjective::MaximizeWinRate {
+                faction: FactionId::from("alpha"),
+            },
+            SearchObjective::MinimizeDetection,
+        ];
+        let best = compute_best_by_objective(&trials, &objectives);
+        assert_eq!(
+            best.get(
+                &SearchObjective::MaximizeWinRate {
+                    faction: FactionId::from("alpha")
+                }
+                .label()
+            ),
+            Some(&2u32),
+            "max-win should pick trial 2 (highest win)"
+        );
+        assert_eq!(
+            best.get(&SearchObjective::MinimizeDetection.label()),
+            Some(&1u32),
+            "min-detection should pick trial 1 (lowest detection)"
+        );
+    }
+}

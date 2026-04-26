@@ -1,0 +1,249 @@
+# Strategy Search Demo (Epic H)
+#
+# Minimal scenario for exercising the `--search` strategy-search mode.
+# Two factions on a 4-region grid; alpha's `initial_morale` and bravo's
+# `initial_morale` are declared as decision variables so the search
+# layer can sweep both axes simultaneously and surface a Pareto frontier
+# trading off alpha's win rate against the asymmetry of the morale gap.
+#
+# CLI:
+#   cargo run -p faultline-cli -- scenarios/strategy_search_demo.toml \
+#     --search --search-trials 16 --search-runs 50 \
+#     --search-method grid \
+#     --search-objective maximize_win_rate:alpha \
+#     --search-objective minimize_duration
+#
+# All capability parameters are notional and chosen for fast convergence
+# inside the CI verify-bundled pipeline. This is a *purely synthetic*
+# scenario; no historical analogue.
+
+[meta]
+schema_version = 1
+name = "Strategy Search Demo"
+description = """
+Two equal factions on a 2x2 grid, with both factions' starting morale
+declared as decision variables. Demonstrates the round-one strategy
+search layer: random + grid sampling, multi-objective Pareto frontier,
+search-only RNG independent of the inner Monte Carlo seed.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["search", "epic-h", "synthetic"]
+confidence = "Low"
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500000
+urbanization = 0.5
+initial_control = "alpha"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500000
+urbanization = 0.5
+initial_control = "bravo"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.alpha]
+id = "alpha"
+name = "Faction Alpha"
+description = "Northern force"
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.alpha.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.alpha.forces.alpha_infantry]
+id = "alpha_infantry"
+name = "Alpha 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.bravo]
+id = "bravo"
+name = "Faction Bravo"
+description = "Southern force"
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.bravo.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.bravo.forces.bravo_infantry]
+id = "bravo_infantry"
+name = "Bravo 1st Infantry"
+unit_type = "Infantry"
+region = "south_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[technology]
+
+[political_climate]
+tension = 0.3
+institutional_trust = 0.7
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.3
+disinformation_susceptibility = 0.2
+state_control = 0.1
+social_media_penetration = 0.5
+internet_availability = 0.9
+
+[events]
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 50
+fog_of_war = false
+snapshot_interval = 0
+seed = 42
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+[victory_conditions.alpha_control]
+id = "alpha_control"
+name = "Alpha Strategic Control"
+faction = "alpha"
+
+[victory_conditions.alpha_control.condition]
+type = "StrategicControl"
+threshold = 0.75
+
+[victory_conditions.bravo_control]
+id = "bravo_control"
+name = "Bravo Strategic Control"
+faction = "bravo"
+
+[victory_conditions.bravo_control.condition]
+type = "StrategicControl"
+threshold = 0.75
+
+# -- Strategy Search Space (Epic H) -----------------------------------------
+#
+# Decision variables: each faction's initial morale floats on a small
+# range so a `grid` search with a 2-step grid produces a 4-cell
+# Cartesian product (2 × 2). The objectives are surfaced as defaults so
+# `--search` works without `--search-objective` flags; CLI flags can
+# still override.
+
+[strategy_space]
+
+[[strategy_space.variables]]
+path = "faction.alpha.initial_morale"
+owner = "alpha"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.5
+high = 0.9
+steps = 2
+
+[[strategy_space.variables]]
+path = "faction.bravo.initial_morale"
+owner = "bravo"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.5
+high = 0.9
+steps = 2
+
+[[strategy_space.objectives]]
+metric = "maximize_win_rate"
+faction = "alpha"
+
+[[strategy_space.objectives]]
+metric = "minimize_duration"

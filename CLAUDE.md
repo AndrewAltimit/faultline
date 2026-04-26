@@ -50,6 +50,13 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --compare scenarios/tutorial_asymmetric.toml
 
+# Strategy search over a scenario's [strategy_space] (Epic H)
+cargo run -p faultline-cli -- scenarios/strategy_search_demo.toml \
+    --search --search-trials 16 --search-runs 50 \
+    --search-method grid \
+    --search-objective maximize_win_rate:alpha \
+    --search-objective minimize_duration
+
 # Replay a saved manifest and assert bit-identical output (Epic Q)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
     --verify ./output/manifest.json
@@ -119,6 +126,24 @@ and aggregates to `MonteCarloSummary.defender_capacity` (mean
 utilization, time-to-saturation, mean shadow detections); both
 elide entirely when no faction declares queues. Bundled archetype:
 `scenarios/alert_fatigue_soc.toml`.
+
+**Strategy search (Epic H — round one).** Scenarios may opt into a
+`[strategy_space]` block declaring decision variables (continuous or
+discrete) and search objectives. The `--search` CLI mode samples
+assignments via `random` or `grid` methods, evaluates each via Monte
+Carlo, and reports best-by-objective plus the non-dominated Pareto
+frontier. Search uses its own seed (`--search-seed`) independent of
+the inner MC seed (`--seed`) so search-then-evaluate is bit-identical
+and trial-to-trial deltas isolate parameter effects from sampling
+noise. Round-one objectives are derived from existing
+`MonteCarloSummary` / `CampaignSummary` shape — no new analytics
+modules. Manifests record objective *labels* (not the structured
+enum) so adding new variants stays additive. Adversarial co-evolution
+and the defender-posture specialization (Epic I) are deferred to a
+follow-up round. See `crates/faultline-types/src/strategy_space.rs`,
+`crates/faultline-stats/src/search.rs`,
+`scenarios/strategy_search_demo.toml`, and the
+`[strategy_space]` reference in `docs/scenario_schema.md`.
 
 **Engine model depth (Epic D — round one).** Three additions
 expand authoring expressiveness without touching the determinism

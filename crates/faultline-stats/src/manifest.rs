@@ -74,6 +74,19 @@ pub enum ManifestMode {
         steps: u32,
         runs_per_step: u32,
     },
+    /// `--search` — strategy-search batch (Epic H). The search-only
+    /// seed is recorded separately from `mc_config.base_seed`: search
+    /// uses an independent RNG so that re-running with the same
+    /// `search_seed` reproduces the trial assignments while the inner
+    /// MC seed reproduces each trial's evaluation. Recorded objective
+    /// labels (not the structured enum) keep the JSON stable across
+    /// future objective additions.
+    Search {
+        method: crate::search::SearchMethod,
+        trials: u32,
+        search_seed: u64,
+        objectives: Vec<String>,
+    },
 }
 
 /// The Monte Carlo parameters that, combined with the scenario, fix

@@ -335,26 +335,90 @@ strategy; it can't *find* one. This epic adds a search layer that
 treats faction parameters (force allocations, tech-card selections,
 event ROE) as decision variables and searches the joint space.
 
-- [ ] `StrategySpace` schema — declare which scenario parameters are
+- [x] `StrategySpace` schema — declare which scenario parameters are
       "decision variables" for which faction, with allowed ranges /
       discrete choices
-- [ ] Single-side optimization: given a fixed opponent, search over
+- [x] Single-side optimization: given a fixed opponent, search over
       one faction's strategy space to maximize a user-specified
       objective (win rate, cost-asymmetry, attribution-difficulty)
       under constraints
 - [ ] Adversarial co-evolution: alternating best-response loop until
       both sides' strategies converge (or report cycle / no-equilibrium
       diagnostics)
-- [ ] Pareto frontier across multi-objective searches (win rate vs.
+- [x] Pareto frontier across multi-objective searches (win rate vs.
       detection vs. attacker cost)
-- [ ] Report section: "best-response strategies under search" with
+- [x] Report section: "best-response strategies under search" with
       stability diagnostics
-- [ ] Determinism contract: search uses its own seeded sampler
+- [x] Determinism contract: search uses its own seeded sampler
       independent of MC seed so search-then-evaluate is reproducible
 
-**Status:** deferred. Depends on Epic C (escalation thresholds) for
-multi-objective stability and Epic G (no co-branding leakage into
-search outputs).
+**Status:** Epic H **closed** (round one). Single PR (branch
+`epic-h-strategy-search`) shipped five of the six items — the
+"single-side optimization with Pareto frontier" arc the epic was
+scoped against; adversarial co-evolution (the alternating best-
+response loop) is the deliberately-deferred sixth item and slots
+naturally into a round-two PR alongside Epic I (defender-posture
+specialization). What landed:
+
+- A new `StrategySpace` type on `Scenario` (optional, `#[serde(default,
+  skip_serializing_if = "StrategySpace::is_empty")]` so legacy
+  scenarios stay byte-identical). Each `DecisionVariable` names a
+  parameter via the same dotted path layer Epics B/C use for
+  `--counterfactual` / `--sensitivity`, plus a `Domain::Continuous {
+  low, high, steps }` or `Domain::Discrete { values }` sampling
+  declaration. An optional `owner: FactionId` lets reports group
+  decisions by side without reading them out of the path string.
+- A new `faultline_stats::search` module with `run_search(scenario,
+  config)` that samples assignments via `Random` or `Grid` methods,
+  evaluates each via `MonteCarloRunner::run`, and returns a
+  `SearchResult` with per-trial `objective_values`, the non-dominated
+  `pareto_indices` across all declared objectives (direction-aware:
+  `MaximizeWinRate` is `>=` while `MinimizeDetection` is `<=`), and
+  the `best_by_objective` map (ties resolve by lowest trial index for
+  reproducibility).
+- A two-seed determinism contract enforced by `SearchConfig`:
+  `search_seed` drives the `ChaCha8Rng` that samples assignments and
+  is independent of `mc_config.seed`, which drives the inner Monte
+  Carlo evaluation. Same `(search_seed, mc_seed)` always reproduces
+  the same `output_hash`; changing the inner MC seed changes trial
+  *outcomes* but never the trial *assignments* (pinned by the
+  `search_seed_independent_of_mc_seed` test in
+  `crates/faultline-stats/src/search.rs`).
+- Round-one objectives (`MaximizeWinRate { faction }`,
+  `MinimizeDetection`, `MinimizeAttackerCost`,
+  `MaximizeCostAsymmetry`, `MinimizeDuration`) are pure functions of
+  the existing `MonteCarloSummary` / `CampaignSummary` shape — no
+  new analytics modules required. Adding a new objective is additive;
+  the manifest stores objective *labels* (`label()` strings), not the
+  structured enum, so future variants don't break existing manifests.
+- `--search` CLI mode with `--search-method`, `--search-trials`,
+  `--search-runs`, `--search-seed`, and repeatable
+  `--search-objective` flags. CLI objectives override the scenario's
+  embedded `[strategy_space].objectives` list when both are present,
+  so a pre-canned space can be reused for one-off questions. A new
+  `ManifestMode::Search` variant lets `--verify` replay a saved
+  search-mode manifest bit-identically (proven on the bundled
+  `strategy_search_demo.toml` scenario in the verify-bundled CI
+  pipeline).
+- Engine-side validation rejects empty paths, duplicate variable
+  paths, inverted continuous ranges, zero `steps`, empty discrete
+  `values`, unknown `owner` factions, and unknown
+  `MaximizeWinRate.faction` references at scenario load time so
+  authoring mistakes surface up front instead of mid-search. Path-
+  resolution validation (does the dotted path resolve via
+  `set_param`?) lives in the search runner itself, since `set_param`
+  is in `faultline-stats` and the engine cannot depend on stats
+  without creating a crate cycle.
+- Bundled `scenarios/strategy_search_demo.toml` exercises the full
+  pipeline end-to-end: two continuous decision variables, two
+  objectives, both grid and random methods round-trip through
+  `--verify` cleanly, and the scenario passes all CI guards
+  (fmt, clippy, verify-bundled, verify-migration, grep-guard).
+
+All tests pass (~444 across the workspace including 8 unit + 4
+integration + 8 engine-validation tests covering the new surface);
+fmt / clippy / cargo-deny / WASM build / JS tests / verify-bundled /
+verify-migration / grep-guard all clean.
 
 ### Epic I — Defender-posture optimization
 
