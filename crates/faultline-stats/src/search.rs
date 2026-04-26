@@ -1376,6 +1376,97 @@ mod tests {
         assert_eq!(v, 0.0);
     }
 
+    #[test]
+    fn evaluate_defender_objectives_empty_chains_return_zero() {
+        // Mirror of the attacker-aligned empty-chains tests above for
+        // the four Epic I defender objectives. All four sum / fold over
+        // `summary.campaign_summaries`; an empty map must produce a
+        // sane 0.0 rather than a NaN, NEG_INFINITY, or panic. Pinning
+        // this behaviour means a future renderer can read the value
+        // without a special "no chains" branch.
+        let summary = empty_summary();
+        for obj in [
+            SearchObjective::MaximizeAttackerCost,
+            SearchObjective::MaximizeDetection,
+            SearchObjective::MinimizeDefenderCost,
+            SearchObjective::MinimizeMaxChainSuccess,
+        ] {
+            let v = evaluate_objective(&obj, &summary);
+            assert_eq!(
+                v,
+                0.0,
+                "empty-chains evaluation of {} must be 0.0, got {v}",
+                obj.label()
+            );
+        }
+    }
+
+    #[test]
+    fn evaluate_defender_objectives_read_expected_summary_fields() {
+        // Each defender-aligned objective reads a specific field on
+        // `CampaignSummary`. Build a synthetic summary with two chains
+        // and verify the evaluator sees the values it should — sums for
+        // the cost-style objectives, max-fold for the rate-style ones.
+        use faultline_types::ids::KillChainId;
+        use faultline_types::stats::{CampaignSummary, MonteCarloSummary};
+
+        let mut campaigns = BTreeMap::new();
+        let mk = |id: &str, succ: f64, det: f64, atk: f64, def: f64| CampaignSummary {
+            chain_id: KillChainId::from(id),
+            phase_stats: BTreeMap::new(),
+            overall_success_rate: succ,
+            detection_rate: det,
+            mean_attacker_spend: atk,
+            mean_defender_spend: def,
+            cost_asymmetry_ratio: 0.0,
+            mean_attribution_confidence: 0.0,
+            time_to_first_detection: None,
+            defender_reaction_time: None,
+            phase_survival: BTreeMap::new(),
+        };
+        campaigns.insert(KillChainId::from("c1"), mk("c1", 0.4, 0.5, 100.0, 50.0));
+        campaigns.insert(KillChainId::from("c2"), mk("c2", 0.7, 0.2, 30.0, 80.0));
+
+        let summary = MonteCarloSummary {
+            total_runs: 10,
+            win_rates: BTreeMap::new(),
+            win_rate_cis: BTreeMap::new(),
+            average_duration: 0.0,
+            metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
+            campaign_summaries: campaigns,
+            feasibility_matrix: vec![],
+            seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
+            defender_capacity: Vec::new(),
+        };
+
+        // Cost-style objectives sum across chains.
+        assert_eq!(
+            evaluate_objective(&SearchObjective::MaximizeAttackerCost, &summary),
+            130.0,
+            "MaximizeAttackerCost must sum mean_attacker_spend across chains"
+        );
+        assert_eq!(
+            evaluate_objective(&SearchObjective::MinimizeDefenderCost, &summary),
+            130.0,
+            "MinimizeDefenderCost must sum mean_defender_spend across chains"
+        );
+
+        // Rate-style objectives take the max across chains.
+        assert!(
+            (evaluate_objective(&SearchObjective::MaximizeDetection, &summary) - 0.5).abs() < 1e-9,
+            "MaximizeDetection must take the max detection_rate"
+        );
+        assert!(
+            (evaluate_objective(&SearchObjective::MinimizeMaxChainSuccess, &summary) - 0.7).abs()
+                < 1e-9,
+            "MinimizeMaxChainSuccess must take the max overall_success_rate"
+        );
+    }
+
     // ----- Structural validation -----
 
     #[test]

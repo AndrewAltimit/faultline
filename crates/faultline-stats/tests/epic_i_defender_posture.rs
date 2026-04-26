@@ -133,6 +133,226 @@ fn counter_recommendation_elides_when_no_baseline() {
 }
 
 #[test]
+fn counter_recommendation_elides_when_no_owner_set() {
+    // Gating condition #2: even with a baseline, if no decision
+    // variable carries an `owner` the section is suppressed — without
+    // ownership the analyst can't read "whose posture this is" off the
+    // table and the section adds noise. Pin the legacy contract for
+    // the strategy_search_demo scenario and equivalents that don't
+    // tag their variables.
+    let mut scenario = load_posture();
+    // Strip every owner; keep paths and domains intact.
+    for var in &mut scenario.strategy_space.variables {
+        var.owner = None;
+    }
+    let config = posture_config(SearchMethod::Grid, true);
+    let result = run_search(&scenario, &config).expect("search");
+    let md = report::render_search_markdown(&result, &scenario);
+    assert!(
+        !md.contains("## Counter-Recommendation"),
+        "section must not render when no decision variable carries an owner"
+    );
+}
+
+#[test]
+fn counter_recommendation_elides_when_pareto_frontier_empty() {
+    // Gating condition #3: empty Pareto frontier → skip section. We
+    // can't easily make the engine produce an empty frontier (the
+    // dominance check always picks up at least one trial when the
+    // search ran), so this test exercises the report renderer
+    // directly with a hand-built `SearchResult` that has zero
+    // pareto_indices but a baseline + owner-tagged variable.
+    use faultline_stats::search::{SearchResult, SearchTrial};
+    use faultline_types::stats::MonteCarloSummary;
+    use std::collections::BTreeMap;
+
+    let scenario = load_posture();
+    let mut summary = MonteCarloSummary {
+        total_runs: 4,
+        win_rates: BTreeMap::new(),
+        win_rate_cis: BTreeMap::new(),
+        average_duration: 0.0,
+        metric_distributions: BTreeMap::new(),
+        regional_control: BTreeMap::new(),
+        event_probabilities: BTreeMap::new(),
+        campaign_summaries: BTreeMap::new(),
+        feasibility_matrix: vec![],
+        seam_scores: BTreeMap::new(),
+        correlation_matrix: None,
+        pareto_frontier: None,
+        defender_capacity: Vec::new(),
+    };
+    summary.win_rates.insert(FactionId::from("blue"), 0.5);
+
+    let baseline = SearchTrial {
+        trial_index: u32::MAX,
+        assignments: vec![],
+        objective_values: BTreeMap::new(),
+        summary: summary.clone(),
+    };
+    let result = SearchResult {
+        method: SearchMethod::Grid,
+        trials: vec![SearchTrial {
+            trial_index: 0,
+            assignments: vec![],
+            objective_values: BTreeMap::new(),
+            summary,
+        }],
+        // Empty Pareto: section must not render even with baseline +
+        // owner.
+        pareto_indices: vec![],
+        best_by_objective: BTreeMap::new(),
+        objectives: vec![SearchObjective::MaximizeWinRate {
+            faction: FactionId::from("blue"),
+        }],
+        baseline: Some(baseline),
+    };
+
+    let md = report::render_search_markdown(&result, &scenario);
+    assert!(
+        !md.contains("## Counter-Recommendation"),
+        "section must not render with empty Pareto frontier"
+    );
+}
+
+#[test]
+fn counter_recommendation_groups_decision_variables_when_multiple_owners() {
+    // The "Decision variables by owner" subsection only renders when
+    // the strategy_space has >1 distinct owner — otherwise the grouping
+    // is redundant. Pin both branches: bundled scenario (one owner) →
+    // no subsection; mutated copy with two owners → subsection appears.
+    let single_owner = load_posture();
+    let config = posture_config(SearchMethod::Grid, true);
+    let result_single = run_search(&single_owner, &config).expect("single-owner search");
+    let md_single = report::render_search_markdown(&result_single, &single_owner);
+    assert!(
+        !md_single.contains("### Decision variables by owner"),
+        "single-owner space must not emit the grouping subsection"
+    );
+
+    // Mutate one decision variable's owner to a synthetic second
+    // faction so the renderer sees two distinct owners. (Path
+    // resolution is not affected — the owner is informational only.)
+    let mut multi_owner = single_owner.clone();
+    if let Some(var) = multi_owner.strategy_space.variables.get_mut(0) {
+        var.owner = Some(FactionId::from("red"));
+    }
+    let result_multi = run_search(&multi_owner, &config).expect("multi-owner search");
+    let md_multi = report::render_search_markdown(&result_multi, &multi_owner);
+    assert!(
+        md_multi.contains("### Decision variables by owner"),
+        "multi-owner space must emit the grouping subsection"
+    );
+    // Both owner labels must appear in the subsection.
+    assert!(md_multi.contains("`blue`"));
+    assert!(md_multi.contains("`red`"));
+}
+
+#[test]
+fn counter_recommendation_renders_per_objective_delta_table() {
+    // The Counter-Recommendation section emits a delta table per
+    // Pareto-frontier trial. For each objective we expect:
+    // - the objective label as a row,
+    // - "max" / "min" direction tag,
+    // - a baseline value,
+    // - a trial value,
+    // - a signed delta with one of "+" / "·" / "−" glyphs,
+    // - a yes/no improvement flag.
+    let scenario = load_posture();
+    let config = posture_config(SearchMethod::Grid, true);
+    let result = run_search(&scenario, &config).expect("search");
+    let md = report::render_search_markdown(&result, &scenario);
+
+    // Header row of the per-trial delta table.
+    assert!(
+        md.contains("| Objective | Direction | Baseline | Trial | Δ | Improvement? |"),
+        "delta table header must appear in Counter-Rec section"
+    );
+    // Direction tags appear (covers max-aligned MaximizeWinRate +
+    // MaximizeDetection and the min-aligned MinimizeMaxChainSuccess
+    // from the bundled scenario's objective list).
+    assert!(md.contains("| max |"));
+    assert!(md.contains("| min |"));
+    // Improvement column carries at least one "no" or "yes" cell —
+    // baseline-vs-trial deltas are always one or the other in the
+    // bundled scenario.
+    assert!(
+        md.contains("| yes |") || md.contains("| no |"),
+        "improvement column must surface yes/no cells"
+    );
+}
+
+#[test]
+fn counter_recommendation_wilson_ci_panel_renders_for_win_rate() {
+    // The Wilson CI panel only renders when the objectives contain a
+    // `MaximizeWinRate` variant — the only currently rate-valued
+    // objective with a Wilson formula on the search summary. Pin
+    // both branches: present (panel renders) and absent (no panel).
+    let scenario = load_posture();
+    let mut config = posture_config(SearchMethod::Grid, true);
+
+    // Branch 1: with MaximizeWinRate, the panel must render.
+    let result_with_winrate = run_search(&scenario, &config).expect("search with winrate");
+    let md_with = report::render_search_markdown(&result_with_winrate, &scenario);
+    assert!(
+        md_with.contains("Win-rate Wilson 95% CIs:"),
+        "Wilson CI panel must render when MaximizeWinRate is in the objective list"
+    );
+
+    // Branch 2: drop MaximizeWinRate, keep the defender-aligned
+    // objectives. The Wilson panel must disappear; the rest of the
+    // section stays intact.
+    config.objectives = vec![
+        SearchObjective::MinimizeMaxChainSuccess,
+        SearchObjective::MaximizeDetection,
+    ];
+    let result_without_winrate = run_search(&scenario, &config).expect("search without winrate");
+    let md_without = report::render_search_markdown(&result_without_winrate, &scenario);
+    assert!(
+        md_without.contains("## Counter-Recommendation"),
+        "section must still render with non-rate objectives"
+    );
+    assert!(
+        !md_without.contains("Win-rate Wilson 95% CIs:"),
+        "Wilson CI panel must not render when no MaximizeWinRate objective is present"
+    );
+}
+
+#[test]
+fn manifest_search_mode_backward_compat_default_compute_baseline() {
+    // Old manifests (Epic H shape) lacked the `compute_baseline`
+    // field. `#[serde(default)]` on the new field must let those
+    // manifests deserialize cleanly with `compute_baseline = false`,
+    // matching the SearchResult shape they were originally hashed
+    // under (no baseline trial).
+    use faultline_stats::manifest::ManifestMode;
+
+    // Hand-craft the JSON that an Epic H manifest would have produced
+    // — note the absence of `compute_baseline`.
+    let legacy_json = r#"{
+        "kind": "search",
+        "method": "grid",
+        "trials": 4,
+        "search_seed": 99,
+        "objectives": ["maximize_win_rate:alpha", "minimize_duration"]
+    }"#;
+
+    let parsed: ManifestMode =
+        serde_json::from_str(legacy_json).expect("legacy manifest must deserialize");
+    match parsed {
+        ManifestMode::Search {
+            compute_baseline, ..
+        } => {
+            assert!(
+                !compute_baseline,
+                "legacy manifest must default compute_baseline to false"
+            );
+        },
+        other => panic!("expected ManifestMode::Search, got {other:?}"),
+    }
+}
+
+#[test]
 fn defender_objectives_move_under_search() {
     // Sanity check that the bundled scenario's decision variables
     // actually push the new defender-aligned objectives. If a future

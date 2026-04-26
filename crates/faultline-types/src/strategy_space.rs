@@ -137,9 +137,10 @@ pub enum SearchObjective {
     /// cost-effective postures.
     MinimizeDefenderCost,
     /// Defender-aligned: minimize the maximum per-chain success rate.
-    /// Reads `success_rate` from `CampaignSummary` (probability the
-    /// chain reached its terminal phase) so a defender posture that
-    /// blocks every chain scores 0 and is best.
+    /// Reads `overall_success_rate` from `CampaignSummary` (the
+    /// fraction of runs where the chain reached its terminal phase
+    /// with at least one kinetic output delivered) so a defender
+    /// posture that blocks every chain scores 0 and is best.
     MinimizeMaxChainSuccess,
 }
 
