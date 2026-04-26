@@ -317,6 +317,34 @@ fn validate_scenario_rejects_excessive_items_per_tick() {
 }
 
 #[test]
+fn validate_scenario_rejects_negative_items_per_tick() {
+    // A queue cannot receive a negative number of arrivals per tick.
+    // The runtime silently clamps via `.max(0.0)` in
+    // `enqueue_phase_noise`, masking authoring errors. Mirror the
+    // fail-loud pattern used for `service_rate`.
+    let scenario = load_alert_fatigue_scenario();
+    let mut bad = scenario.clone();
+    let chain = bad
+        .kill_chains
+        .values_mut()
+        .next()
+        .expect("scenario has a kill chain");
+    let phase_with_noise = chain
+        .phases
+        .values_mut()
+        .find(|p| !p.defender_noise.is_empty())
+        .expect("alert_fatigue_soc has phases with defender_noise");
+    phase_with_noise.defender_noise[0].items_per_tick = -2.5;
+    let err = faultline_engine::validate_scenario(&bad)
+        .expect_err("validate must reject negative items_per_tick");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("items_per_tick") && (msg.contains("-2.5") || msg.contains(">= 0")),
+        "unhelpful error message: {msg}"
+    );
+}
+
+#[test]
 fn validate_scenario_rejects_unknown_defender_role_reference() {
     // A kill-chain phase that names an undeclared (faction, role)
     // must be rejected at load time. Catches author typos that

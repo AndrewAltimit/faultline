@@ -1,5 +1,6 @@
 use crate::ids::{
-    DefenderRoleId, EventId, FactionId, InfraId, InstitutionId, RegionId, TechCardId, VictoryId,
+    DefenderRoleId, EventId, FactionId, InfraId, InstitutionId, KillChainId, PhaseId, RegionId,
+    TechCardId, VictoryId,
 };
 
 /// Errors arising from scenario validation.
@@ -128,8 +129,19 @@ pub enum ScenarioError {
          noise streams."
     )]
     DefenderNoiseRateTooHigh {
-        chain: String,
-        phase: String,
+        chain: KillChainId,
+        phase: PhaseId,
+        value: f64,
+    },
+
+    #[error(
+        "kill chain {chain} phase {phase} declares defender_noise with \
+         items_per_tick = {value}; rate must be >= 0 (a queue cannot \
+         receive a negative number of arrivals per tick)"
+    )]
+    NegativeDefenderNoiseRate {
+        chain: KillChainId,
+        phase: PhaseId,
         value: f64,
     },
 

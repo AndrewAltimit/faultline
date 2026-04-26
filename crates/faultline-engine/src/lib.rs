@@ -150,6 +150,26 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                         role: noise.role.clone(),
                     });
                 }
+                // NaN never satisfies `< 0.0` or `> 700.0`, so explicit
+                // `!is_finite()` is required to catch it (and ±∞).
+                if !noise.items_per_tick.is_finite() {
+                    return Err(ScenarioError::DefenderNoiseRateTooHigh {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                        value: noise.items_per_tick,
+                    });
+                }
+                // A negative rate is silently clamped to 0.0 in
+                // `enqueue_phase_noise` via `.max(0.0)`, masking
+                // authoring errors (sign flip / typo). Same fail-loud
+                // pattern as `NegativeServiceRate`.
+                if noise.items_per_tick < 0.0 {
+                    return Err(ScenarioError::NegativeDefenderNoiseRate {
+                        chain: cid.clone(),
+                        phase: pid.clone(),
+                        value: noise.items_per_tick,
+                    });
+                }
                 // `sample_poisson` uses Knuth's inverse-transform method,
                 // which relies on `(-mean).exp()`. For `mean > ~709` this
                 // underflows to 0.0 in f64 and the loop falls through to
@@ -158,10 +178,10 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 // below the underflow threshold so the sampler stays in
                 // its accurate regime; authors who genuinely need higher
                 // rates can split across multiple noise streams.
-                if !noise.items_per_tick.is_finite() || noise.items_per_tick > 700.0 {
+                if noise.items_per_tick > 700.0 {
                     return Err(ScenarioError::DefenderNoiseRateTooHigh {
-                        chain: cid.0.clone(),
-                        phase: pid.0.clone(),
+                        chain: cid.clone(),
+                        phase: pid.clone(),
                         value: noise.items_per_tick,
                     });
                 }
