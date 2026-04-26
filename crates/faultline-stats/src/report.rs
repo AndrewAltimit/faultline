@@ -993,23 +993,26 @@ fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenar
                     raw_delta < 0.0
                 };
             let direction = if obj.maximize() { "max" } else { "min" };
-            let delta_glyph = if is_zero {
+            // Zero-delta cells render as the bare `·` glyph — appending
+            // `0.0000` to the symbol reads strangely and misleads the
+            // analyst into looking for a magnitude.
+            let delta_cell = if is_zero {
+                "·".to_string()
+            } else {
+                let glyph = if improved { "+" } else { "−" };
+                format!("{}{:.4}", glyph, raw_delta.abs())
+            };
+            let improvement_cell = if is_zero {
                 "·"
             } else if improved {
-                "+"
+                "yes"
             } else {
-                "−"
+                "no"
             };
             let _ = writeln!(
                 out,
-                "| `{}` | {} | {:.4} | {:.4} | {}{:.4} | {} |",
-                label,
-                direction,
-                bv,
-                tv,
-                delta_glyph,
-                raw_delta.abs(),
-                if improved { "yes" } else { "no" }
+                "| `{}` | {} | {:.4} | {:.4} | {} | {} |",
+                label, direction, bv, tv, delta_cell, improvement_cell,
             );
         }
         let _ = writeln!(out);

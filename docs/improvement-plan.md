@@ -477,11 +477,11 @@ What landed:
   `baseline: Option<SearchTrial>` to `SearchResult`. When enabled
   (default in the CLI), the search runner emits a "do-nothing" trial
   — the scenario evaluated with no decision-variable assignment
-  applied — using the sentinel `trial_index = u32::MAX` so renderers
-  detect it without a separate type. The `baseline_objective_matches
-  _a_zero_assignment_run` test pins that the baseline reuses the
-  inner MC seed so it's bit-identical to a standalone MC of the same
-  scenario.
+  applied. The baseline's `trial_index` is `Option<u32>::None`; real
+  trials carry `Some(i)`, so the distinction is typed rather than
+  sentinel-based. The `baseline_objective_matches_a_zero_assignment
+  _run` test pins that the baseline reuses the inner MC seed so it's
+  bit-identical to a standalone MC of the same scenario.
 - New `render_counter_recommendation` section on the search report.
   Gated on (a) baseline present, (b) at least one decision variable
   carrying an `owner` (so legacy attacker-only spaces stay
