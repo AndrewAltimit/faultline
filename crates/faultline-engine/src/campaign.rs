@@ -607,11 +607,15 @@ fn apply_phase_output(
 ///
 /// Mutates the runtime faction state — advances the rank index,
 /// records the strike tick, increments the cumulative count, and
-/// applies a one-shot morale drop. No-op (other than recording the
-/// strike) when the faction declares no `LeadershipCadre`: legacy
-/// factions cannot be decapitated and the morale shock would silently
-/// land on a nominally-non-existent leadership surface, which is
-/// almost always a scenario authoring mistake.
+/// applies a one-shot morale drop.
+///
+/// Scenario validation rejects `LeadershipDecapitation` against any
+/// faction that does not declare a `LeadershipCadre`, so the runtime
+/// path here can assume the cadre exists when the target's faction
+/// state does. The defensive `cadre_len` lookup remains so a
+/// counterfactual override that mutates `leadership` post-validation
+/// (or a hand-built `Scenario` that bypasses `validate_scenario`) does
+/// not advance into a non-existent rank list.
 fn apply_leadership_decapitation(
     state: &mut SimulationState,
     scenario: &Scenario,
@@ -635,12 +639,15 @@ fn apply_leadership_decapitation(
 
     if let Some(len) = cadre_len {
         // Saturate at len — once past the end the faction is
-        // leaderless. Repeated strikes cannot push the index
-        // arbitrarily far past, so subsequent reports show "exhausted"
-        // rather than nonsensical large indices.
-        fs.current_leadership_rank = (fs.current_leadership_rank + 1).min(len);
+        // leaderless. `saturating_add` plus `.min(len)` prevents both
+        // u32 overflow on pathological repeat-strike scenarios and
+        // nonsensical large indices in the report.
+        fs.current_leadership_rank = fs.current_leadership_rank.saturating_add(1).min(len);
     }
 
+    // morale_shock NaN is rejected at validation, but we keep the
+    // `> 0.0` guard so a hand-built scenario that bypasses validation
+    // produces a no-op rather than a NaN-poisoned morale value.
     if morale_shock > 0.0 {
         fs.morale = (fs.morale - morale_shock).clamp(0.0, 1.0);
     }

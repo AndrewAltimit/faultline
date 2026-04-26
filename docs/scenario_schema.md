@@ -16,6 +16,7 @@ defender_budget = 50_000_000.0
 
 [meta]              # name, description, author, version, tags
 [map]               # source, regions, infrastructure, terrain
+[[environment.windows]]    # optional weather / time-of-day windows (Epic D)
 [factions.<id>]     # one table per faction
 [technology.<id>]   # one table per tech card (may be empty)
 [political_climate] # tension, trust, media, segments, modifiers

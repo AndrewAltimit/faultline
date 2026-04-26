@@ -197,9 +197,22 @@ See `docs/improvement-plan.md` Epic B for the closeout note.
 
 See `docs/improvement-plan.md` Epic C for the closeout note.
 
-### 8.D — Engine model depth — DEFERRED
+### 8.D — Engine model depth — IN PROGRESS
 
-See `docs/improvement-plan.md` Epic D — pick-2–3 items (supply networks, multi-front coupling, decapitation, info-op competition, weather, alliance fracture, refugee flows, OR prerequisites).
+Round one shipped 3 of 7 items (the "pick 2–3" bar):
+
+- [x] `BranchCondition::OrAny` with short-circuit evaluation + recursive escalation-window walker
+- [x] Weather / time-of-day modifiers via optional `EnvironmentSchedule` (Always / TickRange / Cycle activation, multiplicative defense + global detection factors)
+- [x] Leadership decapitation + succession via `LeadershipCadre` + `PhaseOutput::LeadershipDecapitation` + per-tick morale-cap helper
+
+Deferred:
+- [ ] Supply-network graph + interdiction
+- [ ] Multi-front resource contention
+- [ ] Info-op narrative competition
+- [ ] Coalition / alliance fracture mechanic
+- [ ] Refugee / displacement flows
+
+See `docs/improvement-plan.md` Epic D for the closeout note on round one.
 
 ### 8.E — UI identity & analytical density — DEFERRED
 

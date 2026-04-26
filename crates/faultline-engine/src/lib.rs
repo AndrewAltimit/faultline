@@ -207,13 +207,22 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     // Environment schedule (Epic D — weather / time-of-day).
     // Catch authoring errors that would otherwise produce silent
     // no-ops or NaN-poisoned multipliers at runtime.
+    let mut seen_window_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for window in &scenario.environment.windows {
+        if !seen_window_ids.insert(window.id.as_str()) {
+            return Err(ScenarioError::Custom(format!(
+                "environment window id `{}` is declared more than once; \
+                 ids must be unique so the report can attribute factor \
+                 contributions correctly",
+                window.id
+            )));
+        }
         validate_environment_window(window)?;
     }
 
     // Leadership cadre (Epic D — decapitation). Catch malformed cadres
-    // (empty rank list, non-finite effectiveness) at load time so the
-    // runtime helper can stay branch-free.
+    // (empty rank list, non-finite effectiveness, duplicate rank ids)
+    // at load time so the runtime helper can stay branch-free.
     for (fid, faction) in &scenario.factions {
         if let Some(cadre) = faction.leadership.as_ref() {
             if cadre.ranks.is_empty() {
@@ -233,7 +242,17 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     expected: "[0.0, 1.0]".into(),
                 });
             }
+            let mut seen_rank_ids: std::collections::BTreeSet<&str> =
+                std::collections::BTreeSet::new();
             for rank in &cadre.ranks {
+                if !seen_rank_ids.insert(rank.id.as_str()) {
+                    return Err(ScenarioError::Custom(format!(
+                        "faction {fid} leadership rank id `{}` is \
+                         declared more than once; rank ids must be \
+                         unique within a cadre",
+                        rank.id
+                    )));
+                }
                 if !rank.effectiveness.is_finite()
                     || rank.effectiveness < 0.0
                     || rank.effectiveness > 1.0
@@ -243,6 +262,53 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                         value: rank.effectiveness,
                         expected: "[0.0, 1.0]".into(),
                     });
+                }
+            }
+        }
+    }
+
+    // Leadership-targeted phase outputs (Epic D). A
+    // `LeadershipDecapitation` against a faction without a declared
+    // cadre is a no-op at runtime — almost certainly an authoring
+    // mistake. Reject loudly so the analyst gets a diagnostic instead
+    // of a silently-empty Leadership Cadres section. Also catches
+    // unknown faction ids and non-finite / out-of-range morale_shock.
+    for (cid, chain) in &scenario.kill_chains {
+        for (pid, phase) in &chain.phases {
+            for output in &phase.outputs {
+                if let faultline_types::campaign::PhaseOutput::LeadershipDecapitation {
+                    target_faction,
+                    morale_shock,
+                } = output
+                {
+                    let Some(target) = scenario.factions.get(target_faction) else {
+                        return Err(ScenarioError::Custom(format!(
+                            "kill chain {cid} phase {pid} declares \
+                             LeadershipDecapitation against unknown \
+                             faction `{target_faction}`"
+                        )));
+                    };
+                    if target.leadership.is_none() {
+                        return Err(ScenarioError::Custom(format!(
+                            "kill chain {cid} phase {pid} declares \
+                             LeadershipDecapitation against faction \
+                             `{target_faction}`, which has no \
+                             `leadership` cadre — the strike would \
+                             be a runtime no-op. Either add a cadre or \
+                             use `PhaseOutput::Custom` for analytics-only \
+                             counters."
+                        )));
+                    }
+                    if !morale_shock.is_finite() || *morale_shock < 0.0 || *morale_shock > 1.0 {
+                        return Err(ScenarioError::ValueOutOfRange {
+                            field: format!(
+                                "kill chain {cid} phase {pid} \
+                                 LeadershipDecapitation.morale_shock"
+                            ),
+                            value: *morale_shock,
+                            expected: "[0.0, 1.0]".into(),
+                        });
+                    }
                 }
             }
         }
@@ -296,6 +362,17 @@ fn validate_environment_window(
                     field: format!("environment window {} Cycle.period", window.id),
                     value: f64::from(*period),
                     expected: "> 0".into(),
+                });
+            }
+            if *duration == 0 {
+                // `is_active_at` returns false for duration=0; that
+                // would make the window silently never fire. Treat as
+                // an authoring mistake (use `TickRange` if you really
+                // want a never-active placeholder).
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("environment window {} Cycle.duration", window.id),
+                    value: f64::from(*duration),
+                    expected: "> 0 (a zero-duration cycle is silently never-active)".into(),
                 });
             }
             if duration > period {
@@ -489,6 +566,517 @@ mod tests {
         let mut scenario = minimal_scenario();
         scenario.factions.clear();
         assert!(validate_scenario(&scenario).is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Epic D validation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validate_rejects_zero_period_cycle_window() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "bad".into(),
+                name: "Bad".into(),
+                activation: Activation::Cycle {
+                    period: 0,
+                    phase: 0,
+                    duration: 1,
+                },
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: 1.0,
+                visibility_factor: 1.0,
+                detection_factor: 1.0,
+            }],
+        };
+        let err = validate_scenario(&scenario).expect_err("zero period must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_zero_duration_cycle_window() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "bad".into(),
+                name: "Bad".into(),
+                activation: Activation::Cycle {
+                    period: 24,
+                    phase: 0,
+                    duration: 0,
+                },
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: 1.0,
+                visibility_factor: 1.0,
+                detection_factor: 1.0,
+            }],
+        };
+        let err = validate_scenario(&scenario).expect_err("zero duration must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_inverted_tick_range_window() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "bad".into(),
+                name: "Bad".into(),
+                activation: Activation::TickRange { start: 50, end: 10 },
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: 1.0,
+                visibility_factor: 1.0,
+                detection_factor: 1.0,
+            }],
+        };
+        let err = validate_scenario(&scenario).expect_err("start > end must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_negative_environment_factor() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "bad".into(),
+                name: "Bad".into(),
+                activation: Activation::Always,
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: -0.5,
+                visibility_factor: 1.0,
+                detection_factor: 1.0,
+            }],
+        };
+        let err = validate_scenario(&scenario).expect_err("negative factor must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_nan_environment_factor() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "bad".into(),
+                name: "Bad".into(),
+                activation: Activation::Always,
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: f64::NAN,
+                visibility_factor: 1.0,
+                detection_factor: 1.0,
+            }],
+        };
+        let err = validate_scenario(&scenario).expect_err("NaN factor must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_window_ids() {
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+        let mut scenario = minimal_scenario();
+        let window = EnvironmentWindow {
+            id: "duplicate".into(),
+            name: "Dup".into(),
+            activation: Activation::Always,
+            applies_to: vec![],
+            movement_factor: 1.0,
+            defense_factor: 1.0,
+            visibility_factor: 1.0,
+            detection_factor: 1.0,
+        };
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![window.clone(), window],
+        };
+        let err = validate_scenario(&scenario).expect_err("duplicate window ids must reject");
+        assert!(matches!(err, ScenarioError::Custom(_)));
+    }
+
+    #[test]
+    fn validate_rejects_empty_leadership_cadre() {
+        use faultline_types::faction::LeadershipCadre;
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+        if let Some(faction) = scenario.factions.get_mut(&fid) {
+            faction.leadership = Some(LeadershipCadre {
+                ranks: vec![],
+                succession_recovery_ticks: 1,
+                succession_floor: 0.5,
+            });
+        }
+        let err = validate_scenario(&scenario).expect_err("empty cadre must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_rank_ids() {
+        use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+        if let Some(faction) = scenario.factions.get_mut(&fid) {
+            let dup_rank = LeadershipRank {
+                id: "dup".into(),
+                name: "Dup".into(),
+                effectiveness: 1.0,
+                description: String::new(),
+            };
+            faction.leadership = Some(LeadershipCadre {
+                ranks: vec![dup_rank.clone(), dup_rank],
+                succession_recovery_ticks: 1,
+                succession_floor: 0.5,
+            });
+        }
+        let err = validate_scenario(&scenario).expect_err("duplicate rank ids must reject");
+        assert!(matches!(err, ScenarioError::Custom(_)));
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_succession_floor() {
+        use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+        if let Some(faction) = scenario.factions.get_mut(&fid) {
+            faction.leadership = Some(LeadershipCadre {
+                ranks: vec![LeadershipRank {
+                    id: "principal".into(),
+                    name: "Principal".into(),
+                    effectiveness: 1.0,
+                    description: String::new(),
+                }],
+                succession_recovery_ticks: 1,
+                succession_floor: 1.5, // > 1
+            });
+        }
+        let err = validate_scenario(&scenario).expect_err("out-of-range floor must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_decap_against_faction_without_cadre() {
+        use faultline_types::campaign::{
+            BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+        };
+        use faultline_types::ids::{KillChainId, PhaseId};
+
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let chain_id = KillChainId::from("decap");
+        let phase_id = PhaseId::from("strike");
+
+        let mut phases = BTreeMap::new();
+        phases.insert(
+            phase_id.clone(),
+            CampaignPhase {
+                id: phase_id.clone(),
+                name: "Strike".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![PhaseOutput::LeadershipDecapitation {
+                    target_faction: fid.clone(),
+                    morale_shock: 0.1,
+                }],
+                branches: vec![PhaseBranch {
+                    condition: BranchCondition::OnSuccess,
+                    next_phase: phase_id.clone(),
+                }],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id,
+                name: "Decap".into(),
+                description: String::new(),
+                attacker: fid.clone(),
+                target: fid.clone(),
+                entry_phase: phase_id,
+                phases,
+            },
+        );
+
+        // gov has no cadre — must reject.
+        let err = validate_scenario(&scenario).expect_err("decap without cadre must reject");
+        assert!(matches!(err, ScenarioError::Custom(_)));
+    }
+
+    #[test]
+    fn validate_rejects_decap_against_unknown_faction() {
+        use faultline_types::campaign::{
+            BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+        };
+        use faultline_types::ids::{KillChainId, PhaseId};
+
+        let mut scenario = minimal_scenario();
+        let chain_id = KillChainId::from("decap");
+        let phase_id = PhaseId::from("strike");
+
+        let mut phases = BTreeMap::new();
+        phases.insert(
+            phase_id.clone(),
+            CampaignPhase {
+                id: phase_id.clone(),
+                name: "Strike".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![PhaseOutput::LeadershipDecapitation {
+                    target_faction: FactionId::from("ghost"),
+                    morale_shock: 0.0,
+                }],
+                branches: vec![PhaseBranch {
+                    condition: BranchCondition::OnSuccess,
+                    next_phase: phase_id.clone(),
+                }],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id,
+                name: "Decap".into(),
+                description: String::new(),
+                attacker: FactionId::from("gov"),
+                target: FactionId::from("gov"),
+                entry_phase: phase_id,
+                phases,
+            },
+        );
+
+        let err =
+            validate_scenario(&scenario).expect_err("decap against unknown faction must reject");
+        assert!(matches!(err, ScenarioError::Custom(_)));
+    }
+
+    #[test]
+    fn validate_rejects_nan_morale_shock() {
+        use faultline_types::campaign::{
+            BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+        };
+        use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+        use faultline_types::ids::{KillChainId, PhaseId};
+
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+        // Add a cadre so the cadre-existence check passes — the
+        // morale_shock check is independent.
+        if let Some(faction) = scenario.factions.get_mut(&fid) {
+            faction.leadership = Some(LeadershipCadre {
+                ranks: vec![LeadershipRank {
+                    id: "principal".into(),
+                    name: "Principal".into(),
+                    effectiveness: 1.0,
+                    description: String::new(),
+                }],
+                succession_recovery_ticks: 1,
+                succession_floor: 0.5,
+            });
+        }
+
+        let chain_id = KillChainId::from("decap");
+        let phase_id = PhaseId::from("strike");
+        let mut phases = BTreeMap::new();
+        phases.insert(
+            phase_id.clone(),
+            CampaignPhase {
+                id: phase_id.clone(),
+                name: "Strike".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![PhaseOutput::LeadershipDecapitation {
+                    target_faction: fid.clone(),
+                    morale_shock: f64::NAN,
+                }],
+                branches: vec![PhaseBranch {
+                    condition: BranchCondition::OnSuccess,
+                    next_phase: phase_id.clone(),
+                }],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id,
+                name: "Decap".into(),
+                description: String::new(),
+                attacker: fid.clone(),
+                target: fid.clone(),
+                entry_phase: phase_id,
+                phases,
+            },
+        );
+
+        let err = validate_scenario(&scenario).expect_err("NaN morale_shock must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_passes_for_well_formed_environment_and_leadership() {
+        // Sanity-check: a well-formed scenario with both Epic D
+        // surfaces declared should pass validation cleanly.
+        use faultline_types::campaign::{
+            BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+        };
+        use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+        use faultline_types::ids::{KillChainId, PhaseId};
+        use faultline_types::map::{Activation, EnvironmentSchedule, EnvironmentWindow};
+
+        let mut scenario = minimal_scenario();
+        let fid = FactionId::from("gov");
+
+        scenario.environment = EnvironmentSchedule {
+            windows: vec![EnvironmentWindow {
+                id: "night".into(),
+                name: "Night".into(),
+                activation: Activation::Cycle {
+                    period: 24,
+                    phase: 18,
+                    duration: 12,
+                },
+                applies_to: vec![],
+                movement_factor: 1.0,
+                defense_factor: 1.0,
+                visibility_factor: 0.5,
+                detection_factor: 0.7,
+            }],
+        };
+
+        if let Some(faction) = scenario.factions.get_mut(&fid) {
+            faction.leadership = Some(LeadershipCadre {
+                ranks: vec![
+                    LeadershipRank {
+                        id: "principal".into(),
+                        name: "Principal".into(),
+                        effectiveness: 1.0,
+                        description: String::new(),
+                    },
+                    LeadershipRank {
+                        id: "deputy".into(),
+                        name: "Deputy".into(),
+                        effectiveness: 0.5,
+                        description: String::new(),
+                    },
+                ],
+                succession_recovery_ticks: 6,
+                succession_floor: 0.4,
+            });
+        }
+
+        let chain_id = KillChainId::from("decap");
+        let phase_id = PhaseId::from("strike");
+        let mut phases = BTreeMap::new();
+        phases.insert(
+            phase_id.clone(),
+            CampaignPhase {
+                id: phase_id.clone(),
+                name: "Strike".into(),
+                description: String::new(),
+                prerequisites: vec![],
+                base_success_probability: 1.0,
+                min_duration: 1,
+                max_duration: 1,
+                detection_probability_per_tick: 0.0,
+                prerequisite_success_boost: 0.0,
+                attribution_difficulty: 0.5,
+                cost: PhaseCost {
+                    attacker_dollars: 0.0,
+                    defender_dollars: 0.0,
+                    attacker_resources: 0.0,
+                    confidence: None,
+                },
+                targets_domains: vec![],
+                outputs: vec![PhaseOutput::LeadershipDecapitation {
+                    target_faction: fid.clone(),
+                    morale_shock: 0.2,
+                }],
+                branches: vec![PhaseBranch {
+                    condition: BranchCondition::OrAny {
+                        conditions: vec![BranchCondition::OnSuccess, BranchCondition::OnDetection],
+                    },
+                    next_phase: phase_id.clone(),
+                }],
+                parameter_confidence: None,
+                warning_indicators: vec![],
+                defender_noise: vec![],
+                gated_by_defender: None,
+            },
+        );
+
+        scenario.kill_chains.insert(
+            chain_id.clone(),
+            KillChain {
+                id: chain_id,
+                name: "Decap".into(),
+                description: String::new(),
+                attacker: fid.clone(),
+                target: fid.clone(),
+                entry_phase: phase_id,
+                phases,
+            },
+        );
+
+        validate_scenario(&scenario).expect("well-formed Epic D scenario must validate");
     }
 
     #[test]

@@ -120,6 +120,35 @@ utilization, time-to-saturation, mean shadow detections); both
 elide entirely when no faction declares queues. Bundled archetype:
 `scenarios/alert_fatigue_soc.toml`.
 
+**Engine model depth (Epic D — round one).** Three additions
+expand authoring expressiveness without touching the determinism
+contract; all are `#[serde(default)]` so legacy scenarios load
+unchanged.
+
+- `BranchCondition::OrAny { conditions }` composes inner conditions
+  with short-circuit OR semantics. `max_escalation_window`
+  recurses through it so an `EscalationThreshold` nested in an OR
+  still registers its history requirement. Empty `conditions` is
+  rejected at validation.
+- Optional global `[[environment.windows]]` schedule with `Always`
+  / `TickRange` / `Cycle` activation. Per-terrain `defense_factor`
+  multiplies into combat `terrain_defense`; global `detection_factor`
+  multiplies into every kill-chain phase's per-tick detection
+  probability *before* saturation gating, naturally narrowing the
+  shadow-detection window between unattenuated and saturated rolls.
+  See `crates/faultline-engine/src/tick.rs::environment_detection_factor`
+  and `environment_defense_factor`.
+- Optional `[factions.<id>.leadership]` cadre with named ranks plus
+  `succession_recovery_ticks` / `succession_floor`. The
+  `PhaseOutput::LeadershipDecapitation { target_faction, morale_shock }`
+  variant advances the rank index, applies a one-shot morale drop,
+  and records the strike tick. A new per-tick step
+  (`tick::apply_leadership_caps`) clamps each faction's morale at
+  `current_rank.effectiveness × recovery_ramp` so combat reads the
+  degraded value directly. Past-end = leaderless: morale floors at
+  zero. Validation rejects decapitation against a faction without a
+  cadre as an authoring mistake (silent runtime no-op otherwise).
+
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
