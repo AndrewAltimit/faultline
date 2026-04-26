@@ -835,13 +835,13 @@ fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
     } else {
         // Print to stdout so the user can pipe it: `faultline foo.toml
         // --migrate > foo-v2.toml`. We use print! (not info!) so the
-        // bytes appear on stdout regardless of tracing log level.
+        // bytes appear on stdout regardless of tracing log level. We
+        // deliberately emit no trailing log line — tracing's default
+        // formatter writes to stdout in this binary, so any info!()
+        // here would append a non-TOML line into the redirected file
+        // and break downstream parse. The captured TOML is the entire
+        // user-facing output of the stdout-mode migrate.
         print!("{migrated_toml}");
-        info!(
-            from = source_version,
-            to = CURRENT_SCHEMA_VERSION,
-            "migration emitted to stdout"
-        );
     }
     Ok(())
 }

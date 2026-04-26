@@ -146,20 +146,46 @@ fi
 echo "[verify-migration] OK: --in-place rewrote the source file with stamped version"
 
 # (3) --migrate does not run the engine.
-# `--migrate` short-circuits before `fs::create_dir_all(&cli.output)`,
-# so the output dir should never come into existence when the engine
-# stays unreached. We assert directory absence (not just
-# manifest.json absence) because every engine code path goes through
-# `create_dir_all` — so the dir's existence is the canonical proxy
-# for "the engine ran". A regression that introduced engine execution
-# without writing manifest.json would still fail this check.
+# Three independent signals — any one regression should trip at least one:
+#
+#   (a) Exit code is 0. The migrate path returns Ok(()); engine paths
+#       that fail mid-run would non-zero. `set -e` aborts the script if
+#       this trips, so the assertion is implicit.
+#
+#   (b) The output directory is not created. `--migrate` short-circuits
+#       before `fs::create_dir_all(&cli.output)`. Today every engine
+#       code path goes through `create_dir_all` early, so the dir's
+#       absence is a canonical proxy for "engine never ran". This
+#       check would weaken if a future refactor reordered initialization
+#       to defer `create_dir_all` — that's why signal (c) exists too.
+#
+#   (c) Stdout is pure, well-formed TOML that re-validates as a
+#       Scenario. We deliberately omit `--quiet` so any stray engine
+#       `info!()` log would append/prepend a tracing line on stdout
+#       (this binary's tracing default-writes to stdout), breaking
+#       TOML parse downstream. Re-feeding the captured stdout to
+#       `--validate` exercises the full deserialize+validate path on
+#       it, so a corrupted prefix or trailer would fail the parse.
+#       This catches regressions where the engine ran but didn't
+#       call `create_dir_all` early — orthogonal to signal (b).
 engine_check_dir="${NEG_DIR}/engine_check_out"
-rm -rf "$engine_check_dir"
-"$BIN" scenarios/tutorial_symmetric.toml --migrate --quiet \
-    -o "$engine_check_dir" > /dev/null
+engine_check_stdout="${NEG_DIR}/engine_check_stdout.toml"
+engine_check_revalidate_dir="${NEG_DIR}/engine_check_revalidate"
+rm -rf "$engine_check_dir" "$engine_check_revalidate_dir"
+if ! "$BIN" scenarios/tutorial_symmetric.toml --migrate \
+        -o "$engine_check_dir" > "$engine_check_stdout"; then
+    echo "[verify-migration] FAIL: --migrate exited non-zero on engine-not-run check"
+    exit 1
+fi
 if [[ -e "$engine_check_dir" ]]; then
     echo "[verify-migration] FAIL: --migrate created the output dir (engine code path was reached)"
     ls -la "$engine_check_dir" || true
+    exit 1
+fi
+if ! "$BIN" "$engine_check_stdout" --validate --quiet \
+        -o "$engine_check_revalidate_dir" > /dev/null 2>&1; then
+    echo "[verify-migration] FAIL: --migrate stdout did not re-validate as a scenario"
+    echo "  (a leading/trailing log line on stdout would corrupt the TOML — engine path may have run)"
     exit 1
 fi
 echo "[verify-migration] OK: --migrate did not start the engine"
