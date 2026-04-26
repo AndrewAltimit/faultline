@@ -799,12 +799,33 @@ fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
     })?;
 
     if cli.in_place {
-        fs::write(&cli.scenario, &migrated_toml).with_context(|| {
+        // Atomic in-place rewrite: write to a sibling temp file, then
+        // `rename` (atomic on POSIX as long as both paths share a
+        // filesystem). `fs::write` directly on the target would
+        // truncate-then-write, so a kill mid-write would leave the
+        // scenario file partially written with no recovery path.
+        let mut tmp_os = cli.scenario.clone().into_os_string();
+        tmp_os.push(".tmp");
+        let tmp_path = PathBuf::from(tmp_os);
+        fs::write(&tmp_path, &migrated_toml).with_context(|| {
             format!(
-                "failed to write migrated scenario to {}",
-                cli.scenario.display()
+                "failed to write migrated scenario to temp file {}",
+                tmp_path.display()
             )
         })?;
+        if let Err(rename_err) = fs::rename(&tmp_path, &cli.scenario) {
+            // Best-effort cleanup so a failed rename doesn't leave an
+            // orphan `.tmp` next to the scenario. Ignore the cleanup
+            // error — the rename failure is the real signal.
+            let _ = fs::remove_file(&tmp_path);
+            return Err(rename_err).with_context(|| {
+                format!(
+                    "failed to atomically replace {} with {}",
+                    cli.scenario.display(),
+                    tmp_path.display()
+                )
+            });
+        }
         info!(
             scenario = %cli.scenario.display(),
             from = source_version,

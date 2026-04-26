@@ -582,4 +582,3 @@ faction = "nato"
 type = "HoldRegions"
 regions = ["central_europe", "poland_baltics"]
 duration = 240
-

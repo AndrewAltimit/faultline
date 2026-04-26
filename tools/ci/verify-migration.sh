@@ -146,16 +146,20 @@ fi
 echo "[verify-migration] OK: --in-place rewrote the source file with stamped version"
 
 # (3) --migrate does not run the engine.
-# The smoke test would catch most regressions here because --migrate
-# short-circuits before output-dir creation, but a future change might
-# accidentally re-introduce an engine invocation. Confirm no
-# manifest.json appears in a fresh output dir.
+# `--migrate` short-circuits before `fs::create_dir_all(&cli.output)`,
+# so the output dir should never come into existence when the engine
+# stays unreached. We assert directory absence (not just
+# manifest.json absence) because every engine code path goes through
+# `create_dir_all` — so the dir's existence is the canonical proxy
+# for "the engine ran". A regression that introduced engine execution
+# without writing manifest.json would still fail this check.
 engine_check_dir="${NEG_DIR}/engine_check_out"
 rm -rf "$engine_check_dir"
 "$BIN" scenarios/tutorial_symmetric.toml --migrate --quiet \
     -o "$engine_check_dir" > /dev/null
-if [[ -f "${engine_check_dir}/manifest.json" ]]; then
-    echo "[verify-migration] FAIL: --migrate emitted a manifest.json (it should never run the engine)"
+if [[ -e "$engine_check_dir" ]]; then
+    echo "[verify-migration] FAIL: --migrate created the output dir (engine code path was reached)"
+    ls -la "$engine_check_dir" || true
     exit 1
 fi
 echo "[verify-migration] OK: --migrate did not start the engine"
