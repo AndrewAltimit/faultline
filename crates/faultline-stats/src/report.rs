@@ -541,14 +541,14 @@ fn render_leadership_disruption(out: &mut String, scenario: &Scenario) {
     let _ = writeln!(out);
 
     for faction in cadre_factions {
-        let cadre = match faction.leadership.as_ref() {
-            Some(c) => c,
-            None => continue,
-        };
+        let cadre = faction
+            .leadership
+            .as_ref()
+            .expect("cadre_factions filtered to leadership.is_some()");
         let _ = writeln!(
             out,
             "### `{}` — {}",
-            faction.id,
+            escape_md_cell(&faction.id.0),
             escape_md_cell(&faction.name)
         );
         let _ = writeln!(
@@ -620,7 +620,7 @@ fn render_environment_schedule(out: &mut String, scenario: &Scenario) {
         } else {
             w.applies_to
                 .iter()
-                .map(|t| format!("{t:?}"))
+                .map(|t| t.to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
         };

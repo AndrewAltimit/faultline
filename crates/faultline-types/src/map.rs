@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +85,26 @@ pub enum TerrainType {
     Coastal,
     Riverine,
     Arctic,
+}
+
+impl fmt::Display for TerrainType {
+    /// Stable, human-readable label for report rendering. Decoupled
+    /// from `Debug` so a future variant rename doesn't silently change
+    /// user-facing report text.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            TerrainType::Urban => "Urban",
+            TerrainType::Suburban => "Suburban",
+            TerrainType::Rural => "Rural",
+            TerrainType::Forest => "Forest",
+            TerrainType::Mountain => "Mountain",
+            TerrainType::Desert => "Desert",
+            TerrainType::Coastal => "Coastal",
+            TerrainType::Riverine => "Riverine",
+            TerrainType::Arctic => "Arctic",
+        };
+        f.write_str(label)
+    }
 }
 
 /// A geographic coordinate.
