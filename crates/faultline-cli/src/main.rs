@@ -890,7 +890,7 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
     let result = faultline_stats::search::run_search(scenario, &config)
         .with_context(|| "strategy search failed")?;
 
-    write_search_outputs(cli, &result, scenario)?;
+    write_search_outputs(cli, &result)?;
 
     let manifest_mc = ManifestMcConfig::from_config(&config.mc_config, mc_seed);
     let mode = ManifestMode::Search {
@@ -925,7 +925,7 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
     Ok(())
 }
 
-fn write_search_outputs(cli: &Cli, result: &SearchResult, _scenario: &Scenario) -> Result<()> {
+fn write_search_outputs(cli: &Cli, result: &SearchResult) -> Result<()> {
     // Search emits a structured JSON artifact unconditionally — the
     // analyst's full record of what was tried and what each trial
     // scored. The Markdown is written separately in
