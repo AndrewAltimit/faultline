@@ -126,17 +126,24 @@ pub struct MonteCarloSummary {
 }
 
 /// Pearson correlation matrix over a fixed list of per-run scalar
-/// outputs. Square and symmetric; the diagonal is always 1.0 (modulo
-/// floating-point noise on degenerate samples).
+/// outputs. Square and symmetric; the diagonal is always `Some(1.0)`
+/// (modulo floating-point noise on degenerate samples).
+///
+/// Entries are `None` when one of the two series has zero variance —
+/// this is mathematically "undefined correlation" and we surface it
+/// explicitly rather than fudging to 0.0. `Option<f64>` is used over a
+/// raw `f64` because `serde_json` round-trips NaN as `null` then fails
+/// to deserialize back into `f64`, which would break
+/// [`super::manifest::summary_hash`] and any external tooling reading
+/// `summary.json`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CorrelationMatrix {
     /// Display labels in row / column order.
     pub labels: Vec<String>,
     /// Row-major `len() == labels.len() * labels.len()`. Index
-    /// `[i * n + j]` is `corr(labels[i], labels[j])`. Entries are NaN
-    /// when one of the two series has zero variance — surfaced rather
-    /// than silently zeroed so the renderer can flag them.
-    pub values: Vec<f64>,
+    /// `[i * n + j]` is `corr(labels[i], labels[j])`. `None` means the
+    /// correlation is undefined (zero variance on at least one input).
+    pub values: Vec<Option<f64>>,
     /// Number of runs the correlations were computed over.
     pub n: u32,
 }
@@ -263,16 +270,22 @@ pub struct DefenderReactionTime {
 /// tick `t`. Runs that ended without the phase resolving (still
 /// `Pending` or `Active`) contribute as right-censored observations at
 /// the run's final tick — they reduce the at-risk set but do not count
-/// as events. `cumulative_hazard[i]` is `-ln(survival[i])`.
+/// as events. The implicit value before the first event is `S = 1.0`;
+/// `survival[i]` records `S(t_i)` *after* applying the i-th event.
+/// `cumulative_hazard[i]` is `-ln(survival[i])`, or `None` when
+/// `survival[i] == 0` (hazard is mathematically infinite — `Option`
+/// avoids the JSON-roundtrip pitfall where `f64::INFINITY` serializes
+/// as `null` and then fails to deserialize back into `f64`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KaplanMeierCurve {
     /// Distinct event times where the curve steps, sorted ascending.
     pub times: Vec<u32>,
-    /// `S(t)` at each event time. Always starts at 1.0 (before any
-    /// event) and steps down at each event.
+    /// `S(t)` at each event time, *after* the step. The pre-event
+    /// value is implicitly `1.0`.
     pub survival: Vec<f64>,
-    /// Cumulative hazard `H(t) = -ln(S(t))`. Same length as `times`.
-    pub cumulative_hazard: Vec<f64>,
+    /// Cumulative hazard `H(t) = -ln(S(t))`. `None` at indices where
+    /// `S` has hit zero (`H` is infinite there).
+    pub cumulative_hazard: Vec<Option<f64>>,
     /// Number of events (terminal resolutions) at each step.
     pub events: Vec<u32>,
     /// Number of runs at risk *just before* each event time.

@@ -297,7 +297,6 @@ fn extract_metric(
     summary: &faultline_types::stats::MonteCarloSummary,
     metric: MorrisMetric,
 ) -> f64 {
-    use faultline_types::stats::MetricType;
     match metric {
         MorrisMetric::Duration => summary.average_duration,
         MorrisMetric::FirstFactionWinRate => {
@@ -315,14 +314,6 @@ fn extract_metric(
             sum / summary.campaign_summaries.len() as f64
         },
     }
-    .max({
-        // Reference `MetricType` to silence the unused-import warning
-        // when only Duration is selected. The fallthrough match arms
-        // above are exhaustive; this `max` with `f64::MIN` is a no-op
-        // semantically.
-        let _ = MetricType::Duration;
-        f64::MIN
-    })
 }
 
 fn metric_label(m: MorrisMetric) -> &'static str {

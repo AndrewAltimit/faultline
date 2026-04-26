@@ -594,6 +594,28 @@ next_phase = "alpha_abort"
 | `OnDetection` | — | Defender detected the operation while active |
 | `Probability` | `p` (f64) | Independent roll against `p` |
 | `Always` | — | Terminal fallback |
+| `EscalationThreshold` | `metric`, `threshold` (f64), `direction`, `sustained_ticks` (u32) | Fires when a global metric has stayed on the requested side of `threshold` for `sustained_ticks` consecutive end-of-tick snapshots. Hysteresis is built in — a single-tick spike will not flip the branch (Epic C) |
+
+#### `EscalationThreshold` (Epic C)
+
+```toml
+[[kill_chains.alpha.phases.alpha_recon.branches]]
+condition = { type = "EscalationThreshold", metric = "Tension", threshold = 0.7, direction = "Above", sustained_ticks = 3 }
+next_phase = "alpha_escalate"
+
+[[kill_chains.alpha.phases.alpha_recon.branches]]
+condition = { type = "Always" }
+next_phase = "alpha_de_escalate"
+```
+
+Reads from a rolling history of escalation-relevant metrics that the engine captures at the end of every tick. The branch fires only when the predicate has held continuously across the requested window — useful for "if tension stays elevated for N ticks, the operation gets called off (or escalated)." The engine sizes the history buffer to the longest `sustained_ticks` any branch in the scenario asks for; scenarios with no `EscalationThreshold` branches pay zero overhead.
+
+| Field | Type | Notes |
+|---|---|---|
+| `metric` | enum | One of `Tension` (reads `political_climate.tension`), `InformationDominance`, `InstitutionalErosion`, `CoercionPressure`, `PoliticalCost` (the four non-kinetic accumulators) |
+| `threshold` | f64 | The metric's threshold value. Tension and the non-kinetic accumulators live in `[0, 1]`; `InformationDominance` is in `[-1, 1]` |
+| `direction` | enum | `Above` (metric must be `>= threshold`) or `Below` (metric must be `<= threshold`) |
+| `sustained_ticks` | u32 | Number of consecutive end-of-tick snapshots the predicate must hold over. `0` is treated as "currently on the right side." If the run hasn't been observed long enough (`sustained_ticks > current_tick`), the condition is false |
 
 ### `DefensiveDomain`
 

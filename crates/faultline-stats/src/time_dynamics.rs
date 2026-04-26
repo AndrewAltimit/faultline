@@ -278,12 +278,14 @@ fn kaplan_meier_curve(events: &[u32], censored: &[u32]) -> KaplanMeierCurve {
             times_out.push(*t);
             survival_out.push(survival);
             // Cumulative hazard is undefined at S = 0 (-ln 0 = +inf).
-            // Surface as f64::INFINITY so callers can decide whether
-            // to truncate the curve there.
+            // Use `None` rather than `f64::INFINITY` so the value
+            // round-trips through JSON; `serde_json` would otherwise
+            // serialize `INFINITY` as `null` and then fail to
+            // deserialize it back into `f64`.
             hazard_out.push(if survival > 0.0 {
-                -survival.ln()
+                Some(-survival.ln())
             } else {
-                f64::INFINITY
+                None
             });
             events_out.push(d);
             at_risk_out.push(at_risk);
@@ -477,10 +479,11 @@ pub fn output_correlation_matrix(
 
     // Guard against degenerate scenarios where every series is constant
     // (e.g. zero-chain scenarios will give all-zero columns 2-5). The
-    // matrix is still returned — callers can detect "all-NaN matrix"
+    // matrix is still returned — callers can detect "all-None matrix"
     // and elide the section in their renderer rather than us deciding
-    // here.
-    let mut values = vec![0.0_f64; n_cols * n_cols];
+    // here. `Option<f64>` instead of NaN keeps the matrix JSON-safe;
+    // see [`CorrelationMatrix`] for the rationale.
+    let mut values: Vec<Option<f64>> = vec![None; n_cols * n_cols];
     for i in 0..n_cols {
         for j in 0..n_cols {
             values[i * n_cols + j] = pearson(&series[i], &series[j]);
@@ -494,13 +497,13 @@ pub fn output_correlation_matrix(
     })
 }
 
-/// Pearson correlation. Returns `f64::NAN` if either input has zero
+/// Pearson correlation. Returns `None` if either input has zero
 /// variance — surfacing the missing relationship rather than implying
 /// "perfectly uncorrelated."
-fn pearson(a: &[f64], b: &[f64]) -> f64 {
+fn pearson(a: &[f64], b: &[f64]) -> Option<f64> {
     debug_assert_eq!(a.len(), b.len(), "pearson inputs must be same length");
     if a.len() < 2 {
-        return f64::NAN;
+        return None;
     }
     let n = a.len() as f64;
     let mean_a = a.iter().copied().sum::<f64>() / n;
@@ -517,9 +520,9 @@ fn pearson(a: &[f64], b: &[f64]) -> f64 {
     }
     let denom = (var_a * var_b).sqrt();
     if denom <= 0.0 || !denom.is_finite() {
-        return f64::NAN;
+        return None;
     }
-    cov / denom
+    Some(cov / denom)
 }
 
 // ---------------------------------------------------------------------------
@@ -712,10 +715,14 @@ mod tests {
     fn cumulative_hazard_matches_neg_log_survival() {
         let curve = kaplan_meier_curve(&[2, 5, 10], &[7]);
         for (s, h) in curve.survival.iter().zip(curve.cumulative_hazard.iter()) {
-            if *s > 0.0 {
-                assert!((h + s.ln()).abs() < 1e-12, "H = -ln(S) violated");
-            } else {
-                assert!(h.is_infinite(), "H should be +inf at S=0");
+            match (s, h) {
+                (s, Some(h)) if *s > 0.0 => {
+                    assert!((h + s.ln()).abs() < 1e-12, "H = -ln(S) violated");
+                },
+                (s, None) => {
+                    assert!(*s == 0.0, "None hazard must coincide with S=0, got {s}");
+                },
+                (s, Some(h)) => panic!("S={s} > 0 but hazard = Some({h}) — must be -ln(S)"),
             }
         }
     }
@@ -724,7 +731,7 @@ mod tests {
     fn pearson_perfect_positive_correlation_is_one() {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![2.0, 4.0, 6.0, 8.0];
-        let r = pearson(&a, &b);
+        let r = pearson(&a, &b).expect("non-degenerate series should produce a value");
         assert!((r - 1.0).abs() < 1e-12);
     }
 
@@ -732,16 +739,19 @@ mod tests {
     fn pearson_perfect_negative_correlation_is_minus_one() {
         let a = vec![1.0, 2.0, 3.0, 4.0];
         let b = vec![4.0, 3.0, 2.0, 1.0];
-        let r = pearson(&a, &b);
+        let r = pearson(&a, &b).expect("non-degenerate series should produce a value");
         assert!((r + 1.0).abs() < 1e-12);
     }
 
     #[test]
-    fn pearson_zero_variance_is_nan() {
+    fn pearson_zero_variance_is_none() {
         let a = vec![1.0, 1.0, 1.0];
         let b = vec![1.0, 2.0, 3.0];
-        let r = pearson(&a, &b);
-        assert!(r.is_nan(), "constant series must give NaN, got {r}");
+        assert_eq!(
+            pearson(&a, &b),
+            None,
+            "constant series must produce None (undefined correlation)"
+        );
     }
 
     #[test]

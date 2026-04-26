@@ -1013,15 +1013,15 @@ fn render_correlation_matrix(out: &mut String, matrix: Option<&CorrelationMatrix
         Some(m) if !m.labels.is_empty() => m,
         _ => return,
     };
-    // If every off-diagonal entry is NaN (degenerate scenario where
+    // If every off-diagonal entry is None (degenerate scenario where
     // every output is constant) the matrix is uninformative — elide
-    // the section rather than print a wall of `nan`.
+    // the section rather than print a wall of `—`.
     let n = matrix.labels.len();
-    let any_finite_off_diag = (0..n)
+    let any_off_diag = (0..n)
         .flat_map(|i| (0..n).map(move |j| (i, j)))
         .filter(|(i, j)| i != j)
-        .any(|(i, j)| matrix.values[i * n + j].is_finite());
-    if !any_finite_off_diag {
+        .any(|(i, j)| matrix.values[i * n + j].is_some());
+    if !any_off_diag {
         return;
     }
     let _ = writeln!(out, "## Output Correlation Matrix");
@@ -1045,11 +1045,13 @@ fn render_correlation_matrix(out: &mut String, matrix: Option<&CorrelationMatrix
     for (i, row_label) in matrix.labels.iter().enumerate() {
         let _ = write!(out, "| `{}` |", row_label);
         for j in 0..n {
-            let v = matrix.values[i * n + j];
-            if v.is_finite() {
-                let _ = write!(out, " {:+.2} |", v);
-            } else {
-                let _ = write!(out, " — |");
+            match matrix.values[i * n + j] {
+                Some(v) => {
+                    let _ = write!(out, " {:+.2} |", v);
+                },
+                None => {
+                    let _ = write!(out, " — |");
+                },
             }
         }
         let _ = writeln!(out);
