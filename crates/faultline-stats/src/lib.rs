@@ -6,6 +6,7 @@
 //! and metric distributions.
 
 pub mod analysis;
+pub mod coevolve;
 pub mod counterfactual;
 pub mod delta;
 pub mod manifest;

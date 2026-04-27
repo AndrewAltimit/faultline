@@ -342,7 +342,7 @@ event ROE) as decision variables and searches the joint space.
       one faction's strategy space to maximize a user-specified
       objective (win rate, cost-asymmetry, attribution-difficulty)
       under constraints
-- [ ] Adversarial co-evolution: alternating best-response loop until
+- [x] Adversarial co-evolution: alternating best-response loop until
       both sides' strategies converge (or report cycle / no-equilibrium
       diagnostics)
 - [x] Pareto frontier across multi-objective searches (win rate vs.
@@ -419,6 +419,70 @@ All tests pass (~444 across the workspace including 8 unit + 4
 integration + 8 engine-validation tests covering the new surface);
 fmt / clippy / cargo-deny / WASM build / JS tests / verify-bundled /
 verify-migration / grep-guard all clean.
+
+**Round-two follow-up (Epic H — round two): Adversarial
+co-evolution.** Single PR (branch `epic-h-coevolution`) closed the
+deferred sixth item by layering a `faultline_stats::coevolve` module
+on top of `run_search`. Each round, the mover side reoptimizes only
+the variables it owns against the opponent's currently-frozen
+assignment; the loop terminates when (a) the joint state matches the
+prior round (Nash equilibrium in pure strategies on the discrete
+strategy space the search visits), (b) a 2-cycle is detected (joint
+state repeats every 2 rounds), or (c) `max_rounds` is reached
+(`NoEquilibrium`). Higher-period cycles are deliberately surfaced as
+`NoEquilibrium` rather than mis-classified as converged so the report
+flags non-stationarity honestly. What landed:
+
+- A new `CoevolveSide` / `CoevolveSideConfig` / `CoevolveConfig` /
+  `CoevolveResult` / `CoevolveStatus` shape on
+  `faultline_stats::coevolve`. Triple-seeded determinism: the new
+  `coevolve_seed` drives per-round sub-search sampling via
+  `coevolve_seed.wrapping_add(round_index)`; the inner MC seed is
+  identical across rounds and trials so round-to-round deltas are
+  pure parameter-change effects; the per-round `SearchConfig` is
+  derived deterministically from the coevolve seed.
+- Validation rejects un-owned `[strategy_space.variables]` entries
+  (every variable must declare `owner = "<faction>"`), variables
+  owned by a faction that is neither the attacker nor the defender,
+  sides with no decision variables at all, attacker objectives
+  targeting the defender's faction (and vice versa), and zero
+  `max_rounds` / `trials`. All checks happen up front so authoring
+  mistakes surface before the engine starts.
+- `--coevolve` CLI mode with eight new flags
+  (`--coevolve-rounds`, `--coevolve-attacker`, `--coevolve-defender`,
+  `--coevolve-attacker-objective`, `--coevolve-defender-objective`,
+  `--coevolve-method`, `--coevolve-trials`, `--coevolve-runs`,
+  `--coevolve-seed`, `--coevolve-initial-mover`). Mutually
+  exclusive with the other run modes. A `COEVOLVE <status> rounds=N
+  manifest_hash=...` line is printed on stdout for CI scripts.
+- `ManifestMode::Coevolve` records all per-side knobs (faction IDs,
+  objective labels, methods, trials, the assignment tolerance, the
+  initial-mover side) so `--verify` rebuilds an identical
+  `CoevolveConfig` and replays the loop bit-identically. Pinned by
+  the round-trip test in `tests/epic_h_coevolution.rs`.
+- `render_coevolve_markdown` produces a four-section report:
+  convergence callout, round trajectory table (mover, assignments,
+  objective value), final joint state, and the per-side equilibrium
+  objective values. The reproducibility footer documents the
+  triple-seed contract.
+- Bundled `scenarios/coevolution_demo.toml` exercises the full path:
+  two red-side `base_success_probability` variables, two blue-side
+  `detection_probability_per_tick` variables (the standard tug-of-war
+  between attacker effort and defender vigilance), grid sub-search
+  per round, converges in 3 rounds with the canonical CLI invocation
+  documented in CLAUDE.md.
+- `ParamOverride` gained `PartialEq` so co-evolve tests can compare
+  per-side assignment vectors directly. The derive is bit-equal on
+  the `f64` field; callers comparing values produced by independent
+  computations should use the public `assignments_equal` helper that
+  takes a tolerance.
+- 19 new tests (13 unit + 6 integration) cover determinism under
+  fixed seeds, MC-seed-independence of the assignment trajectory,
+  initial-mover dispatch, final-assignment-vs-last-round consistency,
+  and every validation rejection. All 13 bundled scenarios still
+  verify bit-identical via the manifest determinism contract;
+  fmt / clippy / cargo-deny / WASM build / JS tests / verify-bundled
+  / verify-migration / grep-guard all clean.
 
 ### Epic I — Defender-posture optimization
 

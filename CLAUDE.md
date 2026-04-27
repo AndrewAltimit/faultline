@@ -67,6 +67,21 @@ cargo run -p faultline-cli -- scenarios/defender_posture_optimization.toml \
     --search-objective minimize_max_chain_success \
     --search-objective maximize_detection
 
+# Adversarial co-evolution between an attacker and defender
+# (Epic H — round two). Both sides must own at least one
+# `[strategy_space]` variable via the `owner = "<faction>"` tag.
+# `--coevolve-method grid` enumerates each side's full sub-space per
+# round; the loop terminates when the joint state stabilises across
+# two consecutive rounds (Nash equilibrium), when a 2-cycle is
+# detected, or at `--coevolve-rounds`.
+cargo run -p faultline-cli -- scenarios/coevolution_demo.toml --coevolve \
+    --coevolve-attacker red --coevolve-defender blue \
+    --coevolve-attacker-objective "maximize_win_rate:red" \
+    --coevolve-defender-objective minimize_max_chain_success \
+    --coevolve-method grid \
+    --coevolve-trials 4 --coevolve-runs 10 \
+    --coevolve-rounds 6 --coevolve-seed 1
+
 # Replay a saved manifest and assert bit-identical output (Epic Q)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
     --verify ./output/manifest.json
@@ -172,6 +187,31 @@ objectives; section gates on baseline + at least one decision variable
 with `owner` set, so legacy attacker-only spaces stay unchanged.
 `ManifestMode::Search` records `compute_baseline` so verify replays
 match. Bundled archetype: `scenarios/defender_posture_optimization.toml`.
+
+**Adversarial co-evolution (Epic H — round two).** Closes the deferred
+adversarial-co-evolution item from Epic H by layering an alternating
+best-response loop on top of `run_search`. Each round, one side
+("mover") re-optimizes only the variables it owns against the
+opponent's currently-frozen assignment via a sub-search. The loop
+terminates when (a) the joint `(attacker, defender)` state matches the
+prior round (Nash equilibrium in pure strategies on the discrete
+strategy space the search visits), (b) a 2-cycle is detected (joint
+state repeats every 2 rounds), or (c) `--coevolve-rounds` is reached
+(`NoEquilibrium`). All `[strategy_space]` variables must declare
+`owner = "<faction>"` matching either `--coevolve-attacker` or
+`--coevolve-defender`; un-owned or mis-owned variables are rejected at
+validation. Determinism is triple-seeded: `coevolve_seed` drives
+per-round sub-search sampling via
+`coevolve_seed.wrapping_add(round_index)`, the inner MC seed is
+identical across rounds and across trials so trial-to-trial deltas are
+pure parameter-change effects, and the per-round `SearchConfig` is
+derived deterministically from the coevolve seed. `ManifestMode::Coevolve`
+records all per-side knobs so `--verify` replays bit-identical, and a
+`COEVOLVE <status> rounds=N manifest_hash=...` line is printed on
+stdout for CI scripts. Bundled archetype: `scenarios/coevolution_demo.toml`.
+The implementation lives in `crates/faultline-stats/src/coevolve.rs`;
+the report renderer (`render_coevolve_markdown`) lives alongside the
+search renderer in `crates/faultline-stats/src/report.rs`.
 
 **Engine model depth (Epic D — round one).** Three additions
 expand authoring expressiveness without touching the determinism

@@ -98,6 +98,31 @@ pub enum ManifestMode {
         #[serde(default)]
         compute_baseline: bool,
     },
+    /// `--coevolve` — adversarial co-evolution (Epic H round two).
+    /// Stores the side configs as labels + faction IDs + per-side
+    /// trials/method so the verify path can rebuild a `CoevolveConfig`
+    /// without reaching into the scenario for anything that would
+    /// drift independently. Objective *labels* (not the structured
+    /// enum) keep the JSON stable across future objective additions
+    /// in `SearchObjective`.
+    Coevolve {
+        max_rounds: u32,
+        coevolve_seed: u64,
+        initial_mover: crate::coevolve::CoevolveSide,
+        attacker_faction: faultline_types::ids::FactionId,
+        defender_faction: faultline_types::ids::FactionId,
+        attacker_objective: String,
+        defender_objective: String,
+        attacker_method: crate::search::SearchMethod,
+        defender_method: crate::search::SearchMethod,
+        attacker_trials: u32,
+        defender_trials: u32,
+        /// Tolerance used when comparing assignment vectors for
+        /// convergence/cycle detection. Recorded so a verify replay
+        /// reproduces the same termination behaviour even if the
+        /// runtime default ever shifts.
+        assignment_tolerance: f64,
+    },
 }
 
 /// The Monte Carlo parameters that, combined with the scenario, fix

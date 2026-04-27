@@ -1,0 +1,353 @@
+# Adversarial Co-Evolution Demo (Epic H — round two)
+#
+# Companion to `defender_posture_optimization.toml`: same map and
+# faction skeleton, but the strategy space declares decision variables
+# for *both* sides so the `--coevolve` mode can iterate best-response
+# moves between an attacker (red) and a defender (blue).
+#
+# What the scenario exercises end-to-end:
+#
+# - `[strategy_space]` with `owner` tags partitioning variables by
+#   side (two red-side variables, two blue-side variables).
+# - The `--coevolve` runner (alternating best-response loop with
+#   convergence + 2-cycle detection).
+# - `ManifestMode::Coevolve` round-trip via `--verify`.
+#
+# **Smoke-test scenario, not an analytical example.** Capability
+# numbers are notional; the scenario is deliberately tiny so a
+# 4-round / 4-trial / 10-run co-evolution finishes in under a second
+# inside the verify-bundled CI pipeline. Real analytical scenarios
+# should ground every parameter in published OSINT (see LEGAL.md).
+#
+# CLI:
+#   cargo run -p faultline-cli -- \
+#     scenarios/coevolution_demo.toml --coevolve \
+#     --coevolve-attacker red --coevolve-defender blue \
+#     --coevolve-attacker-objective "maximize_win_rate:red" \
+#     --coevolve-defender-objective minimize_max_chain_success \
+#     --coevolve-method grid \
+#     --coevolve-trials 4 --coevolve-runs 10 \
+#     --coevolve-rounds 6 --coevolve-seed 1
+#
+# Purely synthetic; no historical analogue.
+
+[meta]
+schema_version = 1
+name = "Co-Evolution Demo"
+description = """
+Two-faction scenario where both red (attacker) and blue (defender)
+declare decision variables in [strategy_space]. Used to exercise the
+adversarial co-evolution loop end-to-end: each round one side
+re-optimizes against the opponent's frozen assignment, until both
+sides stabilize or a 2-cycle is detected.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["coevolve", "epic-h", "round-two", "synthetic"]
+confidence = "Low"
+
+# -- Map: 2x2 grid ---------------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.capital]
+id = "capital"
+name = "Capital"
+population = 800000
+urbanization = 0.9
+initial_control = "blue"
+strategic_value = 1.0
+borders = ["industrial", "border"]
+
+[map.regions.industrial]
+id = "industrial"
+name = "Industrial"
+population = 600000
+urbanization = 0.8
+initial_control = "blue"
+strategic_value = 0.7
+borders = ["capital", "hinterland"]
+
+[map.regions.border]
+id = "border"
+name = "Border"
+population = 200000
+urbanization = 0.3
+initial_control = "blue"
+strategic_value = 0.4
+borders = ["capital", "hinterland"]
+
+[map.regions.hinterland]
+id = "hinterland"
+name = "Hinterland"
+population = 150000
+urbanization = 0.2
+initial_control = "red"
+strategic_value = 0.3
+borders = ["industrial", "border"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "capital"
+terrain_type = "Urban"
+movement_modifier = 0.9
+defense_modifier = 1.2
+visibility = 0.7
+
+[[map.terrain]]
+region = "industrial"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "border"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "hinterland"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 1.0
+
+# -- Factions --------------------------------------------------------------
+
+[factions.blue]
+id = "blue"
+name = "Blue (Defender)"
+description = "Defender state with garrisons in three regions."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 12.0
+initial_resources = 200.0
+resource_rate = 8.0
+command_resilience = 0.6
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.blue.forces.blue_garrison]
+id = "blue_garrison"
+name = "Blue Garrison"
+unit_type = "Infantry"
+region = "capital"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red]
+id = "red"
+name = "Red (Attacker)"
+description = "Attacker insurgent cell operating from the hinterland."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 8.0
+initial_resources = 120.0
+resource_rate = 4.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Guerrilla"
+
+[factions.red.faction_type]
+kind = "Insurgent"
+
+[factions.red.forces.red_cell]
+id = "red_cell"
+name = "Red Insurgent Cell"
+unit_type = "Militia"
+region = "hinterland"
+strength = 80.0
+mobility = 1.1
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) -----------------------------------------------------
+
+[technology]
+
+# -- Political climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.3
+state_control = 0.3
+social_media_penetration = 0.6
+internet_availability = 0.85
+
+[events]
+
+# -- Kill chain: red two-phase covert insertion ----------------------------
+
+[kill_chains.red_op]
+id = "red_op"
+name = "Covert Insertion"
+description = "Notional two-phase insertion against the defender's industrial region."
+attacker = "red"
+target = "blue"
+entry_phase = "recon"
+
+[kill_chains.red_op.phases.recon]
+id = "recon"
+name = "Reconnaissance"
+description = "Observation of garrison rotation and access points."
+base_success_probability = 0.85
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.04
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.7
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.red_op.phases.recon.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 100_000.0
+attacker_resources = 1.0
+
+[[kill_chains.red_op.phases.recon.outputs]]
+type = "IntelligenceGain"
+amount = 0.1
+
+[[kill_chains.red_op.phases.recon.branches]]
+next_phase = "infiltrate"
+[kill_chains.red_op.phases.recon.branches.condition]
+type = "OnSuccess"
+
+[kill_chains.red_op.phases.infiltrate]
+id = "infiltrate"
+name = "Infiltration"
+description = "Movement of operatives into the industrial region under cover of recon-derived gaps."
+prerequisites = ["recon"]
+base_success_probability = 0.65
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.08
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.6
+targets_domains = ["PhysicalSecurity"]
+
+[kill_chains.red_op.phases.infiltrate.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 350_000.0
+attacker_resources = 2.0
+
+[[kill_chains.red_op.phases.infiltrate.outputs]]
+type = "InstitutionalErosion"
+delta = 0.02
+
+# -- Simulation config -----------------------------------------------------
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 30
+fog_of_war = false
+snapshot_interval = 0
+seed = 7
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Victory conditions ----------------------------------------------------
+
+[victory_conditions.blue_control]
+id = "blue_control"
+name = "Blue Strategic Control"
+faction = "blue"
+
+[victory_conditions.blue_control.condition]
+type = "StrategicControl"
+threshold = 0.65
+
+[victory_conditions.red_dominance]
+id = "red_dominance"
+name = "Red Military Dominance"
+faction = "red"
+
+[victory_conditions.red_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 0.4
+
+# -- Strategy space (Epic H — round two) -----------------------------------
+#
+# Two red-side variables (the attacker's per-phase base success
+# probability — represents how aggressively red commits to each phase
+# of the kill chain) and two blue-side variables (the defender's
+# per-phase detection probability — represents the monitoring posture
+# blue invests in each attacker phase). With grid steps=2 each, the
+# per-side sub-search has 2^2 = 4 cells per round, which the
+# `--coevolve-trials 4` budget enumerates exhaustively.
+#
+# Owner tags are mandatory for co-evolve: every variable must declare
+# `owner = "<faction>"` matching either the attacker or defender side
+# in `--coevolve-attacker` / `--coevolve-defender`. Variables without
+# an owner are rejected at validation.
+
+[strategy_space]
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.recon.base_success_probability"
+owner = "red"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.55
+high = 0.95
+steps = 2
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.infiltrate.base_success_probability"
+owner = "red"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.35
+high = 0.85
+steps = 2
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.recon.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.02
+high = 0.20
+steps = 2
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.infiltrate.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.04
+high = 0.30
+steps = 2
