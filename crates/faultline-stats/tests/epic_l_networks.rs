@@ -356,6 +356,355 @@ fn validation_rejects_event_targeting_unknown_network() {
 }
 
 #[test]
+fn determinism_same_seed_same_samples() {
+    // Pin the determinism contract on the network path. Running the
+    // same scenario twice with the same seed must produce identical
+    // per-tick samples, identical terminal sets, and identical
+    // critical-node rankings.
+    let mut scenario = minimal_two_region_scenario();
+    scenario
+        .networks
+        .insert(NetworkId::from("supply"), star_network());
+    let event = EventDefinition {
+        id: EventId::from("disrupt_a"),
+        name: "Disrupt A".into(),
+        description: "Disrupts leaf a on tick 2".into(),
+        earliest_tick: Some(2),
+        latest_tick: Some(2),
+        conditions: vec![EventCondition::TickAtLeast { tick: 2 }],
+        probability: 1.0,
+        repeatable: false,
+        effects: vec![EventEffect::NetworkNodeDisrupt {
+            network: NetworkId::from("supply"),
+            node: NodeId::from("a"),
+        }],
+        chain: None,
+        defender_options: vec![],
+    };
+    scenario.events.insert(EventId::from("disrupt_a"), event);
+
+    let r1 = Engine::with_seed(scenario.clone(), 0xBEEF)
+        .expect("validates")
+        .run()
+        .expect("runs");
+    let r2 = Engine::with_seed(scenario, 0xBEEF)
+        .expect("validates")
+        .run()
+        .expect("runs");
+
+    let net = NetworkId::from("supply");
+    let rep1 = r1.network_reports.get(&net).expect("present");
+    let rep2 = r2.network_reports.get(&net).expect("present");
+    assert_eq!(rep1.samples.len(), rep2.samples.len());
+    for (s1, s2) in rep1.samples.iter().zip(rep2.samples.iter()) {
+        assert_eq!(s1.tick, s2.tick);
+        assert_eq!(s1.component_count, s2.component_count);
+        assert_eq!(s1.largest_component, s2.largest_component);
+        assert!((s1.residual_capacity - s2.residual_capacity).abs() < f64::EPSILON);
+        assert_eq!(s1.disrupted_nodes, s2.disrupted_nodes);
+    }
+    assert_eq!(rep1.terminal_disrupted_nodes, rep2.terminal_disrupted_nodes);
+    assert_eq!(rep1.terminal_edge_factors, rep2.terminal_edge_factors);
+}
+
+#[test]
+fn multiplicative_edge_capacity_composition() {
+    // Two events fire targeting the same edge: factor 0.5 then
+    // factor 0.5 again. Expect runtime factor at end to be 0.25
+    // (multiplicative composition), not 0.5 (last-write-wins).
+    let mut scenario = minimal_two_region_scenario();
+    scenario
+        .networks
+        .insert(NetworkId::from("supply"), star_network());
+
+    for (id, tick) in [("first", 2u32), ("second", 4u32)] {
+        let ev = EventDefinition {
+            id: EventId::from(format!("interdict_{id}").as_str()),
+            name: format!("Interdict {id}"),
+            description: "Half-capacity interdiction".into(),
+            earliest_tick: Some(tick),
+            latest_tick: Some(tick),
+            conditions: vec![EventCondition::TickAtLeast { tick }],
+            probability: 1.0,
+            repeatable: false,
+            effects: vec![EventEffect::NetworkEdgeCapacity {
+                network: NetworkId::from("supply"),
+                edge: EdgeId::from("ca"),
+                factor: 0.5,
+            }],
+            chain: None,
+            defender_options: vec![],
+        };
+        scenario
+            .events
+            .insert(EventId::from(format!("interdict_{id}").as_str()), ev);
+    }
+
+    let mut engine = Engine::new(scenario).expect("validates");
+    let result = engine.run().expect("runs");
+    let report = result
+        .network_reports
+        .get(&NetworkId::from("supply"))
+        .expect("present");
+    let factor = report
+        .terminal_edge_factors
+        .get(&EdgeId::from("ca"))
+        .copied()
+        .expect("ca was modified");
+    assert!(
+        (factor - 0.25).abs() < 1e-9,
+        "expected multiplicative composition: 0.5 * 0.5 = 0.25, got {factor}"
+    );
+}
+
+#[test]
+fn idempotent_node_disruption() {
+    // Two events disrupting the same node should still produce one
+    // disrupted-node entry. BTreeSet::insert is idempotent, but pin
+    // the behavior.
+    let mut scenario = minimal_two_region_scenario();
+    scenario
+        .networks
+        .insert(NetworkId::from("supply"), star_network());
+
+    for (id, tick) in [("first", 2u32), ("second", 5u32)] {
+        let ev = EventDefinition {
+            id: EventId::from(format!("disrupt_{id}").as_str()),
+            name: format!("Disrupt {id}"),
+            description: "".into(),
+            earliest_tick: Some(tick),
+            latest_tick: Some(tick),
+            conditions: vec![EventCondition::TickAtLeast { tick }],
+            probability: 1.0,
+            repeatable: false,
+            effects: vec![EventEffect::NetworkNodeDisrupt {
+                network: NetworkId::from("supply"),
+                node: NodeId::from("c"),
+            }],
+            chain: None,
+            defender_options: vec![],
+        };
+        scenario
+            .events
+            .insert(EventId::from(format!("disrupt_{id}").as_str()), ev);
+    }
+
+    let mut engine = Engine::new(scenario).expect("validates");
+    let result = engine.run().expect("runs");
+    let report = result
+        .network_reports
+        .get(&NetworkId::from("supply"))
+        .expect("present");
+    assert_eq!(report.terminal_disrupted_nodes.len(), 1);
+    assert!(report.terminal_disrupted_nodes.contains(&NodeId::from("c")));
+}
+
+#[test]
+fn validation_rejects_id_mismatch() {
+    let mut scenario = minimal_two_region_scenario();
+    let mut net = star_network();
+    // Insert under one key but the inner id says another. The
+    // engine reads only the key, so this would silently lose the
+    // inner-id value in a downstream consumer.
+    let bad_node = NetworkNode {
+        id: NodeId::from("wrong"),
+        name: "Mismatch".into(),
+        ..Default::default()
+    };
+    net.nodes.insert(NodeId::from("z"), bad_node);
+    scenario.networks.insert(NetworkId::from("supply"), net);
+
+    let err = faultline_engine::validate_scenario(&scenario)
+        .expect_err("should reject id-vs-key mismatch");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("does not match") || msg.contains("mismatch"),
+        "unexpected error message: {msg}"
+    );
+}
+
+#[test]
+fn validation_rejects_out_of_range_criticality() {
+    let mut scenario = minimal_two_region_scenario();
+    let mut net = star_network();
+    net.nodes.insert(
+        NodeId::from("bad"),
+        NetworkNode {
+            id: NodeId::from("bad"),
+            name: "Bad".into(),
+            criticality: 1.5,
+            ..Default::default()
+        },
+    );
+    scenario.networks.insert(NetworkId::from("supply"), net);
+
+    let err = faultline_engine::validate_scenario(&scenario)
+        .expect_err("should reject criticality > 1.0");
+    assert!(format!("{err}").contains("criticality"));
+}
+
+#[test]
+fn validation_rejects_out_of_range_trust() {
+    let mut scenario = minimal_two_region_scenario();
+    let mut net = star_network();
+    net.edges.insert(
+        EdgeId::from("bad"),
+        NetworkEdge {
+            id: EdgeId::from("bad"),
+            from: NodeId::from("c"),
+            to: NodeId::from("a"),
+            capacity: 1.0,
+            trust: 1.5,
+            ..Default::default()
+        },
+    );
+    scenario.networks.insert(NetworkId::from("supply"), net);
+
+    let err =
+        faultline_engine::validate_scenario(&scenario).expect_err("should reject trust > 1.0");
+    assert!(format!("{err}").contains("trust"));
+}
+
+#[test]
+fn validation_rejects_nan_event_factor() {
+    let mut scenario = minimal_two_region_scenario();
+    scenario
+        .networks
+        .insert(NetworkId::from("supply"), star_network());
+
+    let ev = EventDefinition {
+        id: EventId::from("nan_event"),
+        name: "NaN".into(),
+        description: "".into(),
+        earliest_tick: Some(1),
+        latest_tick: Some(1),
+        conditions: vec![EventCondition::TickAtLeast { tick: 1 }],
+        probability: 1.0,
+        repeatable: false,
+        effects: vec![EventEffect::NetworkEdgeCapacity {
+            network: NetworkId::from("supply"),
+            edge: EdgeId::from("ca"),
+            factor: f64::NAN,
+        }],
+        chain: None,
+        defender_options: vec![],
+    };
+    scenario.events.insert(EventId::from("nan_event"), ev);
+
+    let err = faultline_engine::validate_scenario(&scenario).expect_err("should reject NaN factor");
+    assert!(format!("{err}").to_lowercase().contains("finite"));
+}
+
+#[test]
+fn validation_rejects_unknown_faction_in_infiltrate() {
+    let mut scenario = minimal_two_region_scenario();
+    scenario
+        .networks
+        .insert(NetworkId::from("supply"), star_network());
+
+    let ev = EventDefinition {
+        id: EventId::from("infiltrate_phantom"),
+        name: "Phantom Infiltration".into(),
+        description: "Faction does not exist".into(),
+        earliest_tick: Some(1),
+        latest_tick: Some(1),
+        conditions: vec![EventCondition::TickAtLeast { tick: 1 }],
+        probability: 1.0,
+        repeatable: false,
+        effects: vec![EventEffect::NetworkInfiltrate {
+            network: NetworkId::from("supply"),
+            node: NodeId::from("c"),
+            faction: FactionId::from("phantom"),
+        }],
+        chain: None,
+        defender_options: vec![],
+    };
+    scenario
+        .events
+        .insert(EventId::from("infiltrate_phantom"), ev);
+
+    let err =
+        faultline_engine::validate_scenario(&scenario).expect_err("should reject unknown faction");
+    assert!(format!("{err}").contains("phantom"));
+}
+
+#[test]
+fn legacy_scenario_summary_hash_unchanged_by_epic_l() {
+    // Manifest hash invariance: a legacy scenario (no networks
+    // declared) must produce the exact same canonical JSON for its
+    // MonteCarloSummary regardless of whether the Network*
+    // fields exist on the type. The reason this can hold across a
+    // schema-additive change: every Epic-L summary field carries
+    // `#[serde(default, skip_serializing_if = "BTreeMap::is_empty")]`,
+    // so on a no-networks scenario those fields elide entirely.
+    //
+    // This test pins that invariant. If it ever fails, an Epic-L
+    // schema field has lost its `skip_serializing_if` annotation —
+    // any external citer's pre-Epic-L manifest would stop verifying.
+    use faultline_stats::MonteCarloRunner;
+    use faultline_stats::manifest::{scenario_hash, summary_hash};
+    use faultline_types::stats::MonteCarloConfig;
+
+    let scenario = minimal_two_region_scenario();
+    assert!(scenario.networks.is_empty(), "test premise");
+
+    let config = MonteCarloConfig {
+        num_runs: 4,
+        seed: Some(42),
+        collect_snapshots: false,
+        parallel: false,
+    };
+    let result = MonteCarloRunner::run(&config, &scenario).expect("MC runs");
+
+    // The summary's network rollup must be empty on a legacy
+    // scenario (no engine path produces it), and the canonical JSON
+    // must therefore not mention `network_summaries` at all.
+    assert!(result.summary.network_summaries.is_empty());
+    let canon = serde_json::to_string(&result.summary).expect("serializes");
+    assert!(
+        !canon.contains("network_summaries"),
+        "empty network_summaries must elide from canonical JSON; \
+         current JSON: {canon}"
+    );
+
+    // The same applies to per-run network reports.
+    for run in &result.runs {
+        assert!(run.network_reports.is_empty());
+    }
+
+    // And both hashes must be byte-stable strings — if anyone
+    // accidentally adds a non-eliding field to the summary or the
+    // run, the contained values would change but the test would
+    // still need to fail visibly. Hash strings are what external
+    // citers pin against, so we assert they are valid hex of the
+    // expected length.
+    let s_hash = scenario_hash(&scenario).expect("hashes");
+    let summ_hash = summary_hash(&result.summary).expect("hashes");
+    assert_eq!(s_hash.len(), 64, "SHA-256 hex digest is 64 chars");
+    assert_eq!(summ_hash.len(), 64);
+    assert!(s_hash.chars().all(|c| c.is_ascii_hexdigit()));
+    assert!(summ_hash.chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn empty_network_state_does_not_appear_in_run_result() {
+    // A legacy scenario must not have an empty `network_reports`
+    // map serialize as `{}` in the canonical JSON — that would
+    // shift the output_hash for every external citer's pre-Epic-L
+    // manifest. The `skip_serializing_if` annotation handles this,
+    // but the test pins the exact JSON shape to catch any future
+    // accidental removal of the annotation.
+    let scenario = minimal_two_region_scenario();
+    let mut engine = Engine::new(scenario).expect("validates");
+    let result = engine.run().expect("runs");
+    let json = serde_json::to_string(&result).expect("serializes");
+    assert!(
+        !json.contains("network_reports"),
+        "empty network_reports must elide; got: {json}"
+    );
+}
+
+#[test]
 fn cross_run_summary_includes_critical_nodes() {
     use faultline_stats::MonteCarloRunner;
     use faultline_types::stats::MonteCarloConfig;

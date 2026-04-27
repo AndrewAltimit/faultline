@@ -174,6 +174,17 @@ pub enum ScenarioError {
         node: crate::ids::NodeId,
     },
 
+    #[error(
+        "{kind} table key {key} on network {network} does not match its inner id field {id}; \
+         the engine reads only the key, so a mismatch would silently lose the inner-id value"
+    )]
+    NetworkIdMismatch {
+        network: crate::ids::NetworkId,
+        kind: &'static str,
+        key: String,
+        id: String,
+    },
+
     #[error("event {event} effect {effect} references unknown network {network}")]
     UnknownNetwork {
         event: EventId,

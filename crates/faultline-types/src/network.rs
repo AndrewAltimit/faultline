@@ -83,8 +83,8 @@ pub struct NetworkNode {
 /// One directed edge in a [`Network`].
 ///
 /// Capacity is the maximum flow the edge can carry per tick.
-/// `runtime_capacity_factor` (held in
-/// [`crate::stats::NetworkRuntimeSnapshot`]) multiplies into this for
+/// The runtime per-edge factor (held in the engine's
+/// `NetworkRuntimeState.edge_factors`) multiplies into this for
 /// dynamic interdiction effects; the static `capacity` here is the
 /// pristine baseline.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -22,6 +22,7 @@ defender_budget = 50_000_000.0
 [political_climate] # tension, trust, media, segments, modifiers
 [events.<id>]       # one table per event (may be empty)
 [kill_chains.<id>]  # multi-phase campaigns (may be empty)
+[networks.<id>]     # optional typed graphs — supply / comms / etc. (Epic L)
 [simulation]        # max_ticks, tick_duration, seed, attrition
 [victory_conditions.<id>]  # one table per victory condition
 ```
@@ -606,7 +607,7 @@ Tagged enum (`effect = "..."`):
 
 A `Network` is an optional named directed graph attached to a scenario, modeling supply / comms / financial / social topology. Multiple networks coexist independently; the engine treats each one identically and never shares nodes between them. Capture is pure post-processing on top of the regular tick loop — scenarios with no `[networks.*]` block pay zero overhead.
 
-Validation rejects edges with unknown endpoints, self-loops, non-finite or negative capacity / latency / bandwidth, and trust outside `[0, 1]`.
+Validation rejects edges with unknown endpoints, self-loops, non-finite or negative capacity / latency / bandwidth, trust or criticality outside `[0, 1]`, table-key vs. inner-`id` mismatches at any of (network, node, edge), and event effects (`NetworkEdgeCapacity` / `NodeDisrupt` / `Infiltrate`) targeting unknown networks / nodes / factions or carrying a non-finite `factor`.
 
 ```toml
 [networks.logistics]

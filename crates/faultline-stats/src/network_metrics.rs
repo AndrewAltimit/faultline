@@ -621,4 +621,312 @@ mod tests {
             assert!(r.betweenness.abs() < 1e-9);
         }
     }
+
+    #[test]
+    fn brandes_single_node_returns_empty() {
+        let mut nodes = BTreeMap::new();
+        nodes.insert(
+            NodeId::from("solo"),
+            NetworkNode {
+                id: NodeId::from("solo"),
+                name: "Solo".into(),
+                ..Default::default()
+            },
+        );
+        let net = Network {
+            id: NetworkId::from("solo"),
+            name: "Solo".into(),
+            nodes,
+            ..Default::default()
+        };
+        // n < 2 has no source-target pairs to support betweenness.
+        assert!(brandes_top_critical(&net, 5).is_empty());
+    }
+
+    #[test]
+    fn brandes_two_node_pair_has_zero_betweenness() {
+        // a—b path: no node sits between any pair of distinct
+        // sources and targets (there are only two nodes, and
+        // betweenness counts intermediate nodes).
+        let mut nodes = BTreeMap::new();
+        for id in ["a", "b"] {
+            nodes.insert(
+                NodeId::from(id),
+                NetworkNode {
+                    id: NodeId::from(id),
+                    name: id.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut edges = BTreeMap::new();
+        edges.insert(
+            EdgeId::from("ab"),
+            NetworkEdge {
+                id: EdgeId::from("ab"),
+                from: NodeId::from("a"),
+                to: NodeId::from("b"),
+                capacity: 1.0,
+                ..Default::default()
+            },
+        );
+        let net = Network {
+            id: NetworkId::from("pair"),
+            name: "Pair".into(),
+            nodes,
+            edges,
+            ..Default::default()
+        };
+        // n=2 means (n-1)(n-2) = 0; the normalizer falls back to
+        // unnormalized cb (still all zeros) because no intermediate
+        // node exists. Ensure that division-by-zero guard kicks in
+        // and we don't get NaN scores.
+        let ranked = brandes_top_critical(&net, 2);
+        for r in ranked {
+            assert!(
+                r.betweenness.is_finite(),
+                "betweenness must stay finite even when n=2"
+            );
+        }
+    }
+
+    #[test]
+    fn max_flow_parallel_edges_sum() {
+        // Two parallel s -> t edges (capacities 3 and 7) should sum
+        // to a max flow of 10.
+        let mut nodes = BTreeMap::new();
+        for id in ["s", "t"] {
+            nodes.insert(
+                NodeId::from(id),
+                NetworkNode {
+                    id: NodeId::from(id),
+                    name: id.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut edges = BTreeMap::new();
+        edges.insert(
+            EdgeId::from("e1"),
+            NetworkEdge {
+                id: EdgeId::from("e1"),
+                from: NodeId::from("s"),
+                to: NodeId::from("t"),
+                capacity: 3.0,
+                ..Default::default()
+            },
+        );
+        edges.insert(
+            EdgeId::from("e2"),
+            NetworkEdge {
+                id: EdgeId::from("e2"),
+                from: NodeId::from("s"),
+                to: NodeId::from("t"),
+                capacity: 7.0,
+                ..Default::default()
+            },
+        );
+        let net = Network {
+            id: NetworkId::from("p"),
+            name: "Parallel".into(),
+            nodes,
+            edges,
+            ..Default::default()
+        };
+        let res = max_flow(
+            &net,
+            &NodeId::from("s"),
+            &NodeId::from("t"),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .expect("source / sink defined");
+        assert!((res.flow - 10.0).abs() < 1e-9);
+        // Both edges carry flow at saturation, so both appear in the
+        // canonical min-cut.
+        assert_eq!(res.min_cut.len(), 2);
+    }
+
+    #[test]
+    fn max_flow_already_disconnected_yields_zero() {
+        // A network with no s->t path returns flow 0 and an empty
+        // min-cut (there's nothing to cut).
+        let mut nodes = BTreeMap::new();
+        for id in ["s", "x", "t"] {
+            nodes.insert(
+                NodeId::from(id),
+                NetworkNode {
+                    id: NodeId::from(id),
+                    name: id.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut edges = BTreeMap::new();
+        edges.insert(
+            EdgeId::from("sx"),
+            NetworkEdge {
+                id: EdgeId::from("sx"),
+                from: NodeId::from("s"),
+                to: NodeId::from("x"),
+                capacity: 5.0,
+                ..Default::default()
+            },
+        );
+        // No edge x->t. So s and t are disconnected.
+        let net = Network {
+            id: NetworkId::from("split"),
+            name: "Split".into(),
+            nodes,
+            edges,
+            ..Default::default()
+        };
+        let res = max_flow(
+            &net,
+            &NodeId::from("s"),
+            &NodeId::from("t"),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .expect("source / sink defined");
+        assert!((res.flow - 0.0).abs() < f64::EPSILON);
+        assert!(res.min_cut.is_empty());
+    }
+
+    #[test]
+    fn brandes_path_middle_dominates() {
+        // Path a - b - c - d - e: middle node 'c' has the highest
+        // betweenness (it's on most pairs' shortest paths).
+        let mut nodes = BTreeMap::new();
+        for id in ["a", "b", "c", "d", "e"] {
+            nodes.insert(
+                NodeId::from(id),
+                NetworkNode {
+                    id: NodeId::from(id),
+                    name: id.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let mut edges = BTreeMap::new();
+        for (eid, from, to) in [
+            ("ab", "a", "b"),
+            ("bc", "b", "c"),
+            ("cd", "c", "d"),
+            ("de", "d", "e"),
+        ] {
+            edges.insert(
+                EdgeId::from(eid),
+                NetworkEdge {
+                    id: EdgeId::from(eid),
+                    from: NodeId::from(from),
+                    to: NodeId::from(to),
+                    capacity: 1.0,
+                    ..Default::default()
+                },
+            );
+        }
+        let net = Network {
+            id: NetworkId::from("path"),
+            name: "Path".into(),
+            nodes,
+            edges,
+            ..Default::default()
+        };
+        let ranked = brandes_top_critical(&net, 5);
+        assert_eq!(ranked[0].node, NodeId::from("c"));
+        // Middle of a 5-path: cb_raw[c] counts paths from {a,b} to
+        // {d,e}: 4 ordered pairs * 2 (both directions) = 8, plus
+        // intermediate counts on its own neighborhood. This is
+        // strictly above the b/d nodes, which only sit between
+        // smaller subsets.
+        assert!(
+            ranked[0].betweenness > ranked[1].betweenness,
+            "middle node must outrank its immediate neighbors"
+        );
+    }
+
+    #[test]
+    fn mean_infiltration_aggregates_across_runs() {
+        use faultline_types::stats::{Outcome, RunResult, StateSnapshot};
+        // Hand-craft two runs with different infiltration footprints
+        // and check that the mean count per faction is correct
+        // without invoking the engine.
+        let nid = NetworkId::from("supply");
+
+        // Run 1: red has 2 infiltrated nodes; blue has 0.
+        let mut report1 = faultline_types::stats::NetworkReport {
+            network: nid.clone(),
+            static_node_count: 5,
+            static_edge_count: 4,
+            samples: Vec::new(),
+            terminal_disrupted_nodes: Default::default(),
+            terminal_edge_factors: Default::default(),
+            terminal_infiltrated: Default::default(),
+        };
+        let mut red_set1 = BTreeSet::new();
+        red_set1.insert(NodeId::from("a"));
+        red_set1.insert(NodeId::from("b"));
+        report1
+            .terminal_infiltrated
+            .insert(FactionId::from("red"), red_set1);
+
+        // Run 2: red has 4 infiltrated nodes; blue has 1.
+        let mut report2 = faultline_types::stats::NetworkReport {
+            network: nid.clone(),
+            static_node_count: 5,
+            static_edge_count: 4,
+            samples: Vec::new(),
+            terminal_disrupted_nodes: Default::default(),
+            terminal_edge_factors: Default::default(),
+            terminal_infiltrated: Default::default(),
+        };
+        let mut red_set2 = BTreeSet::new();
+        for n in ["a", "b", "c", "d"] {
+            red_set2.insert(NodeId::from(n));
+        }
+        let mut blue_set2 = BTreeSet::new();
+        blue_set2.insert(NodeId::from("e"));
+        report2
+            .terminal_infiltrated
+            .insert(FactionId::from("red"), red_set2);
+        report2
+            .terminal_infiltrated
+            .insert(FactionId::from("blue"), blue_set2);
+
+        let make_run = |idx: u32, report: faultline_types::stats::NetworkReport| RunResult {
+            run_index: idx,
+            seed: 0,
+            outcome: Outcome {
+                victor: None,
+                victory_condition: None,
+                final_tension: 0.0,
+            },
+            final_tick: 1,
+            final_state: StateSnapshot {
+                tick: 1,
+                faction_states: BTreeMap::new(),
+                region_control: BTreeMap::new(),
+                infra_status: BTreeMap::new(),
+                tension: 0.0,
+                events_fired_this_tick: Vec::new(),
+            },
+            snapshots: Vec::new(),
+            event_log: Vec::new(),
+            campaign_reports: BTreeMap::new(),
+            defender_queue_reports: Vec::new(),
+            network_reports: {
+                let mut m = BTreeMap::new();
+                m.insert(nid.clone(), report);
+                m
+            },
+        };
+        let runs = vec![make_run(0, report1), make_run(1, report2)];
+
+        let mean = mean_infiltration_per_faction(&runs, &nid);
+        // Red: (2 + 4) / 2 = 3.0
+        // Blue: (0 + 1) / 2 = 0.5
+        assert!((mean[&FactionId::from("red")] - 3.0).abs() < 1e-9);
+        assert!((mean[&FactionId::from("blue")] - 0.5).abs() < 1e-9);
+    }
 }

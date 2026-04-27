@@ -353,6 +353,38 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     // semantics (capacity factor clamping, etc.) are enforced at
     // runtime in the network phase.
     for (nid, net) in &scenario.networks {
+        // ID-vs-key consistency. The engine reads only the table
+        // keys; a mismatched inner `id` would be silently lost,
+        // which is exactly the silent-no-op trap validation should
+        // catch up front. Mirrors the DefenderCapacity check.
+        if net.id != *nid {
+            return Err(ScenarioError::NetworkIdMismatch {
+                network: nid.clone(),
+                kind: "network",
+                key: nid.0.clone(),
+                id: net.id.0.clone(),
+            });
+        }
+        for (node_id, node) in &net.nodes {
+            if node.id != *node_id {
+                return Err(ScenarioError::NetworkIdMismatch {
+                    network: nid.clone(),
+                    kind: "node",
+                    key: node_id.0.clone(),
+                    id: node.id.0.clone(),
+                });
+            }
+        }
+        for (edge_id, edge) in &net.edges {
+            if edge.id != *edge_id {
+                return Err(ScenarioError::NetworkIdMismatch {
+                    network: nid.clone(),
+                    kind: "edge",
+                    key: edge_id.0.clone(),
+                    id: edge.id.0.clone(),
+                });
+            }
+        }
         for (eid, edge) in &net.edges {
             if !net.nodes.contains_key(&edge.from) {
                 return Err(ScenarioError::UnknownNetworkNode {
