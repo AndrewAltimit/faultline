@@ -1679,10 +1679,13 @@ pub fn render_coevolve_markdown(
             );
         },
         CoevolveStatus::Cycle { period } => {
-            let _ = writeln!(out, "**Outcome: 2-cycle detected (period {period}).**");
             let _ = writeln!(
                 out,
-                "The joint state is oscillating between two configurations rather than settling. This typically means a finer search granularity (`--coevolve-trials` or per-variable `steps`) would surface a stable midpoint, *or* the underlying preference structure has no pure-strategy equilibrium at this granularity. Examine the round table to see the alternation pattern."
+                "**Outcome: cycle detected (joint-state period {period}).**"
+            );
+            let _ = writeln!(
+                out,
+                "The joint state is oscillating rather than settling — round N's `(attacker, defender)` state matched round N-{period}'s. Note that in alternating-mover play the smallest possible period is 4 (a 2-cycle in each side's own history corresponds to a 4-cycle in the joint state). Typical fixes: (a) finer search granularity (`--coevolve-trials` or per-variable `steps`) may surface a stable midpoint between the cycle's vertices, (b) the underlying preference structure may genuinely have no pure-strategy equilibrium at this granularity. Examine the round table to see the alternation pattern."
             );
         },
         CoevolveStatus::NoEquilibrium => {
@@ -1692,7 +1695,7 @@ pub fn render_coevolve_markdown(
             );
             let _ = writeln!(
                 out,
-                "The loop hit `max_rounds` without convergence or a detected 2-cycle. Possible reasons: (a) the objective landscape is genuinely non-stationary; (b) a higher-period cycle (>2) is in play and the round-two detector misses it; (c) the round budget is too small. Try `--coevolve-rounds` 2-4× higher; if the result still doesn't converge, the strategy structure itself may be misspecified."
+                "The loop hit `max_rounds` without convergence or a detected cycle. Possible reasons: (a) the objective landscape is genuinely non-stationary; (b) the cycle period is longer than the rounds executed (the detector needs at least one full repeat to flag a cycle); (c) the round budget is too small. Try `--coevolve-rounds` 2-4× higher; if the result still doesn't converge, the strategy structure itself may be misspecified."
             );
         },
     }

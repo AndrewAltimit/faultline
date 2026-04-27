@@ -36,10 +36,19 @@
 //!   exploring a finer landscape should bump `--coevolve-trials` (random
 //!   method) or the per-variable `steps` (grid method).
 //! - Mixed strategies. Both sides commit to one assignment per round.
-//! - Cycles of period > 2. The detector catches the most-common
-//!   pattern (`A B A B …`); higher-period cycles are reported as
-//!   `NoEquilibrium` so the section flags non-stationarity without
-//!   falsely advertising stability.
+//!
+//! ## Cycle detection
+//!
+//! The detector scans backward through the joint-state history after
+//! each round. If the current state equals any prior state at distance
+//! `period >= 2`, the loop terminates with `Cycle { period }`. Distance 1
+//! is convergence (handled by the prior check). In alternating-mover
+//! play, joint-state cycles of period 2 or 3 cannot occur without
+//! convergence having already triggered on a prior round (see the
+//! detailed proof in the runner's inline comment); the smallest
+//! realistic period is 4 — a 2-cycle in each side's own history. The
+//! detector reports whatever period it finds; if no prior occurrence
+//! exists within `max_rounds`, the loop returns `NoEquilibrium`.
 
 use std::collections::BTreeMap;
 
@@ -361,39 +370,42 @@ pub fn run_coevolution(
         // what we just chose, and vice versa. Requires at least 2
         // rounds (each side has moved at least once before we can
         // call equilibrium).
-        if state_history.len() >= 2 {
-            let last = &state_history[state_history.len() - 1];
-            let prev = &state_history[state_history.len() - 2];
-            if joint_state_equal(last, prev, config.assignment_tolerance) {
-                status = CoevolveStatus::Converged;
-                info!(
-                    round = round_one_based,
-                    "co-evolution converged: joint state stable across two consecutive rounds"
-                );
-                break;
-            }
+        if detect_convergence(&state_history, config.assignment_tolerance) {
+            status = CoevolveStatus::Converged;
+            info!(
+                round = round_one_based,
+                "co-evolution converged: joint state stable across two consecutive rounds"
+            );
+            break;
         }
 
-        // 2-cycle detection: current state matches state from 2 rounds
-        // back, but differs from 1 round back. Catches the
-        // alternating "I-do-A-then-they-do-B-then-I-do-A-again"
-        // pattern. Higher-period cycles fall through to
-        // `NoEquilibrium` rather than getting mis-classified as
-        // converged.
-        if state_history.len() >= 3 {
-            let last = &state_history[state_history.len() - 1];
-            let prev = &state_history[state_history.len() - 2];
-            let prev2 = &state_history[state_history.len() - 3];
-            if joint_state_equal(last, prev2, config.assignment_tolerance)
-                && !joint_state_equal(last, prev, config.assignment_tolerance)
-            {
-                status = CoevolveStatus::Cycle { period: 2 };
-                info!(
-                    round = round_one_based,
-                    "co-evolution cycle detected: joint state oscillating between two configurations"
-                );
-                break;
-            }
+        // Cycle detection: scan history backwards for any prior
+        // occurrence of the current joint state at distance >= 2
+        // (distance 1 is convergence, handled above).
+        //
+        // Mathematical note: in alternating-mover play, the joint
+        // state cannot have period 2 or 3 without convergence having
+        // already triggered. Proof for period 2 (the period-3 case is
+        // analogous): if state_k == state_{k-2}, then because the
+        // state changes by exactly one mover's move at each round,
+        // the round-k mover (some side X) must have picked a value
+        // that exactly reverses what the opposite side Y did at
+        // round k-1. But Y's intermediate move only changed Y's
+        // value (X's value at k-1 == X's value at k-2). So
+        // state_k == state_{k-2} requires Y's move at k-1 to have
+        // been a no-op (state_{k-1} == state_{k-2}) — which is
+        // convergence at round k-1 and would already have terminated
+        // the loop. The smallest realistic period is therefore 4
+        // (a 2-cycle in each side's own history). The detector is
+        // permissive about period — any value >= 2 the underlying
+        // structure produces, we'll surface.
+        if let Some(period) = detect_cycle_period(&state_history, config.assignment_tolerance) {
+            status = CoevolveStatus::Cycle { period };
+            info!(
+                round = round_one_based,
+                period, "co-evolution cycle detected: joint state repeats with period {period}"
+            );
+            break;
         }
     }
 
@@ -583,6 +595,52 @@ fn joint_state_equal(
     assignments_equal(&a.0, &b.0, tolerance) && assignments_equal(&a.1, &b.1, tolerance)
 }
 
+/// `Some(period)` if the last entry of `history` matches an earlier
+/// entry at distance `period >= 2`; `None` otherwise. Distance 1 is
+/// reserved for convergence and not surfaced here. Returns the
+/// shortest period when several would match — the loop scans from
+/// nearest to farthest, so the first hit wins.
+///
+/// Pulled out so the math can be unit-tested without standing up a
+/// full Monte Carlo run.
+fn detect_cycle_period(
+    history: &[(Vec<ParamOverride>, Vec<ParamOverride>)],
+    tolerance: f64,
+) -> Option<u32> {
+    if history.len() < 2 {
+        return None;
+    }
+    let current_idx = history.len() - 1;
+    // Skip distance 1 — convergence is the caller's responsibility.
+    for prev_idx in (0..current_idx.saturating_sub(1)).rev() {
+        if joint_state_equal(&history[current_idx], &history[prev_idx], tolerance) {
+            return Some((current_idx - prev_idx) as u32);
+        }
+    }
+    None
+}
+
+/// `true` when the last two entries of `history` are equal — i.e. the
+/// most recent mover's assignment matched the previous joint state,
+/// meaning their best response did not change in light of the
+/// opponent's intervening move. Caller treats this as Nash convergence.
+///
+/// Pulled out for symmetry with [`detect_cycle_period`] and to give
+/// the unit tests a stable hook.
+fn detect_convergence(
+    history: &[(Vec<ParamOverride>, Vec<ParamOverride>)],
+    tolerance: f64,
+) -> bool {
+    if history.len() < 2 {
+        return false;
+    }
+    joint_state_equal(
+        &history[history.len() - 1],
+        &history[history.len() - 2],
+        tolerance,
+    )
+}
+
 /// Evaluate both sides' objectives against a single Monte Carlo summary.
 /// Used for the "final joint outcome" panel in the report. Reuses
 /// `crate::search`'s objective evaluator via the public re-export so
@@ -621,6 +679,22 @@ mod tests {
     use faultline_types::strategy::Doctrine;
     use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
     use faultline_types::victory::{VictoryCondition, VictoryType};
+
+    // ----- helpers for hand-built joint-state histories -----
+
+    fn ov(path: &str, value: f64) -> ParamOverride {
+        ParamOverride {
+            path: path.into(),
+            value,
+        }
+    }
+
+    fn js(a: &[(&str, f64)], d: &[(&str, f64)]) -> (Vec<ParamOverride>, Vec<ParamOverride>) {
+        (
+            a.iter().map(|(p, v)| ov(p, *v)).collect(),
+            d.iter().map(|(p, v)| ov(p, *v)).collect(),
+        )
+    }
 
     fn faction(id: &str, region: RegionId) -> Faction {
         let force_id = ForceId::from(format!("{id}-inf"));
@@ -1071,5 +1145,236 @@ mod tests {
             let back: CoevolveStatus = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(back, m);
         }
+    }
+
+    // ----- Convergence + cycle math (helper-level) -----
+
+    #[test]
+    fn detect_convergence_requires_at_least_two_entries() {
+        // One entry: nothing to compare against. False.
+        let h = vec![js(&[("a", 0.5)], &[("d", 0.5)])];
+        assert!(!detect_convergence(&h, 1e-9));
+    }
+
+    #[test]
+    fn detect_convergence_fires_when_last_two_match() {
+        let h = vec![
+            js(&[("a", 0.5)], &[("d", 0.4)]),
+            js(&[("a", 0.5)], &[("d", 0.4)]),
+        ];
+        assert!(detect_convergence(&h, 1e-9));
+    }
+
+    #[test]
+    fn detect_convergence_does_not_fire_when_only_one_side_changed() {
+        // Defender's d shifted; attacker held — joint state differs,
+        // so this is NOT convergence.
+        let h = vec![
+            js(&[("a", 0.5)], &[("d", 0.4)]),
+            js(&[("a", 0.5)], &[("d", 0.5)]),
+        ];
+        assert!(!detect_convergence(&h, 1e-9));
+    }
+
+    #[test]
+    fn detect_cycle_period_returns_none_when_no_repeat() {
+        // Strictly monotone in defender's d so no entry repeats.
+        let h = vec![
+            js(&[("a", 0.5)], &[("d", 0.1)]),
+            js(&[("a", 0.5)], &[("d", 0.2)]),
+            js(&[("a", 0.5)], &[("d", 0.3)]),
+            js(&[("a", 0.5)], &[("d", 0.4)]),
+        ];
+        assert_eq!(detect_cycle_period(&h, 1e-9), None);
+    }
+
+    #[test]
+    fn detect_cycle_period_skips_distance_one() {
+        // Last two entries match — that's convergence, not a cycle.
+        // The detector deliberately skips distance 1 so the runner's
+        // earlier convergence check stays the authoritative path.
+        let h = vec![
+            js(&[("a", 0.5)], &[("d", 0.1)]),
+            js(&[("a", 0.5)], &[("d", 0.2)]),
+            js(&[("a", 0.5)], &[("d", 0.2)]),
+        ];
+        assert_eq!(detect_cycle_period(&h, 1e-9), None);
+    }
+
+    #[test]
+    fn detect_cycle_period_finds_period_4() {
+        // The canonical 2-cycle in alternating play: each side
+        // oscillates between two values. In joint-state terms the
+        // period is 4 (one full DADA round trip).
+        //
+        // Construction:
+        //   r1 D moves: (∅, d1)
+        //   r2 A moves: (a1, d1)
+        //   r3 D moves: (a1, d2)
+        //   r4 A moves: (a2, d2)
+        //   r5 D moves: (a2, d1)  — D returned to d1 (cycle starts)
+        //   r6 A moves: (a1, d1)  — A returned to a1
+        //   r7 D moves: (a1, d2)  — D back to d2; state == r3
+        //
+        // history[6] (= state after round 7, idx 6) should match
+        // history[2] (= state after round 3, idx 2). Period = 6 - 2 = 4.
+        let h = vec![
+            js(&[], &[("d", 1.0)]),           // r1
+            js(&[("a", 1.0)], &[("d", 1.0)]), // r2
+            js(&[("a", 1.0)], &[("d", 2.0)]), // r3
+            js(&[("a", 2.0)], &[("d", 2.0)]), // r4
+            js(&[("a", 2.0)], &[("d", 1.0)]), // r5
+            js(&[("a", 1.0)], &[("d", 1.0)]), // r6
+            js(&[("a", 1.0)], &[("d", 2.0)]), // r7 — repeats r3
+        ];
+        assert_eq!(detect_cycle_period(&h, 1e-9), Some(4));
+    }
+
+    #[test]
+    fn detect_cycle_period_returns_smallest_when_multiple_match() {
+        // If the current state matches multiple prior entries, the
+        // scan finds the closest one first (smallest period). Build a
+        // history where the current state matches both 2-back and
+        // 4-back. (This is artificial — in alternating-mover play
+        // distance-2 matches imply convergence already triggered, so
+        // the runner wouldn't reach this configuration; but the
+        // scanner itself must report the closest match for any
+        // hand-built history.)
+        let h = vec![
+            js(&[("a", 1.0)], &[("d", 1.0)]), // idx 0 — also matches last
+            js(&[("a", 2.0)], &[("d", 2.0)]), // idx 1
+            js(&[("a", 1.0)], &[("d", 1.0)]), // idx 2 — also matches last
+            js(&[("a", 3.0)], &[("d", 3.0)]), // idx 3
+            js(&[("a", 1.0)], &[("d", 1.0)]), // idx 4 — current
+        ];
+        // Distance from idx 4 to idx 2 is 2; to idx 0 is 4. Smallest
+        // wins.
+        assert_eq!(detect_cycle_period(&h, 1e-9), Some(2));
+    }
+
+    #[test]
+    fn detect_cycle_period_respects_tolerance() {
+        // Two entries that differ by 1e-7 should match at tolerance
+        // 1e-3 (cycle found) but not at tolerance 1e-9 (no cycle).
+        let h = vec![
+            js(&[("a", 1.0)], &[("d", 1.0)]),
+            js(&[("a", 2.0)], &[("d", 2.0)]),
+            js(&[("a", 1.0000001)], &[("d", 1.0000001)]),
+        ];
+        assert_eq!(detect_cycle_period(&h, 1e-3), Some(2));
+        assert_eq!(detect_cycle_period(&h, 1e-9), None);
+    }
+
+    // ----- Markdown renderer (smoke checks; renderer is in report.rs) -----
+
+    fn dummy_summary() -> MonteCarloSummary {
+        MonteCarloSummary {
+            total_runs: 0,
+            win_rates: BTreeMap::new(),
+            win_rate_cis: BTreeMap::new(),
+            average_duration: 0.0,
+            metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
+            campaign_summaries: BTreeMap::new(),
+            feasibility_matrix: vec![],
+            seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
+            defender_capacity: Vec::new(),
+        }
+    }
+
+    fn dummy_result(status: CoevolveStatus, rounds: Vec<CoevolveRound>) -> CoevolveResult {
+        let mut final_obj = BTreeMap::new();
+        final_obj.insert("maximize_win_rate:red".into(), 0.42);
+        final_obj.insert("minimize_max_chain_success".into(), 0.18);
+        CoevolveResult {
+            rounds,
+            attacker_faction: FactionId::from("red"),
+            defender_faction: FactionId::from("blue"),
+            final_attacker_assignments: vec![ov("faction.red.initial_morale", 0.7)],
+            final_defender_assignments: vec![ov("faction.blue.initial_morale", 0.8)],
+            final_objective_values: final_obj,
+            status,
+            final_summary: dummy_summary(),
+        }
+    }
+
+    fn dummy_scenario_for_report() -> Scenario {
+        coevolve_scenario()
+    }
+
+    #[test]
+    fn render_coevolve_markdown_contains_converged_callout() {
+        let r = dummy_result(
+            CoevolveStatus::Converged,
+            vec![CoevolveRound {
+                round: 1,
+                mover: CoevolveSide::Defender,
+                opponent_assignments: vec![],
+                mover_assignments: vec![ov("faction.blue.initial_morale", 0.8)],
+                mover_objective_value: 0.18,
+                mover_objective_label: "minimize_max_chain_success".into(),
+                mover_trials_evaluated: 4,
+            }],
+        );
+        let md = crate::report::render_coevolve_markdown(&r, &dummy_scenario_for_report());
+        assert!(
+            md.contains("Outcome: Converged"),
+            "must surface convergence in the callout; got:\n{md}"
+        );
+        assert!(
+            md.contains("`faction.blue.initial_morale`"),
+            "must surface mover assignment paths"
+        );
+    }
+
+    #[test]
+    fn render_coevolve_markdown_contains_cycle_period() {
+        let r = dummy_result(CoevolveStatus::Cycle { period: 4 }, vec![]);
+        let md = crate::report::render_coevolve_markdown(&r, &dummy_scenario_for_report());
+        assert!(
+            md.contains("period 4"),
+            "cycle callout must surface the detected period; got:\n{md}"
+        );
+        // The cycle prose explicitly explains the 4-as-minimum point —
+        // catches accidental reverts to the old "2-cycle" hardcode.
+        assert!(
+            md.contains("smallest possible period is 4"),
+            "cycle prose should explain why 4 is the minimum; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_coevolve_markdown_contains_no_equilibrium_text() {
+        let r = dummy_result(CoevolveStatus::NoEquilibrium, vec![]);
+        let md = crate::report::render_coevolve_markdown(&r, &dummy_scenario_for_report());
+        assert!(
+            md.contains("no equilibrium"),
+            "NoEquilibrium callout must mention the lack of equilibrium; got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn render_coevolve_markdown_handles_empty_assignments_branch() {
+        // Final attacker_assignments empty (e.g. max_rounds=1 with
+        // defender as initial mover) must not panic and must render
+        // the "did not move" elision text.
+        let r = CoevolveResult {
+            rounds: vec![],
+            attacker_faction: FactionId::from("red"),
+            defender_faction: FactionId::from("blue"),
+            final_attacker_assignments: vec![],
+            final_defender_assignments: vec![ov("faction.blue.initial_morale", 0.8)],
+            final_objective_values: BTreeMap::new(),
+            status: CoevolveStatus::NoEquilibrium,
+            final_summary: dummy_summary(),
+        };
+        let md = crate::report::render_coevolve_markdown(&r, &dummy_scenario_for_report());
+        assert!(
+            md.contains("Attacker did not move"),
+            "empty attacker assignments must render the elision text; got:\n{md}"
+        );
     }
 }

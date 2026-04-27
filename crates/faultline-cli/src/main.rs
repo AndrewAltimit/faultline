@@ -2011,4 +2011,82 @@ mod cli_tests {
         .expect("repeated --search-objective must parse");
         assert_eq!(cli.search_objective.len(), 2);
     }
+
+    // -- --coevolve flag tests (Epic H — round two) -----------------
+
+    #[test]
+    fn coevolve_and_search_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve", "--search"]);
+        let err = res.expect_err("--coevolve + --search must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_and_verify_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--coevolve",
+            "--verify",
+            "manifest.json",
+        ]);
+        let err = res.expect_err("--coevolve + --verify must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_and_single_run_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve", "--single-run"]);
+        let err = res.expect_err("--coevolve + --single-run must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_subflags_require_coevolve() {
+        // Each `--coevolve-*` flag declares `requires = "coevolve"` so
+        // a stray `--coevolve-rounds 4` without `--coevolve` is rejected
+        // at parse time rather than silently ignored under another mode.
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve-rounds", "4"]);
+        let err = res.expect_err("--coevolve-rounds without --coevolve must reject");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn coevolve_initial_mover_parses_both_sides() {
+        for side in ["attacker", "defender"] {
+            let cli = Cli::try_parse_from([
+                "faultline",
+                "scenario.toml",
+                "--coevolve",
+                "--coevolve-initial-mover",
+                side,
+            ])
+            .expect("initial-mover flag must accept attacker/defender");
+            // Force the enum to round-trip through the From impl so a
+            // future variant rename here would surface in this test.
+            let _: faultline_stats::coevolve::CoevolveSide = cli.coevolve_initial_mover.into();
+        }
+    }
+
+    #[test]
+    fn coevolve_initial_mover_defaults_to_defender() {
+        // The CLI default — picked because the most-common analyst
+        // question is "given my fixed posture, how does the attacker
+        // adapt?" so the defender commits first.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve"])
+            .expect("parse with default initial-mover");
+        let resolved: faultline_stats::coevolve::CoevolveSide = cli.coevolve_initial_mover.into();
+        assert_eq!(resolved, faultline_stats::coevolve::CoevolveSide::Defender);
+    }
+
+    #[test]
+    fn coevolve_method_default_is_grid() {
+        // Grid is the round-two CLI default because the bundled demo's
+        // small spaces enumerate exhaustively, making the per-round
+        // best response deterministic without trial-budget tuning.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve"])
+            .expect("parse with default method");
+        let resolved: faultline_stats::search::SearchMethod = cli.coevolve_method.into();
+        assert_eq!(resolved, faultline_stats::search::SearchMethod::Grid);
+    }
 }
