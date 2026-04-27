@@ -194,7 +194,8 @@ struct Cli {
     /// a defender faction over the scenario's `[strategy_space]` until
     /// both sides' assignments stabilize (Nash equilibrium in pure
     /// strategies on the discrete strategy space the search visits),
-    /// a 2-cycle is detected, or `--coevolve-rounds` is reached.
+    /// a cycle of any period is detected, or `--coevolve-rounds` is
+    /// reached.
     ///
     /// Every `[strategy_space.variables]` entry must declare an `owner`
     /// matching either `--coevolve-attacker` or `--coevolve-defender`;

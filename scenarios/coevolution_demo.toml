@@ -10,7 +10,7 @@
 # - `[strategy_space]` with `owner` tags partitioning variables by
 #   side (two red-side variables, two blue-side variables).
 # - The `--coevolve` runner (alternating best-response loop with
-#   convergence + 2-cycle detection).
+#   convergence + cycle detection (any period)).
 # - `ManifestMode::Coevolve` round-trip via `--verify`.
 #
 # **Smoke-test scenario, not an analytical example.** Capability
@@ -39,7 +39,7 @@ Two-faction scenario where both red (attacker) and blue (defender)
 declare decision variables in [strategy_space]. Used to exercise the
 adversarial co-evolution loop end-to-end: each round one side
 re-optimizes against the opponent's frozen assignment, until both
-sides stabilize or a 2-cycle is detected.
+sides stabilize or a cycle (of any period) is detected.
 """
 author = "AndrewAltimit"
 version = "0.1.0"
