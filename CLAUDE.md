@@ -274,6 +274,32 @@ unchanged.
   zero. Validation rejects decapitation against a faction without a
   cadre as an authoring mistake (silent runtime no-op otherwise).
 
+**Unread-parameter audit (R3-2 round one).** Three previously-silent
+fields now affect simulation outcomes; each was authored in dozens of
+bundled scenarios but had zero engine effect:
+
+- `Faction.command_resilience` ∈ `[0,1]` attenuates the morale shock
+  from `LeadershipDecapitation`: `effective_shock = morale_shock × (1 − resilience)`.
+  Wired in `campaign::apply_leadership_decapitation`. No-op for
+  factions without a `leadership` cadre.
+- `ForceUnit.morale_modifier` multiplies the unit's effective combat
+  contribution as `(1.0 + morale_modifier)`. Wired in
+  `tick::find_contested_regions`. Floored at `0` so a pathological
+  override below `-1.0` cannot invert the combat math.
+- `Scenario.defender_budget` is the symmetric mirror of
+  `attacker_budget` but uses reactive semantics: once cumulative
+  `defender_spend` exceeds the cap, `SimulationState.defender_over_budget_tick`
+  latches sticky and a 0.5× detection-probability multiplier
+  (`DEFENDER_OVER_BUDGET_DETECTION_FACTOR`) applies to all subsequent
+  kill-chain phase rolls. Latched at tick-start so chain-processing
+  order can never affect which phase first incurs the penalty.
+
+Regression suite: `crates/faultline-engine/tests/audit_unread_params.rs`
+(10 tests including a 32-seed statistical regression for the
+defender-budget detection penalty). See `docs/improvement-plan.md` R3-2
+for deferred items (`upkeep`, `mobility`, `diplomacy`,
+population-segment activation, tech-card costs).
+
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,

@@ -20,6 +20,17 @@ use faultline_types::stats::{CampaignReport, PhaseOutcome};
 
 use crate::state::{MetricSnapshot, SimulationState};
 
+/// Multiplier applied to per-tick effective detection probability once
+/// the scenario's `defender_budget` has been exhausted. Mirrors the
+/// shape of `DefenderCapacity::saturated_detection_factor` (the queue-
+/// saturation analogue): a value in `[0.0, 1.0]` that scales how much
+/// signal an overstretched defender catches. The 0.5× constant chosen
+/// here represents a plausible 50% drop in true-positive throughput
+/// when the defender's wallet is empty and gap-closing programs go
+/// unfunded — concrete enough to make the parameter meaningful, not so
+/// aggressive that it dominates other defender-side variables.
+const DEFENDER_OVER_BUDGET_DETECTION_FACTOR: f64 = 0.5;
+
 // ---------------------------------------------------------------------------
 // Phase status
 // ---------------------------------------------------------------------------
@@ -204,6 +215,28 @@ pub fn campaign_phase(
     campaigns: &mut BTreeMap<KillChainId, CampaignState>,
     rng: &mut impl Rng,
 ) {
+    // Defender-budget gate. Sum cumulative defender spend across every
+    // chain's CampaignState; when the scenario set a budget and the
+    // total has grown past it, latch the first-overrun tick on
+    // `SimulationState` (sticky for the rest of the run) and apply a
+    // 0.5× detection-probability multiplier to all subsequent
+    // detection rolls. Snapshot the status at tick-start rather than
+    // re-checking after each phase so chain-processing order can never
+    // affect which phase first incurs the penalty within a tick.
+    if state.defender_over_budget_tick.is_none()
+        && let Some(cap) = scenario.defender_budget
+    {
+        let total_spend: f64 = campaigns.values().map(|c| c.defender_spend).sum();
+        if total_spend > cap {
+            state.defender_over_budget_tick = Some(state.tick);
+        }
+    }
+    let defender_over_budget_factor = if state.defender_over_budget_tick.is_some() {
+        DEFENDER_OVER_BUDGET_DETECTION_FACTOR
+    } else {
+        1.0
+    };
+
     for (chain_id, chain) in &scenario.kill_chains {
         let Some(campaign) = campaigns.get_mut(chain_id) else {
             continue;
@@ -268,7 +301,8 @@ pub fn campaign_phase(
 
                 let saturated_factor =
                     saturated_factor_for(state, scenario, phase.gated_by_defender.as_ref());
-                let effective_dp = (dp * saturated_factor).clamp(0.0, 1.0);
+                let effective_dp =
+                    (dp * saturated_factor * defender_over_budget_factor).clamp(0.0, 1.0);
                 let draw: f64 = rng.r#gen();
                 let detected = draw < effective_dp;
                 let shadow = !detected && draw < dp;
@@ -630,6 +664,20 @@ fn apply_leadership_decapitation(
         .and_then(|f| f.leadership.as_ref())
         .map(|c| c.ranks.len() as u32);
 
+    // `command_resilience` ∈ [0.0, 1.0] attenuates the one-shot morale
+    // drop from a successful decapitation strike: 0.0 = full shock
+    // (legacy default behavior), 1.0 = strike still advances the rank
+    // index but does not depress morale at all (a faction with deeply-
+    // rehearsed succession protocols absorbs the loss without panic).
+    // Values outside the range are clamped rather than rejected so a
+    // counterfactual override that pushes the parameter out of bounds
+    // still produces a sensible attenuation factor.
+    let resilience = scenario
+        .factions
+        .get(target)
+        .map(|f| f.command_resilience.clamp(0.0, 1.0))
+        .unwrap_or(0.0);
+
     let Some(fs) = state.faction_states.get_mut(target) else {
         return;
     };
@@ -649,7 +697,8 @@ fn apply_leadership_decapitation(
     // `> 0.0` guard so a hand-built scenario that bypasses validation
     // produces a no-op rather than a NaN-poisoned morale value.
     if morale_shock > 0.0 {
-        fs.morale = (fs.morale - morale_shock).clamp(0.0, 1.0);
+        let effective_shock = morale_shock * (1.0 - resilience);
+        fs.morale = (fs.morale - effective_shock).clamp(0.0, 1.0);
     }
 }
 

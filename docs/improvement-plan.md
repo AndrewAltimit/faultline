@@ -942,16 +942,64 @@ area.
   field additions essentially free. Acceptance: every existing
   `Scenario { ... }` literal in `crates/**/tests*` migrates to
   the spread form.
-- **R3-2: Unread parameter audit.** `Faction.command_resilience` is
-  declared but the engine never reads it; almost certainly other
-  parameters are in the same shape (`intelligence`,
-  `morale_modifier` on units, etc.). An audit + either wire-it-up
-  or drop-it pass would eliminate the silent-no-op trap that bites
-  scenario authors. Pairs naturally with Epic P (the
-  `faultline-cli explain` command — both ask "what does this
-  scenario actually model?"). Acceptance: every field on
-  `Faction` / `ForceUnit` is either consumed by the engine or
-  removed.
+- **R3-2: Unread parameter audit.** _Round one shipped — wired three
+  high-value silent-no-ops; deferred items tracked below._ The audit
+  surfaced 16 candidate fields; the highest-leverage three (the ones
+  set by many bundled scenarios with non-trivial values) were wired
+  into engine behavior:
+    - `Faction.command_resilience` — attenuates the one-shot morale
+      shock from `LeadershipDecapitation`. 31 bundled scenarios set
+      this in `[0.3, 0.9]`. **Behavior**: `effective_shock = morale_shock × (1 − resilience)`.
+      No-op for factions without a `leadership` cadre.
+    - `ForceUnit.morale_modifier` — multiplies the unit's effective
+      combat strength as `(1.0 + morale_modifier)`. 60 scenarios set
+      this in `[0, 0.15]`. **Behavior**: applied at `find_contested_regions`
+      so per-unit cohesion folds into Lanchester strength aggregation.
+      Clamped at `0` to prevent negative effective strength.
+    - `Scenario.defender_budget` — symmetric counterpart of
+      `attacker_budget` but with reactive semantics (the defender
+      can't decline to spend, so phases aren't failed; instead, once
+      cumulative `defender_spend` exceeds the cap the engine latches
+      a sticky over-budget flag and applies a 0.5× detection-
+      probability multiplier to subsequent phase rolls).
+
+  Wiring lives in `crates/faultline-engine/src/{campaign,tick}.rs`;
+  `crates/faultline-engine/src/state.rs` adds
+  `SimulationState.defender_over_budget_tick` (sticky, serde-default).
+  Regression suite is `crates/faultline-engine/tests/audit_unread_params.rs`
+  (10 tests covering each parameter's no-op default, expected behavior,
+  and a statistical-regression test for the defender-budget detection
+  penalty).
+
+  **R3-2 round two — deferred items, ordered by impact**:
+    1. `ForceUnit.upkeep` and `ForceUnit.mobility` — both authored
+       in every bundled scenario, both unread by simulation. `upkeep`
+       pairs naturally with a per-tick resource-drain mechanic;
+       `mobility` would gate movement_phase rate (currently every
+       unit moves 1 region/tick regardless). Movement-rate semantics
+       need a policy decision (move accumulator vs. tick-rate gate)
+       that's bigger than the audit scope.
+    2. `Faction.diplomacy` — declared by 32 scenarios, mostly empty.
+       Wiring is non-trivial (alliance dynamics affect combat
+       targeting and political phase). Defer until a dedicated
+       diplomacy epic.
+    3. `MediaLandscape.{fragmentation,social_media_penetration,internet_availability}`
+       and `PopulationSegment.{activation_threshold,activation_actions,volatility}`
+       — the population-segment activation mechanic is half-built;
+       finishing it is a small epic in its own right.
+    4. `TechCard.{cost_per_tick,deployment_cost,coverage_limit}` — depend
+       on the budget enforcement broadening (covered indirectly by the
+       defender_budget wiring; the missing piece is enforcing tech
+       activation cost against per-faction running spend).
+    5. `Region.centroid`, `Faction.color` — visualization metadata
+       (used by the WASM frontend). Document as such, not silent
+       no-ops by the engine's standards.
+    6. `ForceUnit.force_projection` — declared but zero scenarios set
+       it. Drop-or-wire decision; lean towards drop unless an epic
+       calls for it.
+
+  See `crates/faultline-engine/tests/audit_unread_params.rs` for the
+  pinning regressions covering the round-one wired parameters.
 - **R3-3: Decompose `report.rs`.** The single 2000-line file
   emitting one Markdown string is approaching the legibility
   ceiling. Refactor to a `ReportSection` trait with composable

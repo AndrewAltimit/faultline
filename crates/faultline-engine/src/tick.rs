@@ -510,11 +510,22 @@ fn find_contested_regions(state: &SimulationState) -> BTreeMap<RegionId, BTreeMa
             continue;
         }
         for force in fs.forces.values() {
+            // `morale_modifier` is a per-unit cohesion / training
+            // multiplier folded into the unit's effective combat
+            // contribution. Default 0.0 yields a 1.0× multiplier
+            // (legacy behavior); a value of 0.15 — the high end seen in
+            // bundled scenarios — gives an elite unit a 15% strength
+            // bonus when it engages. Negative values are permitted
+            // (a green or demoralized unit punches below its weight)
+            // but the multiplier is floored at 0 so a pathological
+            // override below -1.0 cannot produce a negative effective
+            // strength that would invert the combat math.
+            let multiplier = (1.0 + force.morale_modifier).max(0.0);
             *region_forces
                 .entry(force.region.clone())
                 .or_default()
                 .entry(fid.clone())
-                .or_insert(0.0) += force.strength;
+                .or_insert(0.0) += force.strength * multiplier;
         }
     }
 

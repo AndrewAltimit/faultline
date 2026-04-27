@@ -54,6 +54,17 @@ pub struct SimulationState {
     /// in that case so legacy scenarios pay zero overhead.
     #[serde(default)]
     pub network_states: BTreeMap<NetworkId, NetworkRuntimeState>,
+    /// First tick at which cumulative defender spend (summed across all
+    /// in-flight kill chains) exceeded the scenario's `defender_budget`.
+    /// `None` when the scenario set no budget, when the scenario set a
+    /// budget the attacker never forced past, or before the threshold
+    /// is crossed. Once set the value is sticky for the remainder of
+    /// the run and gates a 0.5× detection-probability multiplier on all
+    /// subsequent kill-chain phases — modelling a defender who has
+    /// exhausted the funds available to close gaps and is now operating
+    /// understaffed against in-flight attacks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defender_over_budget_tick: Option<u32>,
 }
 
 /// Per-run runtime state for one declared [`Network`](
