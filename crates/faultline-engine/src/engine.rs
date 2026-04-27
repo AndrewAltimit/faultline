@@ -10,11 +10,14 @@ use faultline_geo::{self, GameMap};
 use faultline_types::campaign::BranchCondition;
 use faultline_types::ids::{EventId, FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{DefenderQueueReport, EventRecord, Outcome, RunResult, StateSnapshot};
+use faultline_types::stats::{
+    DefenderQueueReport, EventRecord, NetworkReport, Outcome, RunResult, StateSnapshot,
+};
 use faultline_types::strategy::FactionState;
 
 use crate::campaign::{self, CampaignState};
 use crate::error::EngineError;
+use crate::network as network_phase;
 use crate::state::{DefenderQueueState, RuntimeFactionState, SimulationState};
 use crate::tick::{self, TickResult};
 
@@ -141,6 +144,12 @@ impl Engine {
         // declaring a `leadership` cadre.
         tick::apply_leadership_caps(&mut self.state, &self.scenario);
 
+        // Phase 7d: Network resilience capture (Epic L). Records one
+        // [`NetworkSample`] per declared network at end-of-tick so
+        // any same-tick interdiction event is reflected in the sample.
+        // No-op for scenarios with no `[networks.*]` declarations.
+        network_phase::capture_samples(&mut self.state, &self.scenario);
+
         // Update region control after all modifications.
         tick::update_region_control(&mut self.state, &self.scenario);
 
@@ -195,6 +204,7 @@ impl Engine {
                     event_log,
                     campaign_reports: campaign::reports(&self.campaigns),
                     defender_queue_reports: collect_queue_reports(&self.state),
+                    network_reports: collect_network_reports(&self.state, &self.scenario),
                 });
             }
 
@@ -215,6 +225,7 @@ impl Engine {
                     event_log,
                     campaign_reports: campaign::reports(&self.campaigns),
                     defender_queue_reports: collect_queue_reports(&self.state),
+                    network_reports: collect_network_reports(&self.state, &self.scenario),
                 });
             }
         }
@@ -322,6 +333,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
     }
 
     let defender_queues = initialize_defender_queues(scenario);
+    let network_states = initialize_network_states(scenario);
 
     Ok(SimulationState {
         tick: 0,
@@ -336,7 +348,23 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         non_kinetic: Default::default(),
         metric_history: Vec::new(),
         defender_queues,
+        network_states,
     })
+}
+
+/// Build the per-network runtime state map. Returns an empty outer
+/// map when no network is declared, which lets the network phase
+/// short-circuit on legacy scenarios. Each registered network starts
+/// with no runtime mutations (every edge at factor 1.0, no disrupted
+/// nodes, no infiltrations).
+fn initialize_network_states(
+    scenario: &Scenario,
+) -> BTreeMap<faultline_types::ids::NetworkId, crate::state::NetworkRuntimeState> {
+    let mut out = BTreeMap::new();
+    for nid in scenario.networks.keys() {
+        out.insert(nid.clone(), crate::state::NetworkRuntimeState::default());
+    }
+    out
 }
 
 /// Build the per-(faction, role) defender queue map from the scenario.
@@ -453,6 +481,44 @@ fn collect_queue_reports(state: &SimulationState) -> Vec<DefenderQueueReport> {
                 shadow_detections: q.shadow_detections,
             });
         }
+    }
+    out
+}
+
+/// Convert per-network runtime state into the post-run
+/// [`NetworkReport`] map (Epic L). Empty outer map when the scenario
+/// declared no networks. Iteration is `BTreeMap`-ordered so the
+/// manifest hash stays stable.
+fn collect_network_reports(
+    state: &SimulationState,
+    scenario: &Scenario,
+) -> BTreeMap<faultline_types::ids::NetworkId, NetworkReport> {
+    let mut out = BTreeMap::new();
+    for (nid, rt) in &state.network_states {
+        let Some(net) = scenario.networks.get(nid) else {
+            // Defensive: a runtime entry without a static topology
+            // shouldn't happen because `initialize_network_states`
+            // builds from the scenario, but if it does we skip
+            // rather than panic — the run still produced valid
+            // non-network output.
+            continue;
+        };
+        let static_node_count = u32::try_from(net.nodes.len())
+            .expect("network node count exceeds u32::MAX (impossible in practice)");
+        let static_edge_count = u32::try_from(net.edges.len())
+            .expect("network edge count exceeds u32::MAX (impossible in practice)");
+        out.insert(
+            nid.clone(),
+            NetworkReport {
+                network: nid.clone(),
+                static_node_count,
+                static_edge_count,
+                samples: rt.samples.clone(),
+                terminal_disrupted_nodes: rt.disrupted_nodes.clone(),
+                terminal_edge_factors: rt.edge_factors.clone(),
+                terminal_infiltrated: rt.infiltrated.clone(),
+            },
+        );
     }
     out
 }

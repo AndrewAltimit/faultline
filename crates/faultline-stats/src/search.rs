@@ -815,6 +815,7 @@ mod tests {
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
             strategy_space: StrategySpace::default(),
+            networks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1032,6 +1033,7 @@ mod tests {
                 correlation_matrix: None,
                 pareto_frontier: None,
                 defender_capacity: Vec::new(),
+                network_summaries: std::collections::BTreeMap::new(),
             },
         };
         // Trial 0 dominates trial 1 (better win, equal detection).
@@ -1079,6 +1081,7 @@ mod tests {
                 correlation_matrix: None,
                 pareto_frontier: None,
                 defender_capacity: Vec::new(),
+                network_summaries: std::collections::BTreeMap::new(),
             },
         };
         let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
@@ -1123,6 +1126,7 @@ mod tests {
             correlation_matrix: None,
             pareto_frontier: None,
             defender_capacity: Vec::new(),
+            network_summaries: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1454,6 +1458,7 @@ mod tests {
             correlation_matrix: None,
             pareto_frontier: None,
             defender_capacity: Vec::new(),
+            network_summaries: std::collections::BTreeMap::new(),
         };
 
         // Cost-style objectives sum across chains.

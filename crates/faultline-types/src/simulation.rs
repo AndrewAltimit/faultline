@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Top-level simulation parameters.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct SimulationConfig {
     pub max_ticks: u32,
     pub tick_duration: TickDuration,
@@ -20,11 +20,20 @@ pub enum TickDuration {
     Weeks(u32),
 }
 
+impl Default for TickDuration {
+    fn default() -> Self {
+        Self::Days(1)
+    }
+}
+
 /// The combat attrition model to use.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum AttritionModel {
+    #[default]
     LanchesterLinear,
     LanchesterSquare,
     Hybrid,
-    Stochastic { noise: f64 },
+    Stochastic {
+        noise: f64,
+    },
 }

@@ -6,7 +6,7 @@ use crate::ids::{DefenderRoleId, FactionId, ForceId, InstitutionId, RegionId, Te
 use crate::strategy::Doctrine;
 
 /// A participant in the simulation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Faction {
     pub id: FactionId,
     pub name: String,
@@ -213,7 +213,7 @@ pub struct EscalationRung {
 }
 
 /// What kind of faction this is.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum FactionType {
     Government {
@@ -223,6 +223,7 @@ pub enum FactionType {
         branch: MilitaryBranch,
     },
     Insurgent,
+    #[default]
     Civilian,
     PrivateMilitary,
     Foreign {

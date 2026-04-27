@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::campaign::KillChain;
 use crate::events::EventDefinition;
 use crate::faction::Faction;
-use crate::ids::{EventId, FactionId, KillChainId, TechCardId, VictoryId};
+use crate::ids::{EventId, FactionId, KillChainId, NetworkId, TechCardId, VictoryId};
 use crate::map::{EnvironmentSchedule, MapConfig};
+use crate::network::Network;
 use crate::politics::PoliticalClimate;
 use crate::simulation::SimulationConfig;
 use crate::stats::ConfidenceLevel;
@@ -15,7 +16,13 @@ use crate::tech::TechCard;
 use crate::victory::VictoryCondition;
 
 /// The complete definition of a simulation scenario.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// `Scenario::default()` produces a syntactically valid but semantically
+/// empty scenario (no factions, no regions). Engine validation rejects
+/// the empty form, so the default is only useful as a base for
+/// `..Default::default()` spread in test helpers — it lets new top-level
+/// fields land without rewriting every test fixture.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Scenario {
     pub meta: ScenarioMeta,
     pub map: MapConfig,
@@ -48,6 +55,13 @@ pub struct Scenario {
     /// empty so legacy scenarios stay byte-identical.
     #[serde(default, skip_serializing_if = "StrategySpace::is_empty")]
     pub strategy_space: StrategySpace,
+    /// Optional typed network primitives (Epic L) — supply / comms /
+    /// social / financial graphs declared per-scenario. Each network is
+    /// independent (no cross-network nodes); cross-network coupling
+    /// happens via [`crate::events::EventEffect`] firing into multiple
+    /// targets. Empty by default so legacy scenarios stay byte-identical.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub networks: BTreeMap<NetworkId, Network>,
 }
 
 /// Metadata about the scenario.
@@ -79,4 +93,22 @@ pub struct ScenarioMeta {
 
 fn default_schema_version() -> u32 {
     crate::migration::CURRENT_SCHEMA_VERSION
+}
+
+impl Default for ScenarioMeta {
+    /// Default targets the current schema version so test helpers built
+    /// from `..Default::default()` don't accidentally emit
+    /// `schema_version = 0` and trip the migration framework's
+    /// stale-fixture warning.
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            description: String::new(),
+            author: String::new(),
+            version: String::new(),
+            tags: Vec::new(),
+            confidence: None,
+            schema_version: default_schema_version(),
+        }
+    }
 }

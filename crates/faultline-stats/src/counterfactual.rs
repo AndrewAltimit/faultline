@@ -353,6 +353,7 @@ mod tests {
             correlation_matrix: None,
             pareto_frontier: None,
             defender_capacity: Vec::new(),
+            network_summaries: std::collections::BTreeMap::new(),
         };
         let mut variant = base.clone();
 

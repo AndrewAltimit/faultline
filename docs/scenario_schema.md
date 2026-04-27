@@ -22,6 +22,7 @@ defender_budget = 50_000_000.0
 [political_climate] # tension, trust, media, segments, modifiers
 [events.<id>]       # one table per event (may be empty)
 [kill_chains.<id>]  # multi-phase campaigns (may be empty)
+[networks.<id>]     # optional typed graphs — supply / comms / etc. (Epic L)
 [simulation]        # max_ticks, tick_duration, seed, attrition
 [victory_conditions.<id>]  # one table per victory condition
 ```
@@ -596,6 +597,52 @@ Tagged enum (`effect = "..."`):
 | `MediaEvent` | `narrative`, `credibility`, `reach`, `favors` (faction, optional) |
 | `ResourceChange` | `faction`, `delta` |
 | `Narrative` | `text` |
+| `NetworkEdgeCapacity` (Epic L) | `network`, `edge`, `factor` — multiplies the named edge's runtime capacity factor by `factor`. Composes multiplicatively with prior events; runtime clamps the cumulative factor to `[0, 4]`. `factor = 0.0` severs the edge for resilience metrics. |
+| `NetworkNodeDisrupt` (Epic L) | `network`, `node` — marks the node disrupted; every edge incident to it counts as severed in the per-tick `NetworkSample`. Idempotent. |
+| `NetworkInfiltrate` (Epic L) | `network`, `node`, `faction` — adds `faction` to the set of factions with attacker-style visibility into the node. Surfaces in the report as an information loss; does not affect capacity. |
+
+---
+
+## `[networks.<id>]` — typed graphs (Epic L)
+
+A `Network` is an optional named directed graph attached to a scenario, modeling supply / comms / financial / social topology. Multiple networks coexist independently; the engine treats each one identically and never shares nodes between them. Capture is pure post-processing on top of the regular tick loop — scenarios with no `[networks.*]` block pay zero overhead.
+
+Validation rejects edges with unknown endpoints, self-loops, non-finite or negative capacity / latency / bandwidth, trust or criticality outside `[0, 1]`, table-key vs. inner-`id` mismatches at any of (network, node, edge), and event effects (`NetworkEdgeCapacity` / `NodeDisrupt` / `Infiltrate`) targeting unknown networks / nodes / factions or carrying a non-finite `factor`.
+
+```toml
+[networks.logistics]
+id = "logistics"
+name = "Blue Logistics Network"
+kind = "supply"               # free-text: surfaced in report, not interpreted
+owner = "blue"                # optional FactionId
+
+[networks.logistics.nodes.depot1]
+id = "depot1"
+name = "Primary Depot"
+region = "theatre_east"        # optional RegionId
+criticality = 1.0              # [0, 1] author-supplied importance
+
+[networks.logistics.edges.d1_jct]
+id = "d1_jct"
+from = "depot1"
+to = "junction"
+capacity = 80.0                # units / tick, >= 0
+latency = 1.0                  # >= 0
+bandwidth = 80.0               # >= 0
+trust = 0.9                    # [0, 1]
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `nodes.<node_id>.criticality` | f64 | `[0, 1]` author-supplied multiplier for "this node is more painful than its degree alone implies." Surfaced alongside Brandes betweenness in the critical-node ranking |
+| `edges.<edge_id>.capacity` | f64 | Static capacity (units / tick). Multiplied by the runtime factor to produce effective capacity each tick |
+| `edges.<edge_id>.latency` | f64 | Surfaced in report; not yet consumed by metrics |
+| `edges.<edge_id>.bandwidth` | f64 | Distinct from capacity for "peak burst vs. sustained throughput" modeling |
+| `edges.<edge_id>.trust` | f64 | `[0, 1]` confidence the edge is not adversarially observed |
+
+**Engine behavior.** Each tick, after the campaign and leadership-cap phases, the engine appends one `NetworkSample` per declared network to that network's runtime samples list. The sample records `component_count` (number of weakly-connected components), `largest_component`, `residual_capacity` (sum of `edge.capacity * runtime_factor` over edges where neither endpoint is disrupted), and `disrupted_nodes` count.
+
+**Report.** [`MonteCarloSummary::network_summaries`] aggregates per-run samples into mean / max disrupted-node and component counts, the cross-run fragmentation rate, and a top-N critical-node ranking by Brandes betweenness centrality on the static topology (treating the graph as undirected for centrality purposes). Bundled archetype: `scenarios/network_resilience_demo.toml`.
 
 ---
 

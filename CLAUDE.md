@@ -42,6 +42,12 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --single-run
 # Run Monte Carlo batch
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000
 
+# Network resilience archetype (Epic L) — supply + comms graphs under
+# scripted interdiction. The report's "Network Resilience" section shows
+# per-network mean/max disrupted-node and component counts plus the
+# Brandes critical-node ranking on the static topology.
+cargo run -p faultline-cli -- scenarios/network_resilience_demo.toml -n 16
+
 # Counterfactual override + delta report (Epic B)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --counterfactual "faction.alpha.initial_morale=0.3"
@@ -133,6 +139,31 @@ metric-history buffer to the longest window any branch in the
 scenario asks for; legacy scenarios with no such branch pay zero
 overhead. Schema reference is in `docs/scenario_schema.md` under
 `PhaseBranch`.
+
+**Network primitives (Epic L).** Scenarios may declare any number of
+typed graphs via `[networks.<id>]` (see `docs/scenario_schema.md`).
+Each network has nodes and directed weighted edges with per-edge
+metadata (`capacity`, `latency`, `bandwidth`, `trust`). Three new
+`EventEffect` variants — `NetworkEdgeCapacity`, `NetworkNodeDisrupt`,
+`NetworkInfiltrate` — drive runtime mutation of the per-network
+state stored on `SimulationState.network_states`. `NetworkEdgeCapacity`
+composes multiplicatively with prior events and is clamped to
+`[0, 4]` so a runaway author chain can't poison the residual-capacity
+series. Per tick (after the campaign and leadership-cap phases) the
+engine appends one `NetworkSample` per declared network — component
+count, largest-component size, residual capacity, disrupted-node
+count. Cross-run analytics in `faultline_stats::network_metrics`
+roll those into `MonteCarloSummary.network_summaries`: mean / max
+disrupted-node and component counts, fragmentation rate, plus a top-N
+**critical-node ranking** by Brandes betweenness centrality on the
+static topology (treating the graph as undirected for centrality —
+removing the most-central node is what hurts most regardless of who
+removes it). The same module also exposes `max_flow` (Edmonds-Karp,
+deterministic via `BTreeMap` BFS ordering) and a `mean_infiltration_per_faction`
+helper. Validation rejects edges with unknown endpoints, self-loops,
+and event effects targeting unknown networks / nodes / factions.
+Engine path is zero-overhead for scenarios without `[networks.*]`.
+Bundled archetype: `scenarios/network_resilience_demo.toml`.
 
 **Defender capacity model (Epic K).** Factions can declare per-role
 investigative queues via `[factions.<id>.defender_capacities.<role>]`

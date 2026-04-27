@@ -1784,8 +1784,13 @@ fn write_markdown_report(
     scenario: &Scenario,
     manifest_obj: Option<&RunManifest>,
 ) -> Result<()> {
-    // Only emit the report if there's something Phase-6 to show.
-    if result.summary.campaign_summaries.is_empty() && result.summary.feasibility_matrix.is_empty()
+    // Only emit the report if there's something analytical to show:
+    // a Phase-6 kill-chain table, Phase-6 feasibility matrix, or an
+    // Epic-L network rollup. Otherwise the report is just the
+    // win-rate header and that's already in summary.json.
+    if result.summary.campaign_summaries.is_empty()
+        && result.summary.feasibility_matrix.is_empty()
+        && result.summary.network_summaries.is_empty()
     {
         return Ok(());
     }

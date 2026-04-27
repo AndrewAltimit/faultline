@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::faction::{Diplomacy, ForceUnit};
-use crate::ids::{EventId, FactionId, InfraId, InstitutionId, RegionId, SegmentId, TechCardId};
+use crate::ids::{
+    EdgeId, EventId, FactionId, InfraId, InstitutionId, NetworkId, NodeId, RegionId, SegmentId,
+    TechCardId,
+};
 
 /// A scripted or conditional event that may fire during the sim.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -163,5 +166,36 @@ pub enum EventEffect {
     },
     Narrative {
         text: String,
+    },
+    /// Reduce an edge's effective capacity by multiplying its
+    /// `runtime_capacity_factor` by `factor` (Epic L). `factor < 1.0`
+    /// models interdiction; `factor == 0.0` severs the edge.
+    /// `factor > 1.0` is permitted (hardening / surge capacity) but
+    /// the runtime factor is clamped to `[0, 4]` to prevent runaway
+    /// authoring errors. Unknown network / edge ids are a no-op at
+    /// runtime; engine validation rejects them at scenario load.
+    NetworkEdgeCapacity {
+        network: NetworkId,
+        edge: EdgeId,
+        factor: f64,
+    },
+    /// Mark a network node as disrupted (Epic L) — every edge
+    /// incident to it is treated as severed (capacity factor 0) for
+    /// metrics and resilience curves. The static schema is unchanged;
+    /// the disruption is per-run runtime state. Repeated disruption
+    /// of the same node is idempotent.
+    NetworkNodeDisrupt {
+        network: NetworkId,
+        node: NodeId,
+    },
+    /// Add `faction` to the set of factions with attacker-style
+    /// visibility into a network node (Epic L). Surfaced in the
+    /// report as an information loss; does not change capacity. The
+    /// effect is cumulative — a second infiltration by a different
+    /// faction adds that faction to the visibility set.
+    NetworkInfiltrate {
+        network: NetworkId,
+        node: NodeId,
+        faction: FactionId,
     },
 }

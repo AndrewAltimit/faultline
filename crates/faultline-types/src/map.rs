@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{FactionId, InfraId, RegionId};
 
 /// Top-level map configuration.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MapConfig {
     pub source: MapSource,
     pub regions: BTreeMap<RegionId, Region>,
@@ -21,6 +21,17 @@ pub enum MapSource {
     BuiltIn { name: String },
     GeoJson { path: String },
     Grid { width: u32, height: u32 },
+}
+
+impl Default for MapSource {
+    /// Empty grid: useful only as a `..Default::default()` base for test
+    /// fixtures. Engine validation rejects empty maps.
+    fn default() -> Self {
+        Self::Grid {
+            width: 0,
+            height: 0,
+        }
+    }
 }
 
 /// A named region on the map.

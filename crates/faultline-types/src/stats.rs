@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{DefenderRoleId, EventId, FactionId, InfraId, KillChainId, PhaseId, RegionId};
+use crate::ids::{
+    DefenderRoleId, EdgeId, EventId, FactionId, InfraId, KillChainId, NetworkId, NodeId, PhaseId,
+    RegionId,
+};
 use crate::strategy::FactionState;
 
 /// Configuration for Monte Carlo simulation runs.
@@ -57,6 +60,68 @@ pub struct RunResult {
     /// (faction_id, role_id) for deterministic rendering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defender_queue_reports: Vec<DefenderQueueReport>,
+    /// Per-network terminal-state report (Epic L). Empty when the
+    /// scenario declares no networks. Each entry carries the resilience
+    /// trajectory across ticks plus terminal metrics; aggregated across
+    /// runs by [`MonteCarloSummary::network_summaries`].
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub network_reports: BTreeMap<NetworkId, NetworkReport>,
+}
+
+/// End-of-run snapshot of one network's resilience trajectory (Epic L).
+///
+/// `samples` holds one [`NetworkSample`] per observed tick (in capture
+/// order — the engine emits one per tick after the network phase).
+/// Cross-run aggregation reads `terminal_*` for the post-mortem and
+/// `samples` for survival-curve-style overlays.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkReport {
+    pub network: NetworkId,
+    /// Number of nodes the static topology declared. Edge counts are
+    /// not carried because the report is rendered against the live
+    /// scenario, which knows the full edge set; the analyst reads
+    /// "N/M nodes connected" against an authoritative denominator.
+    pub static_node_count: u32,
+    pub static_edge_count: u32,
+    /// Per-tick network samples in capture order. Empty when the
+    /// engine did not record any (e.g. zero-tick run).
+    #[serde(default)]
+    pub samples: Vec<NetworkSample>,
+    /// Set of disrupted nodes at run end. Sorted for deterministic
+    /// output; `BTreeSet` is canonical here for the same reason
+    /// `BTreeMap` is used elsewhere.
+    #[serde(default)]
+    pub terminal_disrupted_nodes: std::collections::BTreeSet<NodeId>,
+    /// Per-edge runtime capacity multipliers at run end. Edges absent
+    /// from the map were never modified (multiplier = 1.0).
+    #[serde(default)]
+    pub terminal_edge_factors: BTreeMap<EdgeId, f64>,
+    /// Per-faction set of nodes infiltrated by run end. Empty inner
+    /// set for factions with no infiltrations is elided; outer map
+    /// stays empty when no infiltration occurred.
+    #[serde(default)]
+    pub terminal_infiltrated: BTreeMap<FactionId, std::collections::BTreeSet<NodeId>>,
+}
+
+/// One per-tick observation of a network's connectivity state.
+///
+/// Captured *after* event effects fire so a same-tick interdiction
+/// shows up in this tick's sample (mirrors how `metric_history` stores
+/// end-of-tick escalation snapshots).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkSample {
+    pub tick: u32,
+    /// Number of weakly connected components (treating the graph as
+    /// undirected for resilience purposes). `1` = fully connected;
+    /// rises as the network fragments.
+    pub component_count: u32,
+    /// Largest weakly-connected-component size (node count).
+    pub largest_component: u32,
+    /// Total residual capacity = sum of `capacity * runtime_factor`
+    /// across edges where neither endpoint is disrupted.
+    pub residual_capacity: f64,
+    /// Count of currently-disrupted nodes.
+    pub disrupted_nodes: u32,
 }
 
 /// End-of-run snapshot of a single defender role's queue activity.
@@ -175,6 +240,58 @@ pub struct MonteCarloSummary {
     /// `defender_capacities`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defender_capacity: Vec<DefenderCapacitySummary>,
+    /// Per-network resilience aggregate across runs (Epic L). Empty
+    /// when the scenario declares no networks. Holds the
+    /// critical-node ranking (deterministic Brandes betweenness over
+    /// the static topology) plus mean / max disrupted-node and
+    /// fragmentation counts across runs.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub network_summaries: BTreeMap<NetworkId, NetworkSummary>,
+}
+
+/// Aggregate per-run network analytics (Epic L).
+///
+/// Mean / max stats are over [`RunResult::network_reports`]; the
+/// `critical_nodes` ranking is computed once over the static topology
+/// (it doesn't depend on runtime mutations) and surfaced so reports
+/// can call out structural single points of failure.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NetworkSummary {
+    pub network: NetworkId,
+    pub n_runs: u32,
+    pub mean_disrupted_nodes: f64,
+    pub max_disrupted_nodes: u32,
+    pub mean_terminal_components: f64,
+    pub max_terminal_components: u32,
+    /// Fraction of runs that ended with at least one node disrupted.
+    pub fragmentation_rate: f64,
+    /// Top-N nodes by Brandes betweenness centrality on the
+    /// static topology. Sorted by descending centrality. Length
+    /// is bounded (currently min(10, node_count)) so the report
+    /// stays readable on dense networks.
+    #[serde(default)]
+    pub critical_nodes: Vec<CriticalNode>,
+}
+
+/// One row of the critical-node ranking (Epic L).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CriticalNode {
+    pub node: NodeId,
+    pub name: String,
+    /// Brandes betweenness score on the static topology, treating
+    /// the graph as **undirected** (the score answers "removing this
+    /// node disconnects how many shortest paths regardless of flow
+    /// direction"). Normalized by `(n - 1) * (n - 2)`, the standard
+    /// undirected betweenness denominator (matches NetworkX
+    /// `betweenness_centrality(normalized=True)`). Range `[0, 1]`;
+    /// `1.0` is achieved only by a node that lies on every
+    /// non-trivial shortest path (e.g., the centre of an undirected
+    /// star).
+    pub betweenness: f64,
+    /// Author-supplied criticality multiplier (`NetworkNode.criticality`).
+    /// Surfaced alongside betweenness so the report can show "most
+    /// structurally central" and "most analytically important" together.
+    pub criticality: f64,
 }
 
 /// Aggregate queue analytics for one (faction, role) defender across
@@ -632,4 +749,7 @@ pub struct DeltaEncodedRun {
     /// Defender-queue summaries — preserved verbatim, not delta-encoded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defender_queue_reports: Vec<DefenderQueueReport>,
+    /// Network reports — preserved verbatim, not delta-encoded.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub network_reports: BTreeMap<NetworkId, NetworkReport>,
 }

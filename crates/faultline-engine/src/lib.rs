@@ -12,6 +12,7 @@ pub mod campaign;
 pub mod combat;
 pub mod engine;
 pub mod error;
+pub mod network;
 pub mod state;
 pub mod tick;
 
@@ -348,6 +349,214 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Networks (Epic L). Topological invariants only; engine-side
+    // semantics (capacity factor clamping, etc.) are enforced at
+    // runtime in the network phase.
+    for (nid, net) in &scenario.networks {
+        // ID-vs-key consistency. The engine reads only the table
+        // keys; a mismatched inner `id` would be silently lost,
+        // which is exactly the silent-no-op trap validation should
+        // catch up front. Mirrors the DefenderCapacity check.
+        if net.id != *nid {
+            return Err(ScenarioError::NetworkIdMismatch {
+                network: nid.clone(),
+                kind: "network",
+                key: nid.0.clone(),
+                id: net.id.0.clone(),
+            });
+        }
+        for (node_id, node) in &net.nodes {
+            if node.id != *node_id {
+                return Err(ScenarioError::NetworkIdMismatch {
+                    network: nid.clone(),
+                    kind: "node",
+                    key: node_id.0.clone(),
+                    id: node.id.0.clone(),
+                });
+            }
+        }
+        for (edge_id, edge) in &net.edges {
+            if edge.id != *edge_id {
+                return Err(ScenarioError::NetworkIdMismatch {
+                    network: nid.clone(),
+                    kind: "edge",
+                    key: edge_id.0.clone(),
+                    id: edge.id.0.clone(),
+                });
+            }
+        }
+        for (eid, edge) in &net.edges {
+            if !net.nodes.contains_key(&edge.from) {
+                return Err(ScenarioError::UnknownNetworkNode {
+                    network: nid.clone(),
+                    edge: eid.clone(),
+                    node: edge.from.clone(),
+                });
+            }
+            if !net.nodes.contains_key(&edge.to) {
+                return Err(ScenarioError::UnknownNetworkNode {
+                    network: nid.clone(),
+                    edge: eid.clone(),
+                    node: edge.to.clone(),
+                });
+            }
+            if edge.from == edge.to {
+                return Err(ScenarioError::NetworkSelfLoop {
+                    network: nid.clone(),
+                    edge: eid.clone(),
+                    node: edge.from.clone(),
+                });
+            }
+            if !edge.capacity.is_finite() || edge.capacity < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("network {nid} edge {eid} capacity"),
+                    value: edge.capacity,
+                    expected: ">= 0 and finite".into(),
+                });
+            }
+            if !edge.latency.is_finite() || edge.latency < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("network {nid} edge {eid} latency"),
+                    value: edge.latency,
+                    expected: ">= 0 and finite".into(),
+                });
+            }
+            if !edge.bandwidth.is_finite() || edge.bandwidth < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("network {nid} edge {eid} bandwidth"),
+                    value: edge.bandwidth,
+                    expected: ">= 0 and finite".into(),
+                });
+            }
+            if !edge.trust.is_finite() || edge.trust < 0.0 || edge.trust > 1.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("network {nid} edge {eid} trust"),
+                    value: edge.trust,
+                    expected: "[0.0, 1.0]".into(),
+                });
+            }
+        }
+        for (node_id, node) in &net.nodes {
+            if !node.criticality.is_finite() || node.criticality < 0.0 || node.criticality > 1.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("network {nid} node {node_id} criticality"),
+                    value: node.criticality,
+                    expected: "[0.0, 1.0]".into(),
+                });
+            }
+        }
+        if let Some(owner) = &net.owner
+            && !scenario.factions.contains_key(owner)
+        {
+            return Err(ScenarioError::UnknownFaction(owner.clone()));
+        }
+    }
+
+    // Network-aware event effects (Epic L). Each NetworkEdgeCapacity
+    // / NetworkNodeDisrupt / NetworkInfiltrate effect must reference
+    // a declared network, and within it a declared edge / node /
+    // faction. Catching this at load time turns a silent runtime
+    // no-op (the tick handler skips unknown ids) into a loud
+    // configuration error.
+    for (eid, def) in &scenario.events {
+        for effect in &def.effects {
+            validate_network_effect(scenario, eid, effect)?;
+        }
+        for option in &def.defender_options {
+            for effect in &option.modifier_effects {
+                validate_network_effect(scenario, eid, effect)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_network_effect(
+    scenario: &Scenario,
+    eid: &faultline_types::ids::EventId,
+    effect: &faultline_types::events::EventEffect,
+) -> Result<(), ScenarioError> {
+    use faultline_types::events::EventEffect;
+    match effect {
+        EventEffect::NetworkEdgeCapacity {
+            network,
+            edge,
+            factor,
+        } => {
+            let Some(net) = scenario.networks.get(network) else {
+                return Err(ScenarioError::UnknownNetwork {
+                    event: eid.clone(),
+                    effect: "NetworkEdgeCapacity".into(),
+                    network: network.clone(),
+                });
+            };
+            if !net.edges.contains_key(edge) {
+                return Err(ScenarioError::UnknownNetworkTarget {
+                    event: eid.clone(),
+                    effect: "NetworkEdgeCapacity".into(),
+                    network: network.clone(),
+                    kind: "edge".into(),
+                    target: edge.0.clone(),
+                });
+            }
+            // NaN factor is silently treated as a no-op at runtime
+            // (the handler keeps the previous factor); flag at load
+            // time so the analyst sees the typo. Negative is allowed
+            // here at load — runtime clamps to [0, 4].
+            if !factor.is_finite() {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("event {eid} NetworkEdgeCapacity({network} / {edge}) factor"),
+                    value: *factor,
+                    expected: "finite".into(),
+                });
+            }
+        },
+        EventEffect::NetworkNodeDisrupt { network, node } => {
+            let Some(net) = scenario.networks.get(network) else {
+                return Err(ScenarioError::UnknownNetwork {
+                    event: eid.clone(),
+                    effect: "NetworkNodeDisrupt".into(),
+                    network: network.clone(),
+                });
+            };
+            if !net.nodes.contains_key(node) {
+                return Err(ScenarioError::UnknownNetworkTarget {
+                    event: eid.clone(),
+                    effect: "NetworkNodeDisrupt".into(),
+                    network: network.clone(),
+                    kind: "node".into(),
+                    target: node.0.clone(),
+                });
+            }
+        },
+        EventEffect::NetworkInfiltrate {
+            network,
+            node,
+            faction,
+        } => {
+            let Some(net) = scenario.networks.get(network) else {
+                return Err(ScenarioError::UnknownNetwork {
+                    event: eid.clone(),
+                    effect: "NetworkInfiltrate".into(),
+                    network: network.clone(),
+                });
+            };
+            if !net.nodes.contains_key(node) {
+                return Err(ScenarioError::UnknownNetworkTarget {
+                    event: eid.clone(),
+                    effect: "NetworkInfiltrate".into(),
+                    network: network.clone(),
+                    kind: "node".into(),
+                    target: node.0.clone(),
+                });
+            }
+            if !scenario.factions.contains_key(faction) {
+                return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+        },
+        _ => {},
+    }
     Ok(())
 }
 
@@ -645,6 +854,7 @@ mod tests {
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
             strategy_space: faultline_types::strategy_space::StrategySpace::default(),
+            networks: std::collections::BTreeMap::new(),
         }
     }
 

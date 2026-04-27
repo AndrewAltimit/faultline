@@ -35,6 +35,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         event_log: run.event_log.clone(),
         campaign_reports: run.campaign_reports.clone(),
         defender_queue_reports: run.defender_queue_reports.clone(),
+        network_reports: run.network_reports.clone(),
     }
 }
 
@@ -62,6 +63,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         event_log: encoded.event_log.clone(),
         campaign_reports: encoded.campaign_reports.clone(),
         defender_queue_reports: encoded.defender_queue_reports.clone(),
+        network_reports: encoded.network_reports.clone(),
     }
 }
 
@@ -254,6 +256,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -312,6 +315,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -366,6 +370,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -391,6 +396,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -434,6 +440,7 @@ mod tests {
             event_log: event_log.clone(),
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -518,6 +525,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
