@@ -222,7 +222,7 @@ fn node_disrupt_event_fragments_in_same_tick() {
             saw_post = true;
         }
     }
-    assert!(saw_pre || saw_post, "must have observed at least one tick");
+    assert!(saw_pre, "must have observed at least one pre-disrupt tick");
     assert!(saw_post, "tick 3 sample must include the disruption");
     assert!(report.terminal_disrupted_nodes.contains(&NodeId::from("c")));
 }

@@ -198,8 +198,9 @@ pub fn brandes_top_critical(net: &Network, cap: usize) -> Vec<CriticalNode> {
     // the per-pair share. Equivalently — and what the code does —
     // divide the doubled raw cb by `(n - 1) * (n - 2)`. The result
     // lives in `[0, 1]`; an undirected star centre attains exactly
-    // 1.0.
-    let denom = ((n - 1) * (n - 2)) as f64;
+    // 1.0. Widening to u64 before multiplying avoids silent wraparound
+    // on WASM32 (32-bit usize) for `n >= 65538`.
+    let denom = ((n as u64 - 1) * (n as u64 - 2)) as f64;
     if denom > 0.0 {
         for v in cb.iter_mut() {
             *v /= denom;

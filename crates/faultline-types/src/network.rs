@@ -109,6 +109,10 @@ impl Default for NetworkNode {
 /// matches the serde default (`1.0`). A `#[derive(Default)]` would
 /// silently produce `trust = 0.0`, diverging from the schema-documented
 /// default that TOML deserialization yields.
+///
+/// Note: the default `from` / `to` are both empty `NodeId("")`, which
+/// validation rejects as a self-loop. Test fixtures using
+/// `..Default::default()` must always override both endpoints.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkEdge {
     pub id: EdgeId,
