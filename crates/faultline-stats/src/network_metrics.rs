@@ -150,8 +150,15 @@ pub fn brandes_top_critical(net: &Network, cap: usize) -> Vec<CriticalNode> {
     for s in 0..n {
         let mut stack: Vec<usize> = Vec::new();
         let mut pred: Vec<Vec<usize>> = vec![Vec::new(); n];
-        let mut sigma = vec![0_u64; n];
-        sigma[s] = 1;
+        // f64 (not u64) for sigma is the standard Brandes practice:
+        // shortest-path counts can grow factorially on graphs like
+        // hypercubes (Q_d has d! shortest paths between antipodes), so
+        // an integer counter would silently overflow on Q_21+. f64
+        // tolerates the dynamic range and the only Brandes operation
+        // on sigma is division (sigma[v] / sigma[w]), where the
+        // mantissa is more than enough.
+        let mut sigma = vec![0.0_f64; n];
+        sigma[s] = 1.0;
         let mut dist = vec![-1_i64; n];
         dist[s] = 0;
 
@@ -174,7 +181,7 @@ pub fn brandes_top_critical(net: &Network, cap: usize) -> Vec<CriticalNode> {
         let mut delta = vec![0.0_f64; n];
         while let Some(w) = stack.pop() {
             for &v in &pred[w] {
-                let contribution = (sigma[v] as f64) / (sigma[w] as f64) * (1.0 + delta[w]);
+                let contribution = (sigma[v] / sigma[w]) * (1.0 + delta[w]);
                 delta[v] += contribution;
             }
             if w != s {
@@ -183,10 +190,15 @@ pub fn brandes_top_critical(net: &Network, cap: usize) -> Vec<CriticalNode> {
         }
     }
 
-    // Standard Brandes normalization for undirected:
-    // cb / ((n-1)(n-2) / 2). Each pair (s,t) is counted twice in the
-    // raw cb when computing for both s and t, so the conventional
-    // undirected normalization halves it.
+    // Standard normalization for undirected betweenness, matching
+    // NetworkX `betweenness_centrality(normalized=True)`. The raw cb
+    // accumulated above already counts each unordered pair {s, t}
+    // twice (once with s as source, once with t as source), and the
+    // conventional `2 / ((n - 1) * (n - 2))` factor halves that into
+    // the per-pair share. Equivalently — and what the code does —
+    // divide the doubled raw cb by `(n - 1) * (n - 2)`. The result
+    // lives in `[0, 1]`; an undirected star centre attains exactly
+    // 1.0.
     let denom = ((n - 1) * (n - 2)) as f64;
     if denom > 0.0 {
         for v in cb.iter_mut() {
@@ -393,8 +405,10 @@ pub fn mean_infiltration_per_faction(
             continue;
         };
         for (faction, nodes) in &report.terminal_infiltrated {
+            let count =
+                u64::try_from(nodes.len()).expect("infiltrated node count exceeds u64::MAX");
             let entry = totals.entry(faction.clone()).or_insert(0);
-            *entry = entry.saturating_add(nodes.len() as u64);
+            *entry = entry.saturating_add(count);
         }
     }
     totals
@@ -570,11 +584,18 @@ mod tests {
         };
         let ranked = brandes_top_critical(&net, 5);
         assert_eq!(ranked[0].node, NodeId::from("c"));
-        // Center sits on every leaf-to-leaf shortest path. With n=5
-        // and the standard normalization 2/((n-1)(n-2)) applied
-        // *implicitly* via /((n-1)(n-2)), the center's score is
-        // 6/12 = 0.5 (6 unordered leaf pairs out of 12 ordered).
-        assert!(ranked[0].betweenness > 0.4);
+        // The star center sits on every leaf-to-leaf shortest path. For
+        // n = 5 leaves count = 4, ordered (s, t) pairs of leaves = 12,
+        // and the raw Brandes cb (run from every source — undirected
+        // graphs double-count pairs) accumulates 12. Normalized by the
+        // standard `(n - 1) * (n - 2) = 12` the score is exactly 1.0,
+        // i.e. the maximum centrality reachable on any undirected
+        // graph.
+        assert!(
+            (ranked[0].betweenness - 1.0).abs() < 1e-9,
+            "star center should normalize to 1.0, got {}",
+            ranked[0].betweenness
+        );
         // Leaves all have betweenness 0.
         for r in &ranked[1..] {
             assert!(r.betweenness.abs() < 1e-9);

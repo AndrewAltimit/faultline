@@ -278,10 +278,15 @@ pub struct NetworkSummary {
 pub struct CriticalNode {
     pub node: NodeId,
     pub name: String,
-    /// Brandes betweenness score on the static topology. Normalized
-    /// by `(n-1)(n-2)` for directed graphs (standard normalization).
-    /// Range `[0, 1]`; `1.0` is achieved only by a single node on a
-    /// directed star.
+    /// Brandes betweenness score on the static topology, treating
+    /// the graph as **undirected** (the score answers "removing this
+    /// node disconnects how many shortest paths regardless of flow
+    /// direction"). Normalized by `(n - 1) * (n - 2)`, the standard
+    /// undirected betweenness denominator (matches NetworkX
+    /// `betweenness_centrality(normalized=True)`). Range `[0, 1]`;
+    /// `1.0` is achieved only by a node that lies on every
+    /// non-trivial shortest path (e.g., the centre of an undirected
+    /// star).
     pub betweenness: f64,
     /// Author-supplied criticality multiplier (`NetworkNode.criticality`).
     /// Surfaced alongside betweenness so the report can show "most

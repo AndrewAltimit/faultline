@@ -97,8 +97,12 @@ pub fn compute_sample(net: &Network, rt: &NetworkRuntimeState, tick: u32) -> Net
 /// largest. Treats disrupted nodes as still being members of the
 /// graph (each becomes its own singleton component, which is what
 /// "fragmented from the rest" means analytically — the node is
-/// still *there*, it's just isolated). BFS over `BTreeSet` so
-/// iteration order is canonical and the count is deterministic.
+/// still *there*, it's just isolated). DFS via a `Vec` stack with
+/// `BTreeSet`-ordered neighbour iteration; traversal order is
+/// canonical and the count is deterministic. (Component count is
+/// traversal-order-independent regardless, but a `Vec`-stack DFS
+/// avoids the per-pop heap allocation that a `VecDeque`-based BFS
+/// would incur on tight tick loops.)
 fn connected_components(
     adj: &BTreeMap<NodeId, BTreeSet<NodeId>>,
     nodes: &BTreeMap<NodeId, faultline_types::network::NetworkNode>,
@@ -111,7 +115,7 @@ fn connected_components(
         if visited.contains(start) {
             continue;
         }
-        // BFS — initialize with the start node.
+        // DFS stack — initialize with the start node.
         let mut stack: Vec<NodeId> = vec![start.clone()];
         let mut size: u32 = 0;
         while let Some(n) = stack.pop() {
