@@ -728,6 +728,10 @@ fn cross_run_summary_includes_critical_nodes() {
         .expect("network summary present");
     assert_eq!(summary.n_runs, 3);
     // The center 'c' should be the top node by betweenness on a star.
+    // Exact normalized betweenness for a star center is 1.0; tightening
+    // to <1e-9 here mirrors the unit test in `network_metrics::tests`
+    // and catches any future normalization regression that slips
+    // through the multi-run path in `compute_network_summaries`.
     assert_eq!(summary.critical_nodes[0].node, NodeId::from("c"));
-    assert!(summary.critical_nodes[0].betweenness > 0.4);
+    assert!((summary.critical_nodes[0].betweenness - 1.0).abs() < 1e-9);
 }

@@ -60,7 +60,12 @@ pub struct Network {
 }
 
 /// One node in a [`Network`].
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+///
+/// `Default` is implemented manually so the Rust default for
+/// `criticality` matches the serde default (`1.0`). A `#[derive(Default)]`
+/// here would silently produce `criticality = 0.0`, diverging from the
+/// schema-documented default that TOML deserialization yields.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkNode {
     pub id: NodeId,
     pub name: String,
@@ -80,6 +85,18 @@ pub struct NetworkNode {
     pub criticality: f64,
 }
 
+impl Default for NetworkNode {
+    fn default() -> Self {
+        Self {
+            id: NodeId::default(),
+            name: String::new(),
+            description: String::new(),
+            region: None,
+            criticality: one_f64(),
+        }
+    }
+}
+
 /// One directed edge in a [`Network`].
 ///
 /// Capacity is the maximum flow the edge can carry per tick.
@@ -87,7 +104,12 @@ pub struct NetworkNode {
 /// `NetworkRuntimeState.edge_factors`) multiplies into this for
 /// dynamic interdiction effects; the static `capacity` here is the
 /// pristine baseline.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+///
+/// `Default` is implemented manually so the Rust default for `trust`
+/// matches the serde default (`1.0`). A `#[derive(Default)]` would
+/// silently produce `trust = 0.0`, diverging from the schema-documented
+/// default that TOML deserialization yields.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkEdge {
     pub id: EdgeId,
     pub from: NodeId,
@@ -113,6 +135,21 @@ pub struct NetworkEdge {
     pub trust: f64,
     #[serde(default)]
     pub description: String,
+}
+
+impl Default for NetworkEdge {
+    fn default() -> Self {
+        Self {
+            id: EdgeId::default(),
+            from: NodeId::default(),
+            to: NodeId::default(),
+            capacity: 0.0,
+            latency: 0.0,
+            bandwidth: 0.0,
+            trust: one_f64(),
+            description: String::new(),
+        }
+    }
 }
 
 fn one_f64() -> f64 {
