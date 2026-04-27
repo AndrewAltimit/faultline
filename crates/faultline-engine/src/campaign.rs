@@ -676,11 +676,22 @@ fn apply_leadership_decapitation(
     // rehearsed succession protocols absorbs the loss without panic).
     // Values outside the range are clamped rather than rejected so a
     // counterfactual override that pushes the parameter out of bounds
-    // still produces a sensible attenuation factor.
+    // still produces a sensible attenuation factor. NaN is treated as
+    // 0.0 (full shock) rather than passed through `clamp` — `f64::clamp`
+    // returns NaN when `self` is NaN, which would propagate into
+    // `effective_shock` and silently corrupt morale. The explicit guard
+    // matches the graceful-degradation pattern used for `morale_modifier`
+    // in `tick::find_contested_regions`.
     let resilience = scenario
         .factions
         .get(target)
-        .map(|f| f.command_resilience.clamp(0.0, 1.0))
+        .map(|f| {
+            if f.command_resilience.is_nan() {
+                0.0
+            } else {
+                f.command_resilience.clamp(0.0, 1.0)
+            }
+        })
         .unwrap_or(0.0);
 
     let Some(fs) = state.faction_states.get_mut(target) else {

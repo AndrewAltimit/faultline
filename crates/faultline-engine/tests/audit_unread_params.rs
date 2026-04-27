@@ -347,6 +347,47 @@ fn leadership_decapitation_advances_rank_regardless_of_resilience() {
     );
 }
 
+#[test]
+fn command_resilience_nan_degrades_to_full_shock() {
+    // A hand-built scenario that bypasses validation could inject a
+    // non-finite `command_resilience`. The engine treats NaN as 0.0
+    // (full shock) rather than letting it propagate through the morale
+    // arithmetic and silently corrupt downstream combat values. This
+    // mirrors the graceful-degradation pattern used for `morale_modifier`
+    // in `tick::find_contested_regions` (where `(1.0 + NaN).max(0.0)`
+    // resolves to 0.0 via IEEE-754 `fmax` semantics).
+    let sc_nan = decapitation_scenario(f64::NAN);
+    let mut engine_nan = Engine::with_seed(sc_nan, 42).expect("engine init");
+    engine_nan.run().expect("run");
+    let nan_morale = engine_nan
+        .state()
+        .faction_states
+        .get(&FactionId::from("target"))
+        .expect("target state")
+        .morale;
+    assert!(
+        nan_morale.is_finite(),
+        "NaN command_resilience must not poison morale, got {nan_morale}"
+    );
+
+    // The post-strike morale under NaN resilience must match the
+    // resilience-0.0 (full-shock) arm exactly, since NaN is treated
+    // as 0.0.
+    let sc_zero = decapitation_scenario(0.0);
+    let mut engine_zero = Engine::with_seed(sc_zero, 42).expect("engine init");
+    engine_zero.run().expect("run");
+    let zero_morale = engine_zero
+        .state()
+        .faction_states
+        .get(&FactionId::from("target"))
+        .expect("target state")
+        .morale;
+    assert!(
+        (nan_morale - zero_morale).abs() < 1e-9,
+        "NaN resilience must equal 0.0 resilience: nan={nan_morale}, zero={zero_morale}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Test 2: ForceUnit.morale_modifier multiplies effective combat strength
 // ---------------------------------------------------------------------------
