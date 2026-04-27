@@ -363,7 +363,12 @@ pub fn campaign_phase(
                     for output in &phase.outputs {
                         apply_phase_output(state, scenario, campaign, output);
                     }
-                    // Cost accounting.
+                    // Cost accounting. Defender spend accrues only on
+                    // success — see `PhaseCost::defender_dollars` — so a
+                    // defender that repels every attempt accrues zero
+                    // spend and never trips `defender_budget`. Attacker
+                    // spend accrues either way (mirrored in the failure
+                    // branch below).
                     campaign.attacker_spend += phase.cost.attacker_dollars;
                     campaign.defender_spend += phase.cost.defender_dollars;
                 } else {

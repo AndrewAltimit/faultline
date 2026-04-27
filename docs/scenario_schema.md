@@ -32,7 +32,7 @@ All map keys (`<id>`) are strings. The engine uses `BTreeMap` everywhere, so ite
 The `attacker_budget` / `defender_budget` scenario-level fields cap the total dollar spend accumulated across all kill-chain phases. The two halves apply asymmetrically because the attacker is the active party (it chooses to spend; if it can't, the operation is canceled) while the defender is reactive (the cost is imposed by enemy action, not chosen):
 
 - `attacker_budget` — phases whose `cost.attacker_dollars` would push cumulative `attacker_spend` past the cap **cannot activate and are marked `Failed`** at would-be activation time. `OnFailure` branches still resolve so a chain with a cheaper fallback path can still progress.
-- `defender_budget` — once cumulative `defender_spend` (summed across all chains) exceeds the cap, the engine latches a sticky `defender_over_budget_tick` for the rest of the run and applies a **0.5× detection-probability multiplier** to every subsequent kill-chain phase detection roll. This models a defender who has spent through their gap-closing budget and is now operating understaffed against the in-flight remainder. The latch is checked once per tick at tick-start, so chain-processing order within a tick can never affect which phase first incurs the penalty.
+- `defender_budget` — once cumulative `defender_spend` (summed across all chains) exceeds the cap, the engine latches a sticky `defender_over_budget_tick` for the rest of the run and applies a **0.5× detection-probability multiplier** to every subsequent kill-chain phase detection roll. This models a defender who has spent through their gap-closing budget and is now operating understaffed against the in-flight remainder. The latch is checked once per tick at tick-start, so chain-processing order within a tick can never affect which phase first incurs the penalty. Note that `defender_spend` accrues only on phase **success** (see `PhaseCost.defender_dollars`) — a defender that repels every attempt accrues zero spend and never trips the cap, which matches the intent ("cost imposed by a *landed* attack") but is worth keeping in mind when sizing `defender_dollars` per phase.
 
 See [`[kill_chains.<id>]`](#kill_chainsid-multi-phase-campaigns) below.
 
@@ -734,8 +734,8 @@ confidence = "High"  # optional
 
 | Field | Type | Notes |
 |---|---|---|
-| `attacker_dollars` | f64 | Accumulated against scenario-level `attacker_budget` |
-| `defender_dollars` | f64 | Accumulated against scenario-level `defender_budget`. When set and the running total exceeds the cap, every subsequent kill-chain phase suffers a 0.5× detection-probability multiplier for the rest of the run (see `[meta]` introduction for the asymmetry with `attacker_budget`) |
+| `attacker_dollars` | f64 | Accumulated against scenario-level `attacker_budget`. Charged whether the phase **succeeds or fails** — the attacker pays for the attempt either way |
+| `defender_dollars` | f64 | Accumulated against scenario-level `defender_budget`. Charged **only when the phase succeeds** — the modeled cost is closing the gap a *landed* attack exploited, not a per-attempt response. A defender that repels every attempt accrues zero spend, so size this for the cost-imposed-by-a-successful-attack and use the `defender_budget` cap to bound the running total. When that running total exceeds the cap, every subsequent kill-chain phase suffers a 0.5× detection-probability multiplier for the rest of the run (see `[meta]` introduction for the asymmetry with `attacker_budget`) |
 | `attacker_resources` | f64 | Scenario-resource units consumed from the attacker's pool |
 | `confidence` | `"High"` / `"Medium"` / `"Low"` | Optional author self-assessment of cost defensibility — `High` for commodity-parts BOMs / published rate cards, `Low` for wide expert estimates. Omit for "unrated." Complements `parameter_confidence` on the phase itself. |
 
