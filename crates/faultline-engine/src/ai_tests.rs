@@ -127,6 +127,7 @@ fn make_ai_test_state() -> SimulationState {
         metric_history: vec![],
         defender_queues: BTreeMap::new(),
         network_states: std::collections::BTreeMap::new(),
+        defender_over_budget_tick: None,
     }
 }
 

@@ -215,6 +215,15 @@ fn default_attribution() -> f64 {
 /// Defender costs represent investment required to *close* the gap the
 /// phase exploits. The ratio `defender / attacker` is the cost
 /// asymmetry measurement the threat-assessment framework targets.
+///
+/// Accumulation timing differs by side: `attacker_dollars` is charged
+/// whether the phase succeeds or fails (the attacker pays for the
+/// attempt either way), but `defender_dollars` is charged **only when
+/// the phase succeeds** — the gap stays unclosed until something gets
+/// through, so a defender that repels every attempt accrues zero
+/// spend. Authors targeting the `defender_budget` overrun penalty
+/// should size `defender_dollars` for the cost of plugging a *landed*
+/// attack, not the cost of a per-attempt response.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PhaseCost {
     #[serde(default)]

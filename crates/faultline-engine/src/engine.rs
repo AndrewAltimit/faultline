@@ -349,6 +349,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         metric_history: Vec::new(),
         defender_queues,
         network_states,
+        defender_over_budget_tick: None,
     })
 }
 
