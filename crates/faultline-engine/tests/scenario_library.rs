@@ -34,6 +34,7 @@ const BUNDLED_SCENARIOS: &[&str] = &[
     "alert_fatigue_soc.toml",
     "capabilities_demo.toml",
     "compound_kill_chains.toml",
+    "defender_posture_optimization.toml",
     "drone_swarm_destabilization.toml",
     "europe_eastern_flank.toml",
     "europe_energy_sabotage.toml",

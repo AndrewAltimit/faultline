@@ -57,6 +57,16 @@ cargo run -p faultline-cli -- scenarios/strategy_search_demo.toml \
     --search-objective maximize_win_rate:alpha \
     --search-objective minimize_duration
 
+# Defender-posture optimization (Epic I) — same --search command,
+# different objective set; the report's Counter-Recommendation section
+# ranks Pareto-frontier postures against the do-nothing baseline.
+cargo run -p faultline-cli -- scenarios/defender_posture_optimization.toml \
+    --search --search-trials 8 --search-runs 30 \
+    --search-method grid \
+    --search-objective "maximize_win_rate:blue" \
+    --search-objective minimize_max_chain_success \
+    --search-objective maximize_detection
+
 # Replay a saved manifest and assert bit-identical output (Epic Q)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
     --verify ./output/manifest.json
@@ -139,11 +149,29 @@ noise. Round-one objectives are derived from existing
 `MonteCarloSummary` / `CampaignSummary` shape — no new analytics
 modules. Manifests record objective *labels* (not the structured
 enum) so adding new variants stays additive. Adversarial co-evolution
-and the defender-posture specialization (Epic I) are deferred to a
-follow-up round. See `crates/faultline-types/src/strategy_space.rs`,
+is deferred to a follow-up round. See
+`crates/faultline-types/src/strategy_space.rs`,
 `crates/faultline-stats/src/search.rs`,
 `scenarios/strategy_search_demo.toml`, and the
 `[strategy_space]` reference in `docs/scenario_schema.md`.
+
+**Defender-posture optimization (Epic I — round one).** Builds on
+Epic H. Four defender-aligned `SearchObjective` variants
+(`MaximizeAttackerCost`, `MaximizeDetection`, `MinimizeDefenderCost`,
+`MinimizeMaxChainSuccess`) compose with the existing attacker-aligned
+set so a single `[strategy_space]` declaration can express either
+side's optimization. The `set_param` path layer is extended to reach
+`faction.<id>.force.<force_id>.{strength,mobility,upkeep}` so force
+posture is a decision variable. Search runs now compute an optional
+"do-nothing" baseline trial alongside sampled trials (toggle via
+`SearchConfig.compute_baseline`, default true in the CLI). The new
+**Counter-Recommendation** report section ranks Pareto-frontier trials
+by per-objective improvement against the baseline with direction-aware
+"improvement?" tags and Wilson 95% CIs on rate-valued win-rate
+objectives; section gates on baseline + at least one decision variable
+with `owner` set, so legacy attacker-only spaces stay unchanged.
+`ManifestMode::Search` records `compute_baseline` so verify replays
+match. Bundled archetype: `scenarios/defender_posture_optimization.toml`.
 
 **Engine model depth (Epic D — round one).** Three additions
 expand authoring expressiveness without touching the determinism

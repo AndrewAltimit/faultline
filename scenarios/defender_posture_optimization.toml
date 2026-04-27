@@ -1,0 +1,366 @@
+# Defender Posture Optimization (Epic I)
+#
+# A small attacker-vs-defender scenario built so the round-one
+# defender-posture optimization workflow has a concrete bundled
+# fixture. The defender ("blue") faces an attacker ("red") running a
+# two-phase covert kill chain. Three blue-side posture knobs are
+# declared as decision variables — force readiness (initial_morale)
+# and the per-phase detection-probability ceilings the defender's
+# monitoring posture can drive against each attacker phase.
+#
+# Note on framing: round-one search uses scenario parameters as
+# decision variables directly. Setting `detection_probability_per_tick`
+# higher *represents* a defender investment in monitoring; the engine
+# does not yet derive detection rates from a defender capability
+# parameter (would be a follow-up; today it's analyst-supplied). The
+# strategy_space is searched over a grid of 8 cells and the report's
+# Counter-Recommendation section ranks the Pareto-frontier postures
+# against the do-nothing baseline.
+#
+# **Smoke-test scenario, not an analytical example.** Capability
+# numbers are notional — chosen so a small grid converges fast inside
+# the verify-bundled CI pipeline. The point is to exercise the
+# end-to-end defender-posture path: search runner with `owner`-tagged
+# variables, baseline trial, Counter-Recommendation rendering,
+# manifest replay. Real analytical scenarios should ground every
+# capability parameter in published OSINT (see LEGAL.md).
+#
+# CLI:
+#   cargo run -p faultline-cli -- \
+#     scenarios/defender_posture_optimization.toml \
+#     --search --search-trials 8 --search-runs 30 \
+#     --search-method grid \
+#     --search-objective "maximize_win_rate:blue" \
+#     --search-objective minimize_defender_cost \
+#     --search-objective maximize_detection
+#
+# All capability parameters are notional. Purely synthetic — no
+# historical analogue.
+
+[meta]
+schema_version = 1
+name = "Defender Posture Optimization"
+description = """
+Small attacker-defender scenario for the Epic I defender-posture
+search workflow. Defender's force strength, intelligence, and
+command resilience are decision variables; the search optimizes for
+defender win rate, defender cost, and chain detection.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["search", "epic-i", "defender-posture", "synthetic"]
+confidence = "Low"
+
+# -- Map: 2x2 grid ---------------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.capital]
+id = "capital"
+name = "Capital"
+population = 800000
+urbanization = 0.9
+initial_control = "blue"
+strategic_value = 1.0
+borders = ["industrial", "border"]
+
+[map.regions.industrial]
+id = "industrial"
+name = "Industrial"
+population = 600000
+urbanization = 0.8
+initial_control = "blue"
+strategic_value = 0.7
+borders = ["capital", "hinterland"]
+
+[map.regions.border]
+id = "border"
+name = "Border"
+population = 200000
+urbanization = 0.3
+initial_control = "blue"
+strategic_value = 0.4
+borders = ["capital", "hinterland"]
+
+[map.regions.hinterland]
+id = "hinterland"
+name = "Hinterland"
+population = 150000
+urbanization = 0.2
+initial_control = "red"
+strategic_value = 0.3
+borders = ["industrial", "border"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "capital"
+terrain_type = "Urban"
+movement_modifier = 0.9
+defense_modifier = 1.2
+visibility = 0.7
+
+[[map.terrain]]
+region = "industrial"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "border"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "hinterland"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 1.0
+
+# -- Factions --------------------------------------------------------------
+
+[factions.blue]
+id = "blue"
+name = "Blue (Defender)"
+description = "Defender state with garrisons in three regions."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 12.0
+initial_resources = 200.0
+resource_rate = 8.0
+command_resilience = 0.6
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.blue.forces.blue_garrison]
+id = "blue_garrison"
+name = "Blue Garrison"
+unit_type = "Infantry"
+region = "capital"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red]
+id = "red"
+name = "Red (Attacker)"
+description = "Attacker insurgent cell operating from the hinterland."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 8.0
+initial_resources = 120.0
+resource_rate = 4.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Guerrilla"
+
+[factions.red.faction_type]
+kind = "Insurgent"
+
+[factions.red.forces.red_cell]
+id = "red_cell"
+name = "Red Insurgent Cell"
+unit_type = "Militia"
+region = "hinterland"
+strength = 80.0
+mobility = 1.1
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) -----------------------------------------------------
+
+[technology]
+
+# -- Political climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.3
+state_control = 0.3
+social_media_penetration = 0.6
+internet_availability = 0.85
+
+[events]
+
+# -- Kill chain: red two-phase covert insertion ----------------------------
+#
+# A short kill chain so the search budget stays small. Phase costs are
+# notional: defender_dollars dominates so MinimizeDefenderCost has a
+# meaningful range across the search.
+
+[kill_chains.red_op]
+id = "red_op"
+name = "Covert Insertion"
+description = "Notional two-phase insertion against the defender's industrial region."
+attacker = "red"
+target = "blue"
+entry_phase = "recon"
+
+[kill_chains.red_op.phases.recon]
+id = "recon"
+name = "Reconnaissance"
+description = "Observation of garrison rotation and access points."
+base_success_probability = 0.85
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.04
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.7
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.red_op.phases.recon.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 100_000.0
+attacker_resources = 1.0
+
+[[kill_chains.red_op.phases.recon.outputs]]
+type = "IntelligenceGain"
+amount = 0.1
+
+[[kill_chains.red_op.phases.recon.branches]]
+next_phase = "infiltrate"
+[kill_chains.red_op.phases.recon.branches.condition]
+type = "OnSuccess"
+
+[kill_chains.red_op.phases.infiltrate]
+id = "infiltrate"
+name = "Infiltration"
+description = "Movement of operatives into the industrial region under cover of recon-derived gaps."
+prerequisites = ["recon"]
+base_success_probability = 0.65
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.08
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.6
+targets_domains = ["PhysicalSecurity"]
+
+[kill_chains.red_op.phases.infiltrate.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 350_000.0
+attacker_resources = 2.0
+
+[[kill_chains.red_op.phases.infiltrate.outputs]]
+type = "InstitutionalErosion"
+delta = 0.02
+
+# -- Simulation config -----------------------------------------------------
+#
+# Run count is small so the 8-cell grid search times out within the
+# verify-bundled CI budget. Search cost is `trials * runs` engine
+# passes (8 * 30 = 240) plus the baseline (one extra MC batch of 30).
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 30
+fog_of_war = false
+snapshot_interval = 0
+seed = 7
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Victory conditions ----------------------------------------------------
+
+[victory_conditions.blue_control]
+id = "blue_control"
+name = "Blue Strategic Control"
+faction = "blue"
+
+[victory_conditions.blue_control.condition]
+type = "StrategicControl"
+threshold = 0.65
+
+[victory_conditions.red_dominance]
+id = "red_dominance"
+name = "Red Military Dominance"
+faction = "red"
+
+[victory_conditions.red_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 0.4
+
+# -- Strategy search space (Epic I) ----------------------------------------
+#
+# Three blue-side decision variables. With steps=2 each, the
+# Cartesian product is 2^3 = 8 cells — a complete enumeration of the
+# corners. The owner field tags every variable as belonging to blue
+# so the Counter-Recommendation report section knows whose posture is
+# being evaluated.
+#
+# Variables are chosen for engine traceability: each one moves a
+# parameter the simulation actually reads, so trial-to-trial deltas
+# are non-zero and the Pareto frontier picks up real structure.
+# Conceptually, the recon/infiltrate detection variables represent
+# the defender's *monitoring posture* for each attacker phase, and
+# `initial_morale` represents force readiness.
+
+[strategy_space]
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.recon.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.02
+high = 0.20
+steps = 2
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.infiltrate.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.04
+high = 0.30
+steps = 2
+
+[[strategy_space.variables]]
+path = "faction.blue.initial_morale"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.55
+high = 0.9
+steps = 2
+
+[[strategy_space.objectives]]
+metric = "maximize_win_rate"
+faction = "blue"
+
+[[strategy_space.objectives]]
+metric = "minimize_max_chain_success"
+
+[[strategy_space.objectives]]
+metric = "maximize_detection"

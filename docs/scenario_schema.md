@@ -840,6 +840,8 @@ threshold = 0.75
 
 Optional. Declares which scenario parameters are *decision variables* for the `--search` CLI mode. Each variable names a parameter via the same dotted path layer used by `--counterfactual` and `--sensitivity`, plus a domain to sample from. When present, `faultline-cli ... --search` walks the declared space and reports best-by-objective + Pareto-frontier results; when absent, the field is omitted from the serialized scenario entirely so legacy bundles stay byte-identical.
 
+The supported paths are documented inline on `faultline_stats::sensitivity::get_param`. Round-one supports faction-level scalars (`initial_morale`, `initial_resources`, `resource_rate`, `logistics_capacity`, `command_resilience`, `intelligence`), force-unit fields (`faction.<id>.force.<force_id>.{strength,mobility,upkeep}` — added by Epic I to make force-posture a decision variable), political climate scalars, and kill-chain phase fields including `cost.{attacker_dollars,defender_dollars,attacker_resources}`.
+
 ```toml
 [strategy_space]
 
@@ -877,7 +879,7 @@ metric = "minimize_detection"
 
 Validation rejects: empty `path`, duplicate paths, `low > high`, `steps == 0`, empty discrete `values`, non-finite bounds, non-finite discrete values, unknown `owner` factions, and unknown `MaximizeWinRate.faction` references — all at scenario load time. The same structural checks are repeated by `faultline_stats::search::run_search` so library callers who hand-build a `Scenario` (in tests or custom workflows) get the same guarantees as the CLI path.
 
-Built-in `SearchObjective` variants (round one):
+Built-in `SearchObjective` variants:
 
 | `metric` | Direction | Argument | Source field |
 |---|---|---|---|
@@ -886,6 +888,14 @@ Built-in `SearchObjective` variants (round one):
 | `minimize_attacker_cost` | min | — | sum of `CampaignSummary.mean_attacker_spend` |
 | `maximize_cost_asymmetry` | max | — | `max(CampaignSummary.cost_asymmetry_ratio)` over chains |
 | `minimize_duration` | min | — | `MonteCarloSummary.average_duration` |
+| `maximize_attacker_cost` | max | — | sum of `CampaignSummary.mean_attacker_spend` (defender-aligned mirror) |
+| `maximize_detection` | max | — | `max(CampaignSummary.detection_rate)` over chains (defender-aligned mirror) |
+| `minimize_defender_cost` | min | — | sum of `CampaignSummary.mean_defender_spend` (defender-aligned, Epic I) |
+| `minimize_max_chain_success` | min | — | `max(CampaignSummary.overall_success_rate)` over chains (defender-aligned, Epic I) |
+
+The four defender-aligned variants (last four rows) compose with the attacker-aligned ones to express either-side optimization. Round-one search treats them all identically — they're pure functions of the existing summary shape, not new analytics modules.
+
+**Counter-Recommendation report section (Epic I).** When `SearchConfig.compute_baseline = true` (default for the `--search` CLI invocation), the runner evaluates the scenario without any decision-variable assignment as a "do-nothing" anchor and stores the result on `SearchResult.baseline`. The search Markdown report then renders a **Counter-Recommendation** section that ranks every Pareto-frontier trial against this baseline with a per-objective delta table, direction-aware "improvement?" tags, and Wilson 95% CIs on rate-valued win-rate objectives. The section gates on (1) baseline present, (2) at least one decision variable carrying an `owner`, (3) non-empty Pareto frontier — so legacy attacker-only spaces continue to render the original Epic H sections without interruption. When two or more distinct owners appear on decision variables, an additional "Decision variables by owner" subsection groups paths by faction so the analyst can read attacker-vs-defender postures at a glance. `ManifestMode::Search` records `compute_baseline` (with `#[serde(default)]` so older Epic H manifests deserialize cleanly with `false`) so the verify replay path produces a bit-identical hash to the original emission.
 
 Pareto frontier semantics: a trial is *dominated* iff some other trial is at least as good on every objective (direction-aware) and strictly better on at least one. Returned `pareto_indices` are sorted ascending. `best_by_objective` ties resolve by lowest trial index for reproducibility.
 

@@ -86,6 +86,17 @@ pub enum ManifestMode {
         trials: u32,
         search_seed: u64,
         objectives: Vec<String>,
+        /// Whether the search emitted a "do nothing" baseline trial
+        /// alongside its sampled trials (Epic I). Recorded so the
+        /// verify path reproduces the same SearchResult shape — the
+        /// output_hash includes the baseline when present, so a
+        /// mismatched setting would fail replay.
+        ///
+        /// `#[serde(default)]` so older manifests without this field
+        /// (Epic H round-one shape) replay with `false`, matching the
+        /// SearchResult shape they were hashed under.
+        #[serde(default)]
+        compute_baseline: bool,
     },
 }
 

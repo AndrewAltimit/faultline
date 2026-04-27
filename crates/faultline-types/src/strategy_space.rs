@@ -112,9 +112,11 @@ pub enum Domain {
 pub enum SearchObjective {
     /// Maximize a faction's win rate.
     MaximizeWinRate { faction: FactionId },
-    /// Minimize the maximum per-chain detection rate.
+    /// Minimize the maximum per-chain detection rate. Attacker-aligned
+    /// (the attacker wants to stay invisible).
     MinimizeDetection,
     /// Minimize mean attacker spend, summed across kill chains.
+    /// Attacker-aligned (the attacker wants to spend less).
     MinimizeAttackerCost,
     /// Maximize the maximum per-chain cost-asymmetry ratio
     /// (attacker spend / defender spend). Higher = attacker pays less
@@ -122,6 +124,24 @@ pub enum SearchObjective {
     MaximizeCostAsymmetry,
     /// Minimize average run duration.
     MinimizeDuration,
+    /// Defender-aligned mirror of `MinimizeAttackerCost`: maximize the
+    /// total cost the attacker has to bear to attempt the campaign.
+    /// Sums `mean_attacker_spend` across all kill chains.
+    MaximizeAttackerCost,
+    /// Defender-aligned mirror of `MinimizeDetection`: maximize the
+    /// maximum per-chain detection rate so attacker activity is visible.
+    MaximizeDetection,
+    /// Defender-aligned: minimize the total cost the defender has to
+    /// spend across kill chains. Sums `mean_defender_spend` across the
+    /// `campaign_summaries` map. Pair with `MaximizeWinRate` to surface
+    /// cost-effective postures.
+    MinimizeDefenderCost,
+    /// Defender-aligned: minimize the maximum per-chain success rate.
+    /// Reads `overall_success_rate` from `CampaignSummary` (the
+    /// fraction of runs where the chain reached its terminal phase
+    /// with at least one kinetic output delivered) so a defender
+    /// posture that blocks every chain scores 0 and is best.
+    MinimizeMaxChainSuccess,
 }
 
 impl SearchObjective {
@@ -137,6 +157,10 @@ impl SearchObjective {
             Self::MinimizeAttackerCost => "minimize_attacker_cost".to_string(),
             Self::MaximizeCostAsymmetry => "maximize_cost_asymmetry".to_string(),
             Self::MinimizeDuration => "minimize_duration".to_string(),
+            Self::MaximizeAttackerCost => "maximize_attacker_cost".to_string(),
+            Self::MaximizeDetection => "maximize_detection".to_string(),
+            Self::MinimizeDefenderCost => "minimize_defender_cost".to_string(),
+            Self::MinimizeMaxChainSuccess => "minimize_max_chain_success".to_string(),
         }
     }
 
@@ -144,7 +168,10 @@ impl SearchObjective {
     pub fn maximize(&self) -> bool {
         matches!(
             self,
-            Self::MaximizeWinRate { .. } | Self::MaximizeCostAsymmetry
+            Self::MaximizeWinRate { .. }
+                | Self::MaximizeCostAsymmetry
+                | Self::MaximizeAttackerCost
+                | Self::MaximizeDetection
         )
     }
 
@@ -174,11 +201,17 @@ impl SearchObjective {
             "minimize_attacker_cost" => Ok(Self::MinimizeAttackerCost),
             "maximize_cost_asymmetry" => Ok(Self::MaximizeCostAsymmetry),
             "minimize_duration" => Ok(Self::MinimizeDuration),
+            "maximize_attacker_cost" => Ok(Self::MaximizeAttackerCost),
+            "maximize_detection" => Ok(Self::MaximizeDetection),
+            "minimize_defender_cost" => Ok(Self::MinimizeDefenderCost),
+            "minimize_max_chain_success" => Ok(Self::MinimizeMaxChainSuccess),
             other => Err(format!(
                 "unknown search objective `{other}`. Supported: \
                  maximize_win_rate:<faction>, minimize_detection, \
                  minimize_attacker_cost, maximize_cost_asymmetry, \
-                 minimize_duration"
+                 minimize_duration, maximize_attacker_cost, \
+                 maximize_detection, minimize_defender_cost, \
+                 minimize_max_chain_success"
             )),
         }
     }
@@ -195,11 +228,25 @@ mod tests {
             SearchObjective::MinimizeAttackerCost,
             SearchObjective::MaximizeCostAsymmetry,
             SearchObjective::MinimizeDuration,
+            SearchObjective::MaximizeAttackerCost,
+            SearchObjective::MaximizeDetection,
+            SearchObjective::MinimizeDefenderCost,
+            SearchObjective::MinimizeMaxChainSuccess,
         ] {
             let parsed = SearchObjective::parse_cli(&o.label())
                 .expect("label round-trip must parse for argument-less variants");
             assert_eq!(parsed, o);
         }
+    }
+
+    #[test]
+    fn defender_objectives_have_correct_direction() {
+        // Pin the maximize/minimize direction so a future refactor of
+        // `maximize()` doesn't silently flip a defender objective.
+        assert!(SearchObjective::MaximizeAttackerCost.maximize());
+        assert!(SearchObjective::MaximizeDetection.maximize());
+        assert!(!SearchObjective::MinimizeDefenderCost.maximize());
+        assert!(!SearchObjective::MinimizeMaxChainSuccess.maximize());
     }
 
     #[test]
