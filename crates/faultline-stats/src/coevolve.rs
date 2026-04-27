@@ -877,6 +877,7 @@ mod tests {
                 ],
                 objectives: vec![],
             },
+            networks: BTreeMap::new(),
         }
     }
 
@@ -1287,6 +1288,7 @@ mod tests {
             correlation_matrix: None,
             pareto_frontier: None,
             defender_capacity: Vec::new(),
+            network_summaries: std::collections::BTreeMap::new(),
         }
     }
 

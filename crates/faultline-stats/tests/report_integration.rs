@@ -276,6 +276,7 @@ fn flagged_chain_scenario() -> Scenario {
         attacker_budget: None,
         environment: faultline_types::map::EnvironmentSchedule::default(),
         strategy_space: faultline_types::strategy_space::StrategySpace::default(),
+        networks: std::collections::BTreeMap::new(),
     }
 }
 

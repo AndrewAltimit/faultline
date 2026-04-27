@@ -4,7 +4,7 @@ use crate::ids::{FactionId, RegionId, SegmentId};
 use crate::map::InfrastructureType;
 
 /// The overall political environment of the simulation.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct PoliticalClimate {
     pub tension: f64,
     pub institutional_trust: f64,
@@ -14,7 +14,7 @@ pub struct PoliticalClimate {
 }
 
 /// Parameters describing the media environment.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct MediaLandscape {
     pub fragmentation: f64,
     pub disinformation_susceptibility: f64,

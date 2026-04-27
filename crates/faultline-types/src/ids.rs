@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 macro_rules! define_id {
     ($name:ident) => {
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(
+            Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+        )]
         pub struct $name(pub String);
 
         impl fmt::Display for $name {
@@ -40,3 +42,6 @@ define_id!(KillChainId);
 define_id!(PhaseId);
 define_id!(DomainId);
 define_id!(DefenderRoleId);
+define_id!(NetworkId);
+define_id!(NodeId);
+define_id!(EdgeId);

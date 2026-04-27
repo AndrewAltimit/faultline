@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use faultline_types::faction::{ForceUnit, UnitType};
 use faultline_types::ids::{
-    DefenderRoleId, EventId, FactionId, ForceId, InfraId, InstitutionId, RegionId, TechCardId,
+    DefenderRoleId, EdgeId, EventId, FactionId, ForceId, InfraId, InstitutionId, NetworkId, NodeId,
+    RegionId, TechCardId,
 };
 use faultline_types::politics::PoliticalClimate;
-use faultline_types::stats::StateSnapshot;
+use faultline_types::stats::{NetworkSample, StateSnapshot};
 
 /// All mutable runtime state for a running simulation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -48,6 +49,50 @@ pub struct SimulationState {
     /// that case so legacy scenarios pay zero overhead.
     #[serde(default)]
     pub defender_queues: BTreeMap<FactionId, BTreeMap<DefenderRoleId, DefenderQueueState>>,
+    /// Per-network runtime mutation state (Epic L). Empty when the
+    /// scenario declares no networks; the network phase short-circuits
+    /// in that case so legacy scenarios pay zero overhead.
+    #[serde(default)]
+    pub network_states: BTreeMap<NetworkId, NetworkRuntimeState>,
+}
+
+/// Per-run runtime state for one declared [`Network`](
+/// faultline_types::network::Network).
+///
+/// Static topology (nodes / edges / metadata) lives on the scenario
+/// and never changes mid-run. This struct holds *only* the mutations
+/// produced by event effects: per-edge capacity factors, per-node
+/// disruption flags, and per-faction infiltration sets. Per-tick
+/// [`NetworkSample`]s are appended to `samples` after the network
+/// phase so the resilience curve can be rendered without re-deriving
+/// it from the event log.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct NetworkRuntimeState {
+    /// Multiplicative factor on each edge's static capacity. Edges
+    /// absent from the map run at factor 1.0 (pristine baseline). The
+    /// factor is clamped to `[0.0, 4.0]` on every update — this keeps
+    /// runaway authoring errors (a `factor = 1e9` chained event) from
+    /// poisoning the residual-capacity series.
+    pub edge_factors: BTreeMap<EdgeId, f64>,
+    /// Set of currently-disrupted nodes. Disrupted nodes have all
+    /// their incident edges treated as severed for resilience metrics
+    /// even if the static edge capacity is non-zero.
+    pub disrupted_nodes: BTreeSet<NodeId>,
+    /// Per-faction set of infiltrated nodes — factions with attacker-
+    /// style visibility into a network node.
+    pub infiltrated: BTreeMap<FactionId, BTreeSet<NodeId>>,
+    /// Per-tick resilience samples in capture order.
+    pub samples: Vec<NetworkSample>,
+}
+
+impl NetworkRuntimeState {
+    /// Effective per-edge capacity factor — `edge_factors.get` with
+    /// the default of `1.0`. Provided as a method so the network
+    /// phase and metric-rendering call sites share a single source of
+    /// truth.
+    pub fn edge_factor(&self, edge: &EdgeId) -> f64 {
+        self.edge_factors.get(edge).copied().unwrap_or(1.0)
+    }
 }
 
 /// Per-tick mutable state for one defender role's investigative queue.

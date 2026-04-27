@@ -1,0 +1,428 @@
+# Network Resilience — Multi-Network Interdiction Wargame
+#
+# Demonstrates the Epic L network primitive: a defender with two
+# interdependent networks (a logistics graph and a comms graph) faces a
+# scripted attacker who scripts disruption events against the comms
+# layer before scripted interdiction of the logistics layer. The
+# resulting [`NetworkSummary`] surfaces the resilience curve, the
+# critical-node ranking by Brandes betweenness, and the fragmentation
+# rate across runs.
+#
+# The analytical purpose is to make networked failure modes
+# (single-points-of-failure, cascading degradation) directly observable
+# in a Faultline run rather than implicitly modeled via region control.
+# Authors with supply-chain or comms-disruption questions can substitute
+# their own topology while keeping the event scaffolding.
+#
+# Parameters are aggregate statistical descriptors derivable from open
+# sources (DoD logistics studies, public comms-resilience analyses, RAND
+# Civil Reserve Air Fleet reports). No specific operational tooling or
+# infrastructure is modeled.
+
+attacker_budget = 5_000_000.0
+defender_budget = 50_000_000.0
+
+[meta]
+schema_version = 1
+name = "Network Resilience — Multi-Network Interdiction Wargame"
+description = "Two-network defender (supply + comms) under scripted interdiction. Demonstrates the Epic L network primitive — typed graphs, interdiction / disruption / infiltration events, Brandes critical-node ranking, and per-run resilience curves — without relying on any specific operational system."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["networks", "resilience", "interdiction", "epic-l", "supply-chain", "comms"]
+confidence = "Medium"
+
+# ============================================================================
+# Map
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 1
+
+[map.regions.theatre_west]
+id = "theatre_west"
+name = "Theatre West"
+population = 500_000
+urbanization = 0.7
+initial_control = "blue"
+strategic_value = 8.0
+borders = ["theatre_east"]
+
+[map.regions.theatre_east]
+id = "theatre_east"
+name = "Theatre East"
+population = 500_000
+urbanization = 0.7
+initial_control = "blue"
+strategic_value = 8.0
+borders = ["theatre_west"]
+
+[map.infrastructure]
+
+[technology]
+
+[[map.terrain]]
+region = "theatre_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "theatre_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.blue]
+id = "blue"
+name = "Blue (Defender)"
+description = "Owns both the logistics and comms networks. Wins by holding regions; loses if its networks fragment under scripted attack."
+color = "#1f6feb"
+initial_morale = 0.75
+logistics_capacity = 200.0
+initial_resources = 80_000.0
+resource_rate = 600.0
+command_resilience = 0.85
+intelligence = 0.65
+diplomacy = []
+tech_access = []
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue.forces.fwd_brigade]
+id = "fwd_brigade"
+name = "Forward Brigade"
+unit_type = "Mechanized"
+region = "theatre_west"
+strength = 1200.0
+mobility = 0.6
+upkeep = 100.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue.forces.rear_brigade]
+id = "rear_brigade"
+name = "Rear Brigade"
+unit_type = "Infantry"
+region = "theatre_east"
+strength = 900.0
+mobility = 0.5
+upkeep = 70.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red]
+id = "red"
+name = "Red (Attacker)"
+description = "Scripted adversary. Disrupts a comms hub on tick 4, severs a logistics link on tick 6, infiltrates a logistics node on tick 8."
+color = "#d32f2f"
+initial_morale = 0.7
+logistics_capacity = 100.0
+initial_resources = 20_000.0
+resource_rate = 200.0
+command_resilience = 0.7
+intelligence = 0.6
+diplomacy = []
+tech_access = []
+
+[factions.red.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.red.forces.recon_det]
+id = "recon_det"
+name = "Recon Detachment"
+unit_type = "SpecialOperations"
+region = "theatre_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 20.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Political climate
+# ============================================================================
+
+[political_climate]
+tension = 0.5
+institutional_trust = 0.7
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.3
+disinformation_susceptibility = 0.3
+state_control = 0.3
+social_media_penetration = 0.7
+internet_availability = 0.85
+
+# ============================================================================
+# Networks (Epic L)
+# ============================================================================
+
+# Blue's logistics graph: a depot --> two forward bases pattern with a
+# secondary depot for resilience. The "fwd_west" base depends on edges
+# from both depots; severing depot1 -> fwd_west forces flow through the
+# longer depot2 -> fwd_west route.
+[networks.logistics]
+id = "logistics"
+name = "Blue Logistics Network"
+description = "Two depots feeding two forward bases via a small backbone. Models the contested-corridor logistics typical of forward-deployed forces."
+kind = "supply"
+owner = "blue"
+
+[networks.logistics.nodes.depot1]
+id = "depot1"
+name = "Primary Depot"
+region = "theatre_east"
+criticality = 1.0
+
+[networks.logistics.nodes.depot2]
+id = "depot2"
+name = "Secondary Depot"
+region = "theatre_east"
+criticality = 0.7
+
+[networks.logistics.nodes.junction]
+id = "junction"
+name = "Theatre Junction"
+region = "theatre_west"
+criticality = 0.85
+
+[networks.logistics.nodes.fwd_west]
+id = "fwd_west"
+name = "Forward Base West"
+region = "theatre_west"
+criticality = 0.9
+
+[networks.logistics.nodes.fwd_east]
+id = "fwd_east"
+name = "Forward Base East"
+region = "theatre_east"
+criticality = 0.9
+
+[networks.logistics.edges.d1_jct]
+id = "d1_jct"
+from = "depot1"
+to = "junction"
+capacity = 80.0
+latency = 1.0
+bandwidth = 80.0
+trust = 0.9
+
+[networks.logistics.edges.d2_jct]
+id = "d2_jct"
+from = "depot2"
+to = "junction"
+capacity = 60.0
+latency = 2.0
+bandwidth = 60.0
+trust = 0.85
+
+[networks.logistics.edges.jct_fwest]
+id = "jct_fwest"
+from = "junction"
+to = "fwd_west"
+capacity = 100.0
+latency = 1.0
+bandwidth = 100.0
+trust = 0.9
+
+[networks.logistics.edges.d1_feast]
+id = "d1_feast"
+from = "depot1"
+to = "fwd_east"
+capacity = 70.0
+latency = 1.0
+bandwidth = 70.0
+trust = 0.9
+
+[networks.logistics.edges.d2_feast]
+id = "d2_feast"
+from = "depot2"
+to = "fwd_east"
+capacity = 50.0
+latency = 2.0
+bandwidth = 50.0
+trust = 0.85
+
+# Blue's comms graph: a single hub plus a secondary site. Disrupting
+# the hub fragments the comms graph; the report shows hub as the top
+# critical node by betweenness.
+[networks.comms]
+id = "comms"
+name = "Blue Tactical Comms Network"
+description = "A comms hub plus a secondary relay; both forward bases route through the hub."
+kind = "comms"
+owner = "blue"
+
+[networks.comms.nodes.hub]
+id = "hub"
+name = "Comms Hub"
+region = "theatre_east"
+criticality = 1.0
+
+[networks.comms.nodes.relay]
+id = "relay"
+name = "Backup Relay"
+region = "theatre_west"
+criticality = 0.5
+
+[networks.comms.nodes.fwd_west_post]
+id = "fwd_west_post"
+name = "Forward Western Post"
+region = "theatre_west"
+criticality = 0.7
+
+[networks.comms.nodes.fwd_east_post]
+id = "fwd_east_post"
+name = "Forward Eastern Post"
+region = "theatre_east"
+criticality = 0.7
+
+[networks.comms.edges.hub_west]
+id = "hub_west"
+from = "hub"
+to = "fwd_west_post"
+capacity = 1.0
+latency = 0.5
+bandwidth = 100.0
+trust = 0.85
+
+[networks.comms.edges.hub_east]
+id = "hub_east"
+from = "hub"
+to = "fwd_east_post"
+capacity = 1.0
+latency = 0.5
+bandwidth = 100.0
+trust = 0.85
+
+[networks.comms.edges.hub_relay]
+id = "hub_relay"
+from = "hub"
+to = "relay"
+capacity = 0.5
+latency = 1.0
+bandwidth = 50.0
+trust = 0.8
+
+[networks.comms.edges.relay_west]
+id = "relay_west"
+from = "relay"
+to = "fwd_west_post"
+capacity = 0.5
+latency = 1.5
+bandwidth = 50.0
+trust = 0.8
+
+# ============================================================================
+# Events (scripted)
+# ============================================================================
+
+# Tick 4: comms hub disrupted. Fragments comms — relay-only routing
+# remains for fwd_west_post via relay_west; fwd_east_post is isolated.
+[events.comms_hub_strike]
+id = "comms_hub_strike"
+name = "Comms Hub Strike"
+description = "Adversary kinetic strike disrupts the central comms hub."
+earliest_tick = 4
+latest_tick = 4
+probability = 1.0
+repeatable = false
+
+[[events.comms_hub_strike.conditions]]
+condition = "TickAtLeast"
+tick = 4
+
+[[events.comms_hub_strike.effects]]
+effect = "NetworkNodeDisrupt"
+network = "comms"
+node = "hub"
+
+# Tick 6: primary depot --> western forward base interdicted. The
+# depot1 --> junction edge factor drops to 0.2 (interdiction is
+# partial; flow continues at 20% under heavy escort).
+[events.logistics_interdict]
+id = "logistics_interdict"
+name = "Logistics Interdiction"
+description = "Adversary partisans / drone strikes degrade the primary depot's western corridor."
+earliest_tick = 6
+latest_tick = 6
+probability = 1.0
+repeatable = false
+
+[[events.logistics_interdict.conditions]]
+condition = "TickAtLeast"
+tick = 6
+
+[[events.logistics_interdict.effects]]
+effect = "NetworkEdgeCapacity"
+network = "logistics"
+edge = "d1_jct"
+factor = 0.2
+
+# Tick 8: depot2 infiltrated by red. Models OPSEC failure on the
+# resilience-backup depot — once detected by Blue it would be a
+# scenario-author counterfactual, but the analytic value is in
+# observing that Blue's "fallback" depot is no longer trusted ground.
+[events.depot2_infiltrate]
+id = "depot2_infiltrate"
+name = "Secondary Depot Infiltration"
+description = "Red HUMINT element penetrates Blue's secondary depot perimeter; raises Red visibility into Blue logistics."
+earliest_tick = 8
+latest_tick = 8
+probability = 1.0
+repeatable = false
+
+[[events.depot2_infiltrate.conditions]]
+condition = "TickAtLeast"
+tick = 8
+
+[[events.depot2_infiltrate.effects]]
+effect = "NetworkInfiltrate"
+network = "logistics"
+node = "depot2"
+faction = "red"
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 14
+monte_carlo_runs = 16
+seed = 0xC0A1
+fog_of_war = false
+snapshot_interval = 0
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+LanchesterLinear = {}
+
+# ============================================================================
+# Victory conditions
+# ============================================================================
+
+[victory_conditions.blue_hold]
+id = "blue_hold"
+name = "Blue Holds Both Theatres for Twelve Ticks"
+faction = "blue"
+
+[victory_conditions.blue_hold.condition]
+type = "HoldRegions"
+regions = ["theatre_west", "theatre_east"]
+duration = 12

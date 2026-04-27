@@ -154,6 +154,44 @@ pub enum ScenarioError {
     )]
     EmptyOrAnyBranch { chain: KillChainId, phase: PhaseId },
 
+    #[error(
+        "network {network} edge {edge} references unknown node {node}; \
+         every edge endpoint must be a declared node in the same network"
+    )]
+    UnknownNetworkNode {
+        network: crate::ids::NetworkId,
+        edge: crate::ids::EdgeId,
+        node: crate::ids::NodeId,
+    },
+
+    #[error(
+        "network {network} declares edge {edge} as a self-loop ({node} -> {node}); \
+         self-loops have no analytical use and are almost always an authoring typo"
+    )]
+    NetworkSelfLoop {
+        network: crate::ids::NetworkId,
+        edge: crate::ids::EdgeId,
+        node: crate::ids::NodeId,
+    },
+
+    #[error("event {event} effect {effect} references unknown network {network}")]
+    UnknownNetwork {
+        event: EventId,
+        effect: String,
+        network: crate::ids::NetworkId,
+    },
+
+    #[error(
+        "event {event} effect {effect} on network {network} references unknown {kind} {target}"
+    )]
+    UnknownNetworkTarget {
+        event: EventId,
+        effect: String,
+        network: crate::ids::NetworkId,
+        kind: String,
+        target: String,
+    },
+
     #[error("{0}")]
     Custom(String),
 }

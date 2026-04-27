@@ -5,6 +5,7 @@ pub mod faction;
 pub mod ids;
 pub mod map;
 pub mod migration;
+pub mod network;
 pub mod politics;
 pub mod scenario;
 pub mod simulation;

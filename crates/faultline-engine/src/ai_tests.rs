@@ -126,6 +126,7 @@ fn make_ai_test_state() -> SimulationState {
         non_kinetic: Default::default(),
         metric_history: vec![],
         defender_queues: BTreeMap::new(),
+        network_states: std::collections::BTreeMap::new(),
     }
 }
 

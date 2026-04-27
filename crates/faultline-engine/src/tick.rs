@@ -219,6 +219,47 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
                     }
                 }
             },
+            EventEffect::NetworkEdgeCapacity {
+                network,
+                edge,
+                factor,
+            } => {
+                if let Some(rt) = state.network_states.get_mut(network) {
+                    let new_factor = if factor.is_finite() {
+                        // Compose multiplicatively with whatever this
+                        // edge already had: a chain of two `0.5`
+                        // events drives the edge to 0.25, not 0.5.
+                        // Clamp to `[0.0, 4.0]` so a runaway author
+                        // chain can't poison the residual-capacity
+                        // series with `inf`. Negative factors are
+                        // also clamped to 0.0 (they would invert flow
+                        // direction, which the metric layer doesn't
+                        // model).
+                        let prev = rt.edge_factor(edge);
+                        (prev * factor).clamp(0.0, 4.0)
+                    } else {
+                        rt.edge_factor(edge)
+                    };
+                    rt.edge_factors.insert(edge.clone(), new_factor);
+                }
+            },
+            EventEffect::NetworkNodeDisrupt { network, node } => {
+                if let Some(rt) = state.network_states.get_mut(network) {
+                    rt.disrupted_nodes.insert(node.clone());
+                }
+            },
+            EventEffect::NetworkInfiltrate {
+                network,
+                node,
+                faction,
+            } => {
+                if let Some(rt) = state.network_states.get_mut(network) {
+                    rt.infiltrated
+                        .entry(faction.clone())
+                        .or_default()
+                        .insert(node.clone());
+                }
+            },
             // Effects that require more complex handling are logged
             // but not fully resolved in this skeleton.
             EventEffect::InstitutionDefection { .. }

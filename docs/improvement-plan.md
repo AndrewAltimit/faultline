@@ -667,18 +667,97 @@ network primitives (supply, communications, social, financial) opens
 a large class of scenarios that currently can't be expressed without
 abusing the regional model.
 
-- [ ] `Network` schema — typed graph with nodes, edges, capacities,
+- [x] `Network` schema — typed graph with nodes, edges, capacities,
       and per-edge metadata (latency, bandwidth, trust)
-- [ ] Network-aware events: interdiction reduces edge capacity,
+- [x] Network-aware events: interdiction reduces edge capacity,
       disruption removes nodes, infiltration adds attacker visibility
-- [ ] Network-aware metrics: connectivity, max-flow / min-cut,
+- [x] Network-aware metrics: connectivity, max-flow / min-cut,
       betweenness centrality (deterministic implementations)
-- [ ] Multi-network scenarios: a single faction's supply, comms, and
-      social networks tracked simultaneously, with cross-network
-      events (a comms outage degrades supply coordination)
-- [ ] Report: per-network resilience curves and critical-node ranking
+- [x] Multi-network scenarios: a single faction's supply, comms, and
+      social networks tracked simultaneously
+- [x] Report: per-network resilience curves and critical-node ranking
 
-**Status:** deferred.
+**Status:** Epic L **closed** (round one). Single PR (branch
+`epic-l-network-primitives`) shipped all five items the epic was
+scoped against. Cross-network *event coupling* (a comms outage
+degrading supply coordination) is achievable today by chaining two
+events targeting different networks; tighter mechanical coupling
+(comms-outage triggers supply-capacity penalty *automatically*) is a
+future-round addition that fits naturally with Epic M (belief states)
+when factions can react to network state.
+
+What landed:
+
+- New `faultline_types::network` module with `Network` /
+  `NetworkNode` / `NetworkEdge` types and `NetworkId` / `NodeId` /
+  `EdgeId` newtype IDs. `Scenario.networks` is an optional
+  `BTreeMap<NetworkId, Network>` (`#[serde(default,
+  skip_serializing_if = "BTreeMap::is_empty")]` so legacy scenarios
+  stay byte-identical). All collections are `BTreeMap` for the
+  determinism contract. Per-edge metadata: capacity, latency,
+  bandwidth, trust; per-node criticality. Multiple networks coexist
+  on one scenario without sharing nodes — cross-network events fire
+  via separate scripted-event scaffolding.
+- Three new `EventEffect` variants: `NetworkEdgeCapacity { network,
+  edge, factor }` composes multiplicatively with prior events and
+  clamps the cumulative factor to `[0, 4]` so a runaway author chain
+  can't poison the residual-capacity series; `NetworkNodeDisrupt {
+  network, node }` marks a node disrupted (every incident edge
+  treated as severed in the per-tick `NetworkSample`); and
+  `NetworkInfiltrate { network, node, faction }` adds the faction to
+  the node's visibility set.
+- Per-tick `NetworkSample` capture in
+  `crates/faultline-engine/src/network.rs::capture_samples`
+  appended to `SimulationState.network_states[<id>].samples` *after*
+  the event phase so a same-tick interdiction shows up in this
+  tick's sample. Pure function of `(scenario, network_states)`; no
+  RNG, no HashMap iteration. Engine path is zero-overhead for
+  scenarios with no `[networks.*]` block.
+- Cross-run analytics in `faultline_stats::network_metrics`:
+  `compute_network_summaries` produces mean / max disrupted-node and
+  component counts plus the cross-run fragmentation rate;
+  `brandes_top_critical` is the standard Brandes (2001) algorithm
+  treating the graph as undirected for centrality (the question is
+  "which node is most painful to remove regardless of who removes
+  it"). Also exposes `max_flow` (Edmonds-Karp with deterministic
+  `BTreeMap` BFS ordering) and a `mean_infiltration_per_faction`
+  helper for future report sections.
+- Validation at scenario load: rejects edges with unknown endpoints,
+  self-loops, non-finite or negative capacity / latency / bandwidth,
+  trust outside `[0, 1]`, criticality outside `[0, 1]`, and event
+  effects targeting unknown networks / nodes / factions. Catches
+  authoring typos at the right place instead of silently no-op'ing
+  at runtime.
+- New `## Network Resilience` section on the report renderer; gated
+  on non-empty `network_summaries` so legacy scenarios are
+  unchanged. Also extends the CLI's "should I emit report.md?"
+  guard to cover network-only scenarios that have no kill chains.
+- Bundled `scenarios/network_resilience_demo.toml`: two-network
+  defender (logistics + comms) with three scripted events at
+  ticks 4 / 6 / 8 demonstrating the full disruption / interdiction
+  / infiltration trio. Comms hub correctly tops its network's
+  betweenness ranking (0.67); logistics junction tops its (0.58)
+  with depots second (0.17 each). All 14 bundled scenarios still
+  verify bit-identical via the manifest determinism contract.
+
+**Pre-Epic-L groundwork (review feedback).** `Default` impls landed
+on `Scenario`, `ScenarioMeta` (manual — preserves
+`schema_version`), `Faction`, `FactionType`, `MapConfig`,
+`MapSource`, `PoliticalClimate`, `MediaLandscape`,
+`SimulationConfig`, `TickDuration`, `AttritionModel`, plus all
+`define_id!`-macroed newtypes via a `Default` derive on the inner
+`String`. Existing struct-literal call sites were not migrated
+(they still compile cleanly with the explicit `network_*` fields
+added by a one-shot `python3` script — 32 sites across 17 files);
+new tests in `tests/epic_l_networks.rs` use the spread syntax to
+demonstrate the now-cheap path. Remaining review items are tracked
+under "Round-three follow-ups" below.
+
+11 new tests (4 unit in `engine/network.rs` + 7 integration in
+`tests/epic_l_networks.rs`) cover sample capture, event handlers,
+validation rejections, and the cross-run rollup. fmt / clippy /
+cargo-deny / WASM build / JS tests / verify-bundled / verify-
+migration / grep-guard all clean.
 
 ### Epic M — Information warfare & belief asymmetry
 
@@ -843,6 +922,69 @@ every TOML in `scenarios/` (currently 9). Library-level tests in
 `crates/faultline-stats/tests/report_integration.rs` lock the
 determinism contract — same scenario + seed → same hashes; mutating
 a scenario field flips both `scenario_hash` and `output_hash`.
+
+---
+
+## Round three — codebase health follow-ups
+
+Surface review of the round-two work flagged six structural items
+that aren't blocking but will compound as round-three epics
+(particularly J / M / N) layer in. Tracking here so they don't get
+lost. Each is small enough to ship as a single PR and most can land
+opportunistically alongside the next epic that touches the affected
+area.
+
+- **R3-1: Test boilerplate tax (partially addressed pre-Epic-L).**
+  `Default` impls landed on `Scenario`, `Faction`, and supporting
+  types so adding a top-level field is now `..Default::default()`
+  cheap *for new tests*. Existing struct-literal call sites (~30)
+  were not migrated; an opportunistic sweep would make Epic M / N
+  field additions essentially free. Acceptance: every existing
+  `Scenario { ... }` literal in `crates/**/tests*` migrates to
+  the spread form.
+- **R3-2: Unread parameter audit.** `Faction.command_resilience` is
+  declared but the engine never reads it; almost certainly other
+  parameters are in the same shape (`intelligence`,
+  `morale_modifier` on units, etc.). An audit + either wire-it-up
+  or drop-it pass would eliminate the silent-no-op trap that bites
+  scenario authors. Pairs naturally with Epic P (the
+  `faultline-cli explain` command — both ask "what does this
+  scenario actually model?"). Acceptance: every field on
+  `Faction` / `ForceUnit` is either consumed by the engine or
+  removed.
+- **R3-3: Decompose `report.rs`.** The single 2000-line file
+  emitting one Markdown string is approaching the legibility
+  ceiling. Refactor to a `ReportSection` trait with composable
+  renderers — each new epic ships a section without reading the
+  whole file, conditional elision and section ordering become
+  declarative, and per-section unit testing becomes possible.
+  Should land before the next analytics-heavy epic (M, N) so
+  those don't compound the problem.
+- **R3-4: Generalize the leadership morale-cap.** The current
+  Epic-D leadership cadre couples decapitation to morale via a
+  separate per-tick clamp step in `tick::apply_leadership_caps`.
+  A `command_effectiveness` multiplier read directly by combat
+  (alongside `morale`) would generalize cleanly when round-two
+  Epic D adds more command-degrading effects. Worth refactoring
+  before the next stack lands.
+- **R3-5: Property tests.** Every test today is integration-against-
+  fixed-seed. Determinism plus the workspace's existing seeded RNG
+  policy makes property-style invariants ("for any seed, no
+  faction strength goes negative", "Wilson CI bounds always
+  contain the point estimate", "post-disruption network samples
+  never have a larger residual capacity than pre-disruption ones")
+  high-value and low-friction with `proptest` or `quickcheck`.
+  Acceptance: a `proptest` dev-dep, at least one property per
+  module that handles RNG (engine, search, network_metrics).
+- **R3-6: Decompose `Scenario`.** With Epic L landed, `Scenario`
+  has 14 top-level fields and is approaching the "hard to reason
+  about" ceiling. Sub-modules or grouped extension blocks
+  (`Scenario.analytics`, `Scenario.adversarial`,
+  `Scenario.networks` already exists) would help; serde
+  field-flattening or an explicit `#[serde(rename_all)]` policy
+  could keep the TOML surface stable. Should be designed once
+  more than enough to know the right grouping (probably after
+  Epic M lands `BeliefState`).
 
 ---
 

@@ -11,6 +11,7 @@ pub mod counterfactual;
 pub mod delta;
 pub mod manifest;
 pub mod morris;
+pub mod network_metrics;
 pub mod report;
 pub mod search;
 pub mod sensitivity;
@@ -133,6 +134,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             correlation_matrix: None,
             pareto_frontier: None,
             defender_capacity: Vec::new(),
+            network_summaries: BTreeMap::new(),
         };
     }
 
@@ -287,6 +289,11 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // per-run queue reports; preserves determinism.
     let defender_capacity = compute_defender_capacity_summary(runs);
 
+    // Network rollup (Epic L). Pure post-processing of per-run
+    // network reports; preserves determinism. Empty when scenario
+    // declares no networks.
+    let network_summaries = network_metrics::compute_network_summaries(runs, scenario);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -301,6 +308,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         correlation_matrix,
         pareto_frontier,
         defender_capacity,
+        network_summaries,
     }
 }
 
@@ -933,6 +941,7 @@ mod tests {
             event_log: vec![],
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1059,6 +1068,7 @@ mod tests {
             attacker_budget: None,
             environment: faultline_types::map::EnvironmentSchedule::default(),
             strategy_space: faultline_types::strategy_space::StrategySpace::default(),
+            networks: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1125,6 +1135,7 @@ mod tests {
             event_log,
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
+            network_reports: std::collections::BTreeMap::new(),
         }
     }
 

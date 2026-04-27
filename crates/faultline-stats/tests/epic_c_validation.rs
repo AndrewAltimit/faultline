@@ -254,6 +254,7 @@ fn chain_scenario(detection_per_tick: f64, success: f64) -> Scenario {
         attacker_budget: None,
         environment: faultline_types::map::EnvironmentSchedule::default(),
         strategy_space: faultline_types::strategy_space::StrategySpace::default(),
+        networks: std::collections::BTreeMap::new(),
     }
 }
 
@@ -316,6 +317,7 @@ fn make_run(
         event_log: vec![],
         campaign_reports,
         defender_queue_reports: Vec::new(),
+        network_reports: std::collections::BTreeMap::new(),
     }
 }
 
