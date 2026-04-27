@@ -529,6 +529,16 @@ fn enumerate_levels(domain: &Domain) -> Vec<f64> {
 // Objective evaluation
 // ---------------------------------------------------------------------------
 
+/// Public projection of the internal objective evaluator. Round-two
+/// callers (Epic H co-evolution) need to score a hand-built
+/// [`MonteCarloSummary`] against an arbitrary [`SearchObjective`]
+/// without re-running [`run_search`]. The internal `evaluate_objective`
+/// stays private so its signature can churn freely; this thin wrapper
+/// is the stable public API.
+pub fn evaluate_objective_public(objective: &SearchObjective, summary: &MonteCarloSummary) -> f64 {
+    evaluate_objective(objective, summary)
+}
+
 fn evaluate_objective(objective: &SearchObjective, summary: &MonteCarloSummary) -> f64 {
     use SearchObjective::*;
     match objective {

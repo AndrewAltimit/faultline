@@ -35,7 +35,13 @@ use crate::{MonteCarloRunner, StatsError};
 // ---------------------------------------------------------------------------
 
 /// A single parameter override of the form `param.path=value`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// `PartialEq` lets co-evolution tests compare per-side assignment
+/// vectors directly. The `value` is `f64`, so equality is bit-equal —
+/// callers comparing values produced by independent computations should
+/// use a tolerance check instead (see
+/// `faultline_stats::coevolve::assignments_equal`).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ParamOverride {
     pub path: String,
     pub value: f64,

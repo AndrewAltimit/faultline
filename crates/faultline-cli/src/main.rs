@@ -188,6 +188,110 @@ struct Cli {
     )]
     search_objective: Vec<String>,
 
+    /// Run adversarial co-evolution (Epic H — round two).
+    ///
+    /// Alternates best-response moves between an attacker faction and
+    /// a defender faction over the scenario's `[strategy_space]` until
+    /// both sides' assignments stabilize (Nash equilibrium in pure
+    /// strategies on the discrete strategy space the search visits),
+    /// a cycle of any period is detected, or `--coevolve-rounds` is
+    /// reached.
+    ///
+    /// Every `[strategy_space.variables]` entry must declare an `owner`
+    /// matching either `--coevolve-attacker` or `--coevolve-defender`;
+    /// the runner partitions variables by owner so each side
+    /// reoptimizes only the parameters it controls.
+    ///
+    /// Mutually exclusive with the other run modes.
+    #[arg(
+        long = "coevolve",
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "search", "verify", "validate", "migrate"
+        ]
+    )]
+    coevolve: bool,
+
+    /// Maximum rounds for `--coevolve`. One round = one side's best
+    /// response. Defaults to 8.
+    #[arg(long = "coevolve-rounds", default_value_t = 8, requires = "coevolve")]
+    coevolve_rounds: u32,
+
+    /// Attacker faction ID for `--coevolve`. Must match an existing
+    /// faction; the strategy_space variables tagged with this faction
+    /// as `owner` are the attacker's decision variables.
+    #[arg(
+        long = "coevolve-attacker",
+        value_name = "FACTION_ID",
+        requires = "coevolve"
+    )]
+    coevolve_attacker: Option<String>,
+
+    /// Defender faction ID for `--coevolve`. See `--coevolve-attacker`.
+    #[arg(
+        long = "coevolve-defender",
+        value_name = "FACTION_ID",
+        requires = "coevolve"
+    )]
+    coevolve_defender: Option<String>,
+
+    /// Attacker objective for `--coevolve`. Same format as
+    /// `--search-objective`. Required.
+    #[arg(
+        long = "coevolve-attacker-objective",
+        value_name = "OBJECTIVE",
+        requires = "coevolve"
+    )]
+    coevolve_attacker_objective: Option<String>,
+
+    /// Defender objective for `--coevolve`. Same format as
+    /// `--search-objective`. Required.
+    #[arg(
+        long = "coevolve-defender-objective",
+        value_name = "OBJECTIVE",
+        requires = "coevolve"
+    )]
+    coevolve_defender_objective: Option<String>,
+
+    /// Sampling method for both sides' per-round sub-search. Defaults
+    /// to `grid` so small spaces produce reproducible per-round
+    /// best responses.
+    #[arg(
+        long = "coevolve-method",
+        value_name = "METHOD",
+        default_value = "grid",
+        requires = "coevolve"
+    )]
+    coevolve_method: CliSearchMethod,
+
+    /// Trials per round per side for `--coevolve`. Each round runs an
+    /// independent inner Monte Carlo batch sized by `--coevolve-runs`
+    /// for each trial.
+    #[arg(long = "coevolve-trials", default_value_t = 8, requires = "coevolve")]
+    coevolve_trials: u32,
+
+    /// Inner Monte Carlo run count per trial in `--coevolve`.
+    #[arg(long = "coevolve-runs", default_value_t = 30, requires = "coevolve")]
+    coevolve_runs: u32,
+
+    /// Co-evolution-only RNG seed. Drives the per-round sub-search
+    /// sampler via `coevolve_seed.wrapping_add(round_index)`.
+    /// Independent of `--seed` (the inner Monte Carlo seed).
+    #[arg(long = "coevolve-seed", requires = "coevolve")]
+    coevolve_seed: Option<u64>,
+
+    /// Side to move first in `--coevolve`. Defaults to `defender` —
+    /// the most-common analyst question is "given my fixed posture,
+    /// how does the attacker adapt?", so we let the defender commit
+    /// first.
+    #[arg(
+        long = "coevolve-initial-mover",
+        value_name = "SIDE",
+        default_value = "defender",
+        requires = "coevolve"
+    )]
+    coevolve_initial_mover: CliCoevolveSide,
+
     /// Verify a saved run by replaying it from a manifest.
     ///
     /// Loads the manifest from `<MANIFEST_PATH>`, hashes the
@@ -270,6 +374,23 @@ impl From<CliSearchMethod> for SearchMethod {
         match m {
             CliSearchMethod::Random => SearchMethod::Random,
             CliSearchMethod::Grid => SearchMethod::Grid,
+        }
+    }
+}
+
+/// CLI form of `faultline_stats::coevolve::CoevolveSide` so clap can
+/// parse `--coevolve-initial-mover defender` into the structured enum.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CliCoevolveSide {
+    Attacker,
+    Defender,
+}
+
+impl From<CliCoevolveSide> for faultline_stats::coevolve::CoevolveSide {
+    fn from(s: CliCoevolveSide) -> Self {
+        match s {
+            CliCoevolveSide::Attacker => faultline_stats::coevolve::CoevolveSide::Attacker,
+            CliCoevolveSide::Defender => faultline_stats::coevolve::CoevolveSide::Defender,
         }
     }
 }
@@ -365,6 +486,10 @@ fn main() -> Result<()> {
 
     if cli.search {
         return run_search_analysis(&cli, &scenario);
+    }
+
+    if cli.coevolve {
+        return run_coevolve_analysis(&cli, &scenario);
     }
 
     // Monte Carlo run.
@@ -946,6 +1071,163 @@ fn write_search_outputs(cli: &Cli, result: &SearchResult) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Co-evolution (Epic H — round two)
+// ---------------------------------------------------------------------------
+
+fn run_coevolve_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    use faultline_stats::coevolve::{CoevolveConfig, CoevolveSideConfig, run_coevolution};
+
+    // All four required strings must be present before we touch the
+    // engine — refuse early with a single error rather than letting
+    // each Option::expect cascade.
+    let attacker_id = cli
+        .coevolve_attacker
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--coevolve-attacker is required for --coevolve"))?;
+    let defender_id = cli
+        .coevolve_defender
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--coevolve-defender is required for --coevolve"))?;
+    let attacker_obj_str = cli
+        .coevolve_attacker_objective
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--coevolve-attacker-objective is required"))?;
+    let defender_obj_str = cli
+        .coevolve_defender_objective
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("--coevolve-defender-objective is required"))?;
+
+    let attacker_objective = SearchObjective::parse_cli(attacker_obj_str)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| "failed to parse --coevolve-attacker-objective")?;
+    let defender_objective = SearchObjective::parse_cli(defender_obj_str)
+        .map_err(anyhow::Error::msg)
+        .with_context(|| "failed to parse --coevolve-defender-objective")?;
+
+    let mc_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+    let coevolve_seed = cli
+        .coevolve_seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+
+    let mc_config = MonteCarloConfig {
+        num_runs: cli.coevolve_runs,
+        seed: Some(mc_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let method: SearchMethod = cli.coevolve_method.into();
+    let initial_mover = cli.coevolve_initial_mover.into();
+
+    let attacker_faction = faultline_types::ids::FactionId::from(attacker_id);
+    let defender_faction = faultline_types::ids::FactionId::from(defender_id);
+    let assignment_tolerance = 1e-9;
+
+    let config = CoevolveConfig {
+        max_rounds: cli.coevolve_rounds,
+        initial_mover,
+        attacker: CoevolveSideConfig {
+            faction: attacker_faction.clone(),
+            objective: attacker_objective.clone(),
+            method,
+            trials: cli.coevolve_trials,
+        },
+        defender: CoevolveSideConfig {
+            faction: defender_faction.clone(),
+            objective: defender_objective.clone(),
+            method,
+            trials: cli.coevolve_trials,
+        },
+        mc_config,
+        coevolve_seed,
+        assignment_tolerance,
+    };
+
+    info!(
+        max_rounds = cli.coevolve_rounds,
+        attacker = %attacker_faction,
+        defender = %defender_faction,
+        method = ?method,
+        trials = cli.coevolve_trials,
+        runs = cli.coevolve_runs,
+        coevolve_seed,
+        mc_seed,
+        "starting co-evolution"
+    );
+
+    let result = run_coevolution(scenario, &config).with_context(|| "co-evolution run failed")?;
+
+    write_coevolve_outputs(cli, &result)?;
+
+    let manifest_mc = ManifestMcConfig::from_config(&config.mc_config, mc_seed);
+    let mode = ManifestMode::Coevolve {
+        max_rounds: cli.coevolve_rounds,
+        coevolve_seed,
+        initial_mover,
+        attacker_faction,
+        defender_faction,
+        attacker_objective: attacker_objective.label(),
+        defender_objective: defender_objective.label(),
+        attacker_method: method,
+        defender_method: method,
+        attacker_trials: cli.coevolve_trials,
+        defender_trials: cli.coevolve_trials,
+        assignment_tolerance,
+    };
+    let output_hash =
+        manifest::output_hash(&result).with_context(|| "failed to hash co-evolve result")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    if matches!(cli.format, OutputFormat::Csv) {
+        tracing::warn!(
+            "--format csv is not meaningful for co-evolve output \
+             (per-round CSV shape doesn't apply); falling back to JSON + Markdown"
+        );
+    }
+    let md_path = cli.output.join("coevolve_report.md");
+    let body = faultline_stats::report::render_coevolve_markdown(&result, scenario);
+    let md = with_manifest_front_matter(&body, Some(&manifest_obj));
+    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
+    info!(path = %md_path.display(), "wrote co-evolve Markdown report");
+
+    write_manifest_object(cli, &manifest_obj)?;
+
+    // Emit a one-line summary on stdout so a script driving the CLI
+    // (or a CI step) can grep for the convergence outcome without
+    // parsing the JSON. Matches the `VERIFY OK` pattern used by
+    // `--verify`.
+    let status_label = match &result.status {
+        faultline_stats::coevolve::CoevolveStatus::Converged => "converged".to_string(),
+        faultline_stats::coevolve::CoevolveStatus::Cycle { period } => {
+            format!("cycle:{period}")
+        },
+        faultline_stats::coevolve::CoevolveStatus::NoEquilibrium => "no_equilibrium".to_string(),
+    };
+    println!(
+        "COEVOLVE {status} rounds={rounds} manifest_hash={mh}",
+        status = status_label,
+        rounds = result.rounds.len(),
+        mh = manifest_obj.manifest_hash,
+    );
+    Ok(())
+}
+
+fn write_coevolve_outputs(
+    cli: &Cli,
+    result: &faultline_stats::coevolve::CoevolveResult,
+) -> Result<()> {
+    let json_path = cli.output.join("coevolve.json");
+    let json = serde_json::to_string_pretty(result)
+        .with_context(|| "failed to serialize co-evolve result")?;
+    fs::write(&json_path, json)
+        .with_context(|| format!("failed to write {}", json_path.display()))?;
+    info!(path = %json_path.display(), "wrote co-evolve JSON");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Schema migration (Epic O)
 // ---------------------------------------------------------------------------
 
@@ -1325,6 +1607,75 @@ fn replay_manifest_mode(
                 h,
             )
         },
+        ManifestMode::Coevolve {
+            max_rounds,
+            coevolve_seed,
+            initial_mover,
+            attacker_faction,
+            defender_faction,
+            attacker_objective,
+            defender_objective,
+            attacker_method,
+            defender_method,
+            attacker_trials,
+            defender_trials,
+            assignment_tolerance,
+        } => {
+            use faultline_stats::coevolve::{CoevolveConfig, CoevolveSideConfig, run_coevolution};
+
+            let attacker_obj = SearchObjective::parse_cli(attacker_objective)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    "failed to reparse coevolve attacker objective from manifest \
+                     (a recorded label is no longer recognised)"
+                })?;
+            let defender_obj = SearchObjective::parse_cli(defender_objective)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    "failed to reparse coevolve defender objective from manifest \
+                     (a recorded label is no longer recognised)"
+                })?;
+            let coevolve_cfg = CoevolveConfig {
+                max_rounds: *max_rounds,
+                initial_mover: *initial_mover,
+                attacker: CoevolveSideConfig {
+                    faction: attacker_faction.clone(),
+                    objective: attacker_obj,
+                    method: *attacker_method,
+                    trials: *attacker_trials,
+                },
+                defender: CoevolveSideConfig {
+                    faction: defender_faction.clone(),
+                    objective: defender_obj,
+                    method: *defender_method,
+                    trials: *defender_trials,
+                },
+                mc_config: config.clone(),
+                coevolve_seed: *coevolve_seed,
+                assignment_tolerance: *assignment_tolerance,
+            };
+            let result = run_coevolution(scenario, &coevolve_cfg)
+                .with_context(|| "co-evolve replay failed")?;
+            let h = manifest::output_hash(&result)
+                .with_context(|| "failed to hash co-evolve replay")?;
+            (
+                ManifestMode::Coevolve {
+                    max_rounds: *max_rounds,
+                    coevolve_seed: *coevolve_seed,
+                    initial_mover: *initial_mover,
+                    attacker_faction: attacker_faction.clone(),
+                    defender_faction: defender_faction.clone(),
+                    attacker_objective: attacker_objective.clone(),
+                    defender_objective: defender_objective.clone(),
+                    attacker_method: *attacker_method,
+                    defender_method: *defender_method,
+                    attacker_trials: *attacker_trials,
+                    defender_trials: *defender_trials,
+                    assignment_tolerance: *assignment_tolerance,
+                },
+                h,
+            )
+        },
         ManifestMode::Sensitivity {
             param,
             low,
@@ -1464,15 +1815,28 @@ fn with_manifest_front_matter(body: &str, manifest_obj: Option<&RunManifest>) ->
         ManifestMode::Compare { .. } => "compare".to_string(),
         ManifestMode::Sensitivity { .. } => "sensitivity".to_string(),
         ManifestMode::Search { .. } => "search".to_string(),
+        ManifestMode::Coevolve { .. } => "coevolve".to_string(),
+    };
+    // Modes whose deterministic replay depends on a second RNG seed
+    // beyond `mc_config.base_seed` surface that seed in the prose so an
+    // analyst reading only the `.md` report has the full seed pair
+    // they need for bit-identical replay (the manifest JSON carries it
+    // either way; this is a human-facing convenience).
+    let seed_extra = match &m.mode {
+        ManifestMode::Coevolve { coevolve_seed, .. } => {
+            format!(", coevolve_seed `{coevolve_seed}`")
+        },
+        _ => String::new(),
     };
     format!(
-        "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
+        "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`{seed_extra}, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
         mh = m.manifest_hash,
         mh_short = short_hash(&m.manifest_hash),
         oh = m.output_hash,
         ev = m.engine_version,
         ml = mode_label,
         seed = m.mc_config.base_seed,
+        seed_extra = seed_extra,
         runs = m.mc_config.num_runs,
         body = body,
     )
@@ -1659,5 +2023,83 @@ mod cli_tests {
         ])
         .expect("repeated --search-objective must parse");
         assert_eq!(cli.search_objective.len(), 2);
+    }
+
+    // -- --coevolve flag tests (Epic H — round two) -----------------
+
+    #[test]
+    fn coevolve_and_search_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve", "--search"]);
+        let err = res.expect_err("--coevolve + --search must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_and_verify_are_mutually_exclusive() {
+        let res = Cli::try_parse_from([
+            "faultline",
+            "scenario.toml",
+            "--coevolve",
+            "--verify",
+            "manifest.json",
+        ]);
+        let err = res.expect_err("--coevolve + --verify must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_and_single_run_are_mutually_exclusive() {
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve", "--single-run"]);
+        let err = res.expect_err("--coevolve + --single-run must conflict");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn coevolve_subflags_require_coevolve() {
+        // Each `--coevolve-*` flag declares `requires = "coevolve"` so
+        // a stray `--coevolve-rounds 4` without `--coevolve` is rejected
+        // at parse time rather than silently ignored under another mode.
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve-rounds", "4"]);
+        let err = res.expect_err("--coevolve-rounds without --coevolve must reject");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn coevolve_initial_mover_parses_both_sides() {
+        for side in ["attacker", "defender"] {
+            let cli = Cli::try_parse_from([
+                "faultline",
+                "scenario.toml",
+                "--coevolve",
+                "--coevolve-initial-mover",
+                side,
+            ])
+            .expect("initial-mover flag must accept attacker/defender");
+            // Force the enum to round-trip through the From impl so a
+            // future variant rename here would surface in this test.
+            let _: faultline_stats::coevolve::CoevolveSide = cli.coevolve_initial_mover.into();
+        }
+    }
+
+    #[test]
+    fn coevolve_initial_mover_defaults_to_defender() {
+        // The CLI default — picked because the most-common analyst
+        // question is "given my fixed posture, how does the attacker
+        // adapt?" so the defender commits first.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve"])
+            .expect("parse with default initial-mover");
+        let resolved: faultline_stats::coevolve::CoevolveSide = cli.coevolve_initial_mover.into();
+        assert_eq!(resolved, faultline_stats::coevolve::CoevolveSide::Defender);
+    }
+
+    #[test]
+    fn coevolve_method_default_is_grid() {
+        // Grid is the round-two CLI default because the bundled demo's
+        // small spaces enumerate exhaustively, making the per-round
+        // best response deterministic without trial-budget tuning.
+        let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve"])
+            .expect("parse with default method");
+        let resolved: faultline_stats::search::SearchMethod = cli.coevolve_method.into();
+        assert_eq!(resolved, faultline_stats::search::SearchMethod::Grid);
     }
 }
