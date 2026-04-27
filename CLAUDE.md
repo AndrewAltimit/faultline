@@ -72,8 +72,8 @@ cargo run -p faultline-cli -- scenarios/defender_posture_optimization.toml \
 # `[strategy_space]` variable via the `owner = "<faction>"` tag.
 # `--coevolve-method grid` enumerates each side's full sub-space per
 # round; the loop terminates when the joint state stabilises across
-# two consecutive rounds (Nash equilibrium), when a 2-cycle is
-# detected, or at `--coevolve-rounds`.
+# two consecutive rounds (Nash equilibrium), when a cycle of any
+# period >= 2 is detected, or at `--coevolve-rounds`.
 cargo run -p faultline-cli -- scenarios/coevolution_demo.toml --coevolve \
     --coevolve-attacker red --coevolve-defender blue \
     --coevolve-attacker-objective "maximize_win_rate:red" \
@@ -195,9 +195,10 @@ best-response loop on top of `run_search`. Each round, one side
 opponent's currently-frozen assignment via a sub-search. The loop
 terminates when (a) the joint `(attacker, defender)` state matches the
 prior round (Nash equilibrium in pure strategies on the discrete
-strategy space the search visits), (b) a 2-cycle is detected (joint
-state repeats every 2 rounds), or (c) `--coevolve-rounds` is reached
-(`NoEquilibrium`). All `[strategy_space]` variables must declare
+strategy space the search visits), (b) a cycle of any period >= 2 is
+detected (joint state repeats with the detected period; the reported
+`period` is the shortest matching distance ≥ 2), or (c)
+`--coevolve-rounds` is reached (`NoEquilibrium`). All `[strategy_space]` variables must declare
 `owner = "<faction>"` matching either `--coevolve-attacker` or
 `--coevolve-defender`; un-owned or mis-owned variables are rejected at
 validation. Determinism is triple-seeded: `coevolve_seed` drives

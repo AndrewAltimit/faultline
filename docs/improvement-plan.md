@@ -427,11 +427,13 @@ on top of `run_search`. Each round, the mover side reoptimizes only
 the variables it owns against the opponent's currently-frozen
 assignment; the loop terminates when (a) the joint state matches the
 prior round (Nash equilibrium in pure strategies on the discrete
-strategy space the search visits), (b) a 2-cycle is detected (joint
-state repeats every 2 rounds), or (c) `max_rounds` is reached
-(`NoEquilibrium`). Higher-period cycles are deliberately surfaced as
-`NoEquilibrium` rather than mis-classified as converged so the report
-flags non-stationarity honestly. What landed:
+strategy space the search visits), (b) a cycle of any period ≥ 2 is
+detected (the detector scans the full per-round joint-state history
+and surfaces the shortest matching distance as `Cycle { period }`),
+or (c) `max_rounds` is reached (`NoEquilibrium`). Cycles too long to
+fit inside the elapsed-rounds budget — and only those — fall through
+to `NoEquilibrium` rather than being mis-classified as converged, so
+the report flags non-stationarity honestly. What landed:
 
 - A new `CoevolveSide` / `CoevolveSideConfig` / `CoevolveConfig` /
   `CoevolveResult` / `CoevolveStatus` shape on

@@ -102,16 +102,25 @@ fn coevolve_demo_converges() {
 }
 
 #[test]
-fn coevolve_round_count_is_mc_seed_independent() {
-    // Switching the inner MC seed must not change the trial assignments
-    // sampled in each round — the coevolve seed is the sole driver of
-    // the per-round sub-search sampler. Trials' objective values may
-    // shift (different MC outcomes for the same parameter assignment),
-    // but the path/value pairs the search visits must be identical.
+fn coevolve_demo_is_mc_seed_stable() {
+    // Regression check on the bundled `coevolution_demo` scenario:
+    // its objective landscape is steep enough that one assignment
+    // dominates each round's grid by a margin wider than the MC
+    // sampling noise of the small inner-run budget used here, so
+    // changing `mc_config.seed` must not flip the selected best.
     //
-    // Convergence detection is a function of the visited assignments,
-    // so the round count and termination status should also match
-    // across MC seeds.
+    // This is *not* a general architectural invariant — `best_by_
+    // objective` selects on MC-evaluated objective values, and on a
+    // noisier scenario two MC seeds could rank grid cells
+    // differently and produce different `mover_assignments`. The
+    // architectural piece (the search-seed-driven *visited* trial
+    // grid is identical across MC seeds) is exercised by unit tests
+    // in `crates/faultline-stats/src/coevolve.rs`. This integration
+    // test exists to catch regressions in the demo scenario's
+    // landscape — if the engine gains structure that flattens the
+    // demo's dominance margin, the right fix is to expand the demo
+    // until one assignment dominates again, not to relax this
+    // assertion.
     let scenario = load_demo();
     let mut a = small_coevolve_config();
     let mut b = small_coevolve_config();
@@ -122,11 +131,11 @@ fn coevolve_round_count_is_mc_seed_independent() {
     assert_eq!(
         ra.rounds.len(),
         rb.rounds.len(),
-        "round count must be MC-seed-independent (assignments are search-seed-driven)"
+        "demo scenario: round count stable across MC seeds (one assignment dominates each round)"
     );
     assert_eq!(
         ra.status, rb.status,
-        "termination status must be MC-seed-independent (depends only on assignments)"
+        "demo scenario: termination status stable across MC seeds"
     );
     for (a_round, b_round) in ra.rounds.iter().zip(rb.rounds.iter()) {
         let path_pairs_a: Vec<_> = a_round
@@ -141,7 +150,7 @@ fn coevolve_round_count_is_mc_seed_independent() {
             .collect();
         assert_eq!(
             path_pairs_a, path_pairs_b,
-            "round {} mover_assignments must be MC-seed-independent",
+            "demo scenario round {}: mover_assignments stable across MC seeds (dominant landscape)",
             a_round.round
         );
     }

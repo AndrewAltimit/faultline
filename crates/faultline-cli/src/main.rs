@@ -1816,14 +1816,26 @@ fn with_manifest_front_matter(body: &str, manifest_obj: Option<&RunManifest>) ->
         ManifestMode::Search { .. } => "search".to_string(),
         ManifestMode::Coevolve { .. } => "coevolve".to_string(),
     };
+    // Modes whose deterministic replay depends on a second RNG seed
+    // beyond `mc_config.base_seed` surface that seed in the prose so an
+    // analyst reading only the `.md` report has the full seed pair
+    // they need for bit-identical replay (the manifest JSON carries it
+    // either way; this is a human-facing convenience).
+    let seed_extra = match &m.mode {
+        ManifestMode::Coevolve { coevolve_seed, .. } => {
+            format!(", coevolve_seed `{coevolve_seed}`")
+        },
+        _ => String::new(),
+    };
     format!(
-        "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
+        "<!-- faultline-manifest manifest_hash=\"{mh}\" output_hash=\"{oh}\" engine_version=\"{ev}\" mode=\"{ml}\" -->\n\n> **Run manifest:** `{mh_short}` (engine `{ev}`, mode `{ml}`, seed `{seed}`{seed_extra}, runs `{runs}`). Replay with `faultline scenario.toml --verify manifest.json`.\n\n{body}",
         mh = m.manifest_hash,
         mh_short = short_hash(&m.manifest_hash),
         oh = m.output_hash,
         ev = m.engine_version,
         ml = mode_label,
         seed = m.mc_config.base_seed,
+        seed_extra = seed_extra,
         runs = m.mc_config.num_runs,
         body = body,
     )
