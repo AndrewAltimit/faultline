@@ -5,8 +5,8 @@
 # but adds three named attacker profiles to
 # `[strategy_space.attacker_profiles]`. The robustness runner evaluates
 # each defender posture (or, in the simple invocation, just the natural
-# baseline) against every profile and reports per-posture worst/best/
-# mean across profiles.
+# baseline) against every profile and reports per-posture worst / best /
+# mean / stdev across profiles, ranked by worst-case profile.
 #
 # Profiles model qualitatively different attacker behaviours:
 #

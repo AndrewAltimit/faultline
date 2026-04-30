@@ -52,6 +52,22 @@
 //!   evaluates every profile against the scenario's natural state.
 //!   Useful for sanity-checking that the profiles apply cleanly before
 //!   running a full search.
+//!
+//! ## Path-collision semantics
+//!
+//! When a posture and a profile assign to the same parameter path, the
+//! profile wins (it is applied second, after the posture). This is by
+//! design: the natural authoring convention is "postures touch
+//! defender-controlled parameters, profiles touch attacker-controlled
+//! parameters", and a deliberate overlap typically expresses an
+//! attacker action that overrides a defender investment (e.g. an
+//! attacker capability that bypasses a defender's monitoring posture).
+//! The schema does not enforce ownership separation because the dotted-
+//! path layer doesn't carry an ownership label; if an analyst wants to
+//! detect collisions they should hash both sets of paths and compare
+//! at the call site. Within a *single* posture or profile, duplicate
+//! paths are rejected by validation so the order-of-application is
+//! never ambiguous in either direction.
 
 use std::collections::BTreeMap;
 
@@ -231,9 +247,21 @@ pub fn run_robustness(
     }
 
     // Validate posture paths resolve. Same probe pattern as `run_search`.
+    // Also rejects within-posture duplicate paths so a hand-constructed
+    // posture with `[(p, 0.1), (p, 0.5)]` doesn't silently apply only
+    // the last value — symmetric with the engine-side check on
+    // `AttackerProfile.assignments`.
     let mut probe = scenario.clone();
     for (i, posture) in config.postures.iter().enumerate() {
+        let mut seen_paths: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
         for ov in &posture.assignments {
+            if !seen_paths.insert(ov.path.as_str()) {
+                return Err(StatsError::InvalidConfig(format!(
+                    "posture #{i} (`{}`) assigns to path `{}` more than once; \
+                     the second value would silently override the first",
+                    posture.label, ov.path
+                )));
+            }
             // Read-then-write to confirm the path resolves; any failure
             // is a config error not a runtime one, so we surface it
             // before doing any expensive MC work.

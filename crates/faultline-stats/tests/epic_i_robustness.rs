@@ -366,6 +366,197 @@ fn engine_validation_rejects_unknown_profile_faction() {
 }
 
 #[test]
+fn profiles_actually_produce_different_cell_values() {
+    // Smoke test: if the profile's assignments weren't being applied,
+    // every cell in a row would be identical. This regression catches
+    // a future refactor that silently drops the profile-application
+    // loop in `run_robustness`. We assert the row is NOT trivially
+    // constant for at least one objective.
+    let scenario = load_scenario();
+    // Inflate run count so MC noise can't make three different
+    // parameter regimes look identical by chance.
+    let config = RobustnessConfig {
+        postures: Vec::new(),
+        include_baseline: true,
+        mc_config: MonteCarloConfig {
+            num_runs: 32,
+            seed: Some(7),
+            collect_snapshots: false,
+            parallel: false,
+        },
+        objectives: vec![SearchObjective::MinimizeMaxChainSuccess],
+    };
+    let result = run_robustness(&scenario, &config).expect("must succeed");
+    let label = SearchObjective::MinimizeMaxChainSuccess.label();
+
+    // One posture row × N profile cells. The bundled scenario has
+    // three profiles with deliberately different attacker rates; the
+    // resulting per-cell `minimize_max_chain_success` values must
+    // not all be identical.
+    let row: Vec<f64> = result
+        .cells
+        .iter()
+        .map(|c| c.objective_values.get(&label).copied().unwrap_or(f64::NAN))
+        .collect();
+    assert!(row.len() >= 2, "need at least 2 profiles for this check");
+    let first = row[0];
+    let any_differs = row.iter().skip(1).any(|v| (v - first).abs() > 1e-9);
+    assert!(
+        any_differs,
+        "profiles must produce distinguishable cell values; got identical values: {row:?}",
+    );
+}
+
+#[test]
+fn engine_validation_rejects_within_profile_duplicate_path() {
+    use faultline_engine::validate_scenario;
+    use faultline_types::strategy_space::{AttackerProfile, ProfileAssignment};
+
+    let mut scenario = load_scenario();
+    scenario
+        .strategy_space
+        .attacker_profiles
+        .push(AttackerProfile {
+            name: "double_assign".into(),
+            description: String::new(),
+            faction: None,
+            assignments: vec![
+                ProfileAssignment {
+                    path: "kill_chain.red_op.phase.recon.base_success_probability".into(),
+                    value: 0.5,
+                },
+                ProfileAssignment {
+                    path: "kill_chain.red_op.phase.recon.base_success_probability".into(),
+                    value: 0.7,
+                },
+            ],
+        });
+    let err = validate_scenario(&scenario).expect_err("duplicate path within profile must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("more than once"),
+        "error must call out duplication; got: {msg}"
+    );
+}
+
+#[test]
+fn engine_validation_rejects_nan_profile_value() {
+    use faultline_engine::validate_scenario;
+    use faultline_types::strategy_space::{AttackerProfile, ProfileAssignment};
+
+    let mut scenario = load_scenario();
+    scenario
+        .strategy_space
+        .attacker_profiles
+        .push(AttackerProfile {
+            name: "nan_value".into(),
+            description: String::new(),
+            faction: None,
+            assignments: vec![ProfileAssignment {
+                path: "kill_chain.red_op.phase.recon.base_success_probability".into(),
+                value: f64::NAN,
+            }],
+        });
+    let err = validate_scenario(&scenario).expect_err("NaN value must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("finite"),
+        "error must mention the finiteness requirement; got: {msg}"
+    );
+}
+
+#[test]
+fn rejects_within_posture_duplicate_path() {
+    let scenario = load_scenario();
+    let bad = vec![DefenderPosture {
+        label: "double_assign".to_string(),
+        assignments: vec![
+            ParamOverride {
+                path: "kill_chain.red_op.phase.recon.detection_probability_per_tick".into(),
+                value: 0.04,
+            },
+            ParamOverride {
+                path: "kill_chain.red_op.phase.recon.detection_probability_per_tick".into(),
+                value: 0.18,
+            },
+        ],
+    }];
+    let config = small_config(bad, false);
+    let err =
+        run_robustness(&scenario, &config).expect_err("duplicate path within posture must reject");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("more than once"),
+        "error must call out duplication; got: {msg}"
+    );
+}
+
+#[test]
+fn posture_and_profile_path_collision_lets_profile_win() {
+    // Documented contract: when a posture and a profile both assign to
+    // the same path, the profile wins (applied second). This test pins
+    // that behavior so a future change to the order-of-application
+    // surfaces as a deliberate test edit, not a silent semantic flip.
+    //
+    // We construct a posture that sets the recon detection probability
+    // to a defender-friendly 0.18, plus a synthetic profile that
+    // *also* assigns to that same path with an attacker-friendly 0.02.
+    // The profile's assignment should be the value the engine sees.
+    let mut scenario = load_scenario();
+    scenario.strategy_space.attacker_profiles.clear();
+    scenario.strategy_space.attacker_profiles.push(
+        faultline_types::strategy_space::AttackerProfile {
+            name: "overrides_posture".into(),
+            description: "Profile that intentionally collides with the posture path".into(),
+            faction: Some(FactionId::from("red")),
+            assignments: vec![faultline_types::strategy_space::ProfileAssignment {
+                path: "kill_chain.red_op.phase.recon.detection_probability_per_tick".into(),
+                value: 0.02, // attacker-friendly; should override posture's 0.18
+            }],
+        },
+    );
+
+    // Posture that disagrees with the profile on the same path.
+    let posture = vec![DefenderPosture {
+        label: "conflicted".to_string(),
+        assignments: vec![ParamOverride {
+            path: "kill_chain.red_op.phase.recon.detection_probability_per_tick".into(),
+            value: 0.18,
+        }],
+    }];
+
+    // Run the conflicted (posture, profile) cell and a second run with
+    // the posture disabled but the profile kept. Same MC seed, same
+    // scenario otherwise — the two cells must produce equal values
+    // because the profile's 0.02 overrides the posture's 0.18 in
+    // both runs.
+    let config_with_posture = small_config(posture, false);
+    let mut config_no_posture = config_with_posture.clone();
+    config_no_posture.postures.clear();
+    config_no_posture.include_baseline = true;
+
+    let r_with = run_robustness(&scenario, &config_with_posture).expect("with posture");
+    let r_without = run_robustness(&scenario, &config_no_posture).expect("baseline only");
+
+    let label = SearchObjective::MinimizeMaxChainSuccess.label();
+    let v_with = r_with.cells[0]
+        .objective_values
+        .get(&label)
+        .copied()
+        .expect("value");
+    let v_without = r_without.cells[0]
+        .objective_values
+        .get(&label)
+        .copied()
+        .expect("value");
+
+    assert!(
+        (v_with - v_without).abs() < 1e-9,
+        "profile must dominate posture on a colliding path; got with-posture={v_with}, baseline={v_without}",
+    );
+}
+
+#[test]
 fn manifest_replay_produces_identical_output_hash() {
     // The full round-trip: build a manifest, then re-execute the same
     // mode and compare the freshly computed output hash. Equivalent to

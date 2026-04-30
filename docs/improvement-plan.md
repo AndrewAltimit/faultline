@@ -572,19 +572,32 @@ What landed in round two:
   posture × profile > 64), and a reproducibility footer. Cell
   matrices are direction-blind — the rollup tables already convey the
   direction-aware analyst question.
-- 14 integration tests in `tests/epic_i_robustness.rs` cover
+- 19 integration tests in `tests/epic_i_robustness.rs` cover
   determinism, baseline prepending, cell-count invariants, the
-  worst/best direction-awareness regression that caught my first-draft
-  bug, all four validation rejections, manifest round-trip, and the
-  rendered-report contains-required-sections check. Plus 3 unit tests
-  in the runner module covering `pick_extreme` ordering and the
-  config-rejection branches without needing a full scenario.
+  worst/best direction-awareness regression that caught a first-draft
+  bug, nine validation rejections (engine-side: empty profile
+  assignments, duplicate profile names, NaN values, within-profile
+  duplicate paths, unknown faction tags; runner-side: empty objectives,
+  no postures + no baseline, invalid posture path, within-posture
+  duplicate path), manifest round-trip, the rendered-report contains-
+  required-sections check, a "profiles actually produce different cell
+  values" smoke test, and a posture × profile path-collision test
+  that pins the documented "profile wins" contract. Plus 3 unit tests
+  in the runner module covering `pick_extreme` ordering and config
+  validation.
+- New `tools/ci/verify-robustness-pipeline.sh` CI script wired into
+  both `main-ci.yml` and `pr-validation.yml`. Exercises the full CLI
+  flow end-to-end: `--search` → `--robustness --robustness-from-search`
+  → `--verify`, then tampers with the source `search.json` and
+  confirms `--verify` rejects on hash mismatch. Catches CLI-glue
+  regressions the library-level tests can't reach (path-traversal
+  safety, JSON parse, hash recording, source-file integrity check).
 
 All schema additions are `#[serde(default)]` so legacy scenarios
 load unchanged; all 15 bundled scenarios still verify bit-identical
 via the manifest determinism contract; cargo deny / clippy / fmt /
-verify-bundled / verify-migration / grep-guard / JS tests / WASM
-build all clean.
+verify-bundled / verify-migration / verify-robustness / grep-guard /
+JS tests / WASM build all clean.
 
 What landed:
 

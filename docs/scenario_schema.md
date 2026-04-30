@@ -990,6 +990,8 @@ The `--robustness` CLI mode evaluates every (posture × profile) cell via Monte 
 
 Output: `robustness.json` (full per-cell summaries), `robustness_report.md` (per-objective rollup tables ranking postures by worst-case profile, plus cell matrices for small N), and the standard `manifest.json`. The runner has no RNG of its own — the cross-product is iterated deterministically and every cell reuses the same inner MC seed, so cell-to-cell deltas reflect parameter changes only. `ManifestMode::Robustness` records the inline posture list (so the manifest hash closes over the postures) plus the `from_search_path` / `from_search_hash` pair so a verify replay rebuilds an identical `RobustnessConfig`. Bundled archetype: `scenarios/defender_robustness_demo.toml`.
 
+**Path-collision semantics.** When a posture and a profile both assign to the same parameter path, the profile wins (it is applied second, after the posture). The schema does not enforce ownership separation because the dotted-path layer doesn't carry an ownership label; in practice, postures touch defender-controlled parameters and profiles touch attacker-controlled ones, so collisions are rare and typically express a deliberate "attacker action that bypasses a defender investment". Within a *single* posture or profile, duplicate paths are rejected by validation so the order-of-application is never ambiguous in either direction.
+
 ---
 
 ## Determinism guarantees

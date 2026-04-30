@@ -340,7 +340,7 @@ defender-budget detection penalty). See `docs/improvement-plan.md` R3-2
 for deferred items (`upkeep`, `mobility`, `diplomacy`,
 population-segment activation, tech-card costs).
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> verify-robustness -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
 heatmap aggregation, the Pinned MC results store, the comparison-delta
@@ -370,6 +370,15 @@ migration framework and the bundled scenarios. Schema versioning
 lives in `crates/faultline-types/src/migration.rs`; see
 `docs/scenario_schema.md` for the schema-evolution policy. Run
 locally: `./tools/ci/verify-migration.sh`.
+
+The verify-robustness stage (`tools/ci/verify-robustness-pipeline.sh`)
+exercises the full `--search → --robustness --robustness-from-search →
+--verify` flow against `scenarios/defender_robustness_demo.toml`, then
+tampers with the source `search.json` and confirms `--verify` rejects
+on hash mismatch. Catches CLI-glue regressions in the search-then-
+robustness flow that the library-level tests in
+`crates/faultline-stats/tests/epic_i_robustness.rs` can't reach. Run
+locally: `./tools/ci/verify-robustness-pipeline.sh`.
 
 To match CI exactly (containerized):
 ```bash

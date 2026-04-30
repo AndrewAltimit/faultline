@@ -116,6 +116,16 @@ jobs:
         timeout-minutes: 10
         run: docker compose --profile ci run --rm rust-ci ./tools/ci/verify-migration.sh
 
+      # -- Robustness pipeline smoke test (Epic I round-two) -----------------
+      # End-to-end check of `--search` -> `--robustness --robustness-from-search`
+      # -> `--verify`, plus a hash-mismatch rejection on tampered source.
+      # Catches CLI-glue regressions in the search-then-robustness flow that
+      # the library-level tests can't reach. Detail in
+      # tools/ci/verify-robustness-pipeline.sh.
+      - name: Robustness pipeline smoke test
+        timeout-minutes: 10
+        run: docker compose --profile ci run --rm rust-ci ./tools/ci/verify-robustness-pipeline.sh
+
       # -- JS Tests ----------------------------------------------------------
       # Pure-logic frontend modules (pinned store, comparison deltas, diff
       # renderer, sharing roundtrip, heatmap aggregation) are exercised
