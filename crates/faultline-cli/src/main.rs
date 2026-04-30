@@ -1485,12 +1485,11 @@ fn load_robustness_postures(
             assignments: trial.assignments.clone(),
         });
     }
-    if postures.is_empty() {
-        anyhow::bail!(
-            "--robustness-from-search loaded a SearchResult with no Pareto-frontier trials; \
-             nothing to evaluate. Re-run --search with a non-degenerate strategy space first."
-        );
-    }
+    // An empty Pareto frontier (degenerate search artifact) is a valid
+    // input: the caller may still want to evaluate the natural-state
+    // baseline against any declared profiles via `--robustness-skip-baseline=false`.
+    // Defer the empty-vs-no-baseline rejection to `run_robustness`, which
+    // already enforces "at least one posture or include_baseline=true".
     Ok((postures, Some(path.display().to_string()), Some(hash)))
 }
 

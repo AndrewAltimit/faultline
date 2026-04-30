@@ -240,7 +240,9 @@ pub fn run_robustness(
     if config.objectives.is_empty() {
         return Err(StatsError::InvalidConfig(
             "robustness requires at least one objective; \
-             pass --robustness-objective on the CLI"
+             provide a non-empty `RobustnessConfig.objectives` (the CLI \
+             populates this from --robustness-objective or \
+             [strategy_space].objectives)"
                 .into(),
         ));
     }
@@ -250,6 +252,29 @@ pub fn run_robustness(
              with neither, there is nothing to evaluate"
                 .into(),
         ));
+    }
+
+    // Reject duplicate posture labels — including a caller-supplied
+    // posture that collides with the synthetic `"baseline"` row prepended
+    // when `include_baseline = true`. Without this check, the rollups
+    // and JSON output would contain two rows keyed by the same label,
+    // making them indistinguishable to consumers and the report renderer.
+    {
+        let mut seen_labels: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        if config.include_baseline {
+            seen_labels.insert("baseline");
+        }
+        for (i, posture) in config.postures.iter().enumerate() {
+            if !seen_labels.insert(posture.label.as_str()) {
+                return Err(StatsError::InvalidConfig(format!(
+                    "posture #{i} (`{}`) duplicates a label already in use; \
+                     posture labels must be unique across `RobustnessConfig.postures` \
+                     (and must not collide with the synthetic `baseline` label \
+                     when `include_baseline = true`)",
+                    posture.label
+                )));
+            }
+        }
     }
 
     // Validate posture paths resolve. Same probe pattern as `run_search`.
@@ -643,6 +668,64 @@ mod tests {
         let err =
             run_robustness(&scenario, &config).expect_err("no postures + no baseline must error");
         assert!(format!("{err}").contains("nothing to evaluate"));
+    }
+
+    #[test]
+    fn config_rejects_duplicate_posture_labels() {
+        let scenario = build_minimal_scenario();
+        let config = RobustnessConfig {
+            postures: vec![
+                DefenderPosture {
+                    label: "alpha".into(),
+                    assignments: Vec::new(),
+                },
+                DefenderPosture {
+                    label: "alpha".into(),
+                    assignments: Vec::new(),
+                },
+            ],
+            include_baseline: false,
+            mc_config: MonteCarloConfig {
+                num_runs: 1,
+                seed: Some(0),
+                collect_snapshots: false,
+                parallel: false,
+            },
+            objectives: vec![SearchObjective::MinimizeDuration],
+        };
+        let err = run_robustness(&scenario, &config)
+            .expect_err("duplicate posture labels must be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("duplicates a label"),
+            "error must call out the duplication; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn config_rejects_baseline_label_collision() {
+        let scenario = build_minimal_scenario();
+        let config = RobustnessConfig {
+            postures: vec![DefenderPosture {
+                label: "baseline".into(),
+                assignments: Vec::new(),
+            }],
+            include_baseline: true,
+            mc_config: MonteCarloConfig {
+                num_runs: 1,
+                seed: Some(0),
+                collect_snapshots: false,
+                parallel: false,
+            },
+            objectives: vec![SearchObjective::MinimizeDuration],
+        };
+        let err = run_robustness(&scenario, &config)
+            .expect_err("user posture labelled 'baseline' must be rejected when include_baseline");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("baseline"),
+            "error must mention the baseline collision; got: {msg}"
+        );
     }
 
     fn build_minimal_scenario() -> Scenario {
