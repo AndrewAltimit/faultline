@@ -1997,6 +1997,29 @@ fn replay_manifest_mode(
             // carries them frozen); we only verify the source hasn't
             // drifted, so an analyst chasing reproducibility against
             // the original search artifact has a one-step check.
+            //
+            // Why: a hand-crafted manifest with only one of the two
+            // fields populated would otherwise silently skip the
+            // hash check (the if-let-tuple needs both Some to fire).
+            // The CLI always writes both together, so a half-populated
+            // pair is a malformed manifest, not a soft fallback.
+            if from_search_path.is_some() != from_search_hash.is_some() {
+                anyhow::bail!(
+                    "manifest is malformed: robustness from_search_path and \
+                     from_search_hash must both be present or both absent \
+                     (got path={}, hash={})",
+                    if from_search_path.is_some() {
+                        "Some"
+                    } else {
+                        "None"
+                    },
+                    if from_search_hash.is_some() {
+                        "Some"
+                    } else {
+                        "None"
+                    },
+                );
+            }
             if let (Some(rel), Some(saved_hash)) = (from_search_path, from_search_hash) {
                 let p = Path::new(rel);
                 if p.is_absolute() {
