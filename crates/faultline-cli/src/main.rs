@@ -1465,19 +1465,26 @@ fn load_robustness_postures(
         )
     })?;
 
-    let postures = saved
-        .pareto_indices
-        .iter()
-        .filter_map(|idx| {
-            saved
-                .trials
-                .get(*idx as usize)
-                .map(|trial| DefenderPosture {
-                    label: format!("posture_{}", idx),
-                    assignments: trial.assignments.clone(),
-                })
-        })
-        .collect::<Vec<_>>();
+    // Resolve every Pareto index explicitly. A `filter_map` here would
+    // silently drop stale or out-of-bounds indices (a hand-edited or
+    // corrupted `search.json` could quietly shrink the posture set
+    // without the analyst noticing); fail loudly instead so the
+    // mismatch is named.
+    let mut postures: Vec<DefenderPosture> = Vec::with_capacity(saved.pareto_indices.len());
+    for idx in &saved.pareto_indices {
+        let trial = saved.trials.get(*idx as usize).ok_or_else(|| {
+            anyhow::anyhow!(
+                "--robustness-from-search references Pareto index {idx} but the saved \
+                 SearchResult only has {n} trial(s); the source file is stale or corrupted",
+                idx = idx,
+                n = saved.trials.len(),
+            )
+        })?;
+        postures.push(DefenderPosture {
+            label: format!("posture_{}", idx),
+            assignments: trial.assignments.clone(),
+        });
+    }
     if postures.is_empty() {
         anyhow::bail!(
             "--robustness-from-search loaded a SearchResult with no Pareto-frontier trials; \

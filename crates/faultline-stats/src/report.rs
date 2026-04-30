@@ -1961,16 +1961,20 @@ pub fn render_robustness_markdown(
         for rollup in &result.rollups {
             let worst = rollup.worst_per_objective.get(&label);
             let best = rollup.best_per_objective.get(&label);
+            // `compute_rollups` always inserts mean/stdev for every
+            // objective alongside worst/best, so a missing key here
+            // would be a logic error in the runner — surface it
+            // instead of silently rendering 0.
             let mean = rollup
                 .mean_per_objective
                 .get(&label)
                 .copied()
-                .unwrap_or(0.0);
+                .expect("mean_per_objective missing key populated by compute_rollups");
             let stdev = rollup
                 .stdev_per_objective
                 .get(&label)
                 .copied()
-                .unwrap_or(0.0);
+                .expect("stdev_per_objective missing key populated by compute_rollups");
             let (worst_v, worst_p) = match worst {
                 Some(nv) => (format!("{:.4}", nv.value), nv.profile_name.clone()),
                 None => ("—".to_string(), "—".to_string()),
