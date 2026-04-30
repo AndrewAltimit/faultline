@@ -48,19 +48,78 @@ pub struct StrategySpace {
     /// pre-canned space can be reused for one-off questions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objectives: Vec<SearchObjective>,
+    /// Named attacker strategies for robustness analysis (Epic I,
+    /// round-two). Each profile is a full assignment to attacker-owned
+    /// parameter paths; the robustness runner evaluates every defender
+    /// posture against every profile to surface where a posture is
+    /// fragile ("posture P wins under profile A and C, loses under B").
+    /// Empty by default so legacy scenarios load unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attacker_profiles: Vec<AttackerProfile>,
 }
 
 impl StrategySpace {
-    /// `true` when nothing useful is declared — neither variables nor
-    /// objectives. Used as the `skip_serializing_if` predicate on
-    /// `Scenario.strategy_space`, so a programmatically-constructed
-    /// space with embedded `objectives` but no `variables` still
-    /// round-trips through TOML/JSON instead of being silently dropped
-    /// (the runner's "no variables to search" error is the right place
-    /// to reject that shape, not the serializer).
+    /// `true` when nothing useful is declared — neither variables,
+    /// objectives, nor attacker profiles. Used as the
+    /// `skip_serializing_if` predicate on `Scenario.strategy_space`, so
+    /// a programmatically-constructed space with embedded `objectives`
+    /// but no `variables` still round-trips through TOML/JSON instead
+    /// of being silently dropped (the runner's "no variables to search"
+    /// error is the right place to reject that shape, not the serializer).
     pub fn is_empty(&self) -> bool {
-        self.variables.is_empty() && self.objectives.is_empty()
+        self.variables.is_empty() && self.objectives.is_empty() && self.attacker_profiles.is_empty()
     }
+}
+
+/// A named attacker strategy. The `assignments` apply to specific
+/// parameter paths in the scenario (same dotted form as
+/// `DecisionVariable.path`); the robustness runner clones the scenario,
+/// applies the profile's assignments via `set_param`, then evaluates
+/// each defender posture under that fixed attacker.
+///
+/// Profiles do not carry a `domain` — they are point assignments, not
+/// search variables. The robustness runner accepts any `path` that
+/// resolves via `set_param`, so a profile may name a parameter that
+/// isn't in `StrategySpace.variables` (e.g. an attacker-side
+/// `phase.attribution_difficulty` that the search loop wasn't sweeping).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AttackerProfile {
+    /// Display name, shown in the report. Must be unique within
+    /// `StrategySpace.attacker_profiles`; duplicates are rejected at
+    /// scenario-load time so a renamed profile doesn't silently shadow
+    /// the original.
+    pub name: String,
+    /// Optional human-readable description. Surfaces in the report
+    /// header for the per-profile column so an analyst reading
+    /// `Profile: opportunist` sees what that profile represents
+    /// without consulting the TOML.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    /// Optional faction tag. Informational only — surfaces in the
+    /// report. Validation does NOT require profiles' assignments to
+    /// only touch this faction's parameters; an analyst may want to
+    /// model a profile that includes environmental conditions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faction: Option<FactionId>,
+    /// The actual parameter overrides. Each entry is a (path, value)
+    /// pair applied via `set_param`. Empty `assignments` is rejected
+    /// at validation — a "no-op profile" should be expressed as the
+    /// `--robustness-include-baseline` flag, not as an empty profile.
+    pub assignments: Vec<ProfileAssignment>,
+}
+
+/// One (path, value) override inside an [`AttackerProfile`]. A separate
+/// type from `ParamOverride` (which lives in `faultline-stats`) so the
+/// `faultline-types` crate doesn't pull a stats dependency just for the
+/// schema declaration; the robustness runner re-projects these into
+/// `ParamOverride` at runtime.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProfileAssignment {
+    /// Parameter path. Same dotted form as `DecisionVariable.path`.
+    pub path: String,
+    /// Value to assign. Must be finite — NaN / inf is rejected at
+    /// validation time.
+    pub value: f64,
 }
 
 /// A single decision variable within a strategy space.
@@ -290,6 +349,7 @@ mod tests {
         let s = StrategySpace {
             variables: Vec::new(),
             objectives: vec![SearchObjective::MinimizeDuration],
+            attacker_profiles: Vec::new(),
         };
         assert!(!s.is_empty());
     }
@@ -301,6 +361,7 @@ mod tests {
         let s = StrategySpace {
             variables: Vec::new(),
             objectives: vec![SearchObjective::MinimizeDuration],
+            attacker_profiles: Vec::new(),
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let parsed: StrategySpace = serde_json::from_str(&json).expect("parse");

@@ -347,6 +347,68 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         for objective in &space.objectives {
             validate_search_objective(scenario, objective)?;
         }
+        // Attacker profiles (Epic I round-two — robustness analysis).
+        // Structural invariants only; the path-resolution check happens
+        // in the robustness runner since `set_param` lives in
+        // `faultline-stats`.
+        let mut seen_profile_names: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for profile in &space.attacker_profiles {
+            if profile.name.is_empty() {
+                return Err(ScenarioError::Custom(
+                    "[strategy_space.attacker_profiles] entry has empty `name`; \
+                     each profile needs a unique label so the report can name it"
+                        .into(),
+                ));
+            }
+            if !seen_profile_names.insert(profile.name.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "[strategy_space.attacker_profiles] name `{}` is declared more than once; \
+                     duplicate profile names would silently overwrite one another in the \
+                     robustness rollup",
+                    profile.name
+                )));
+            }
+            if profile.assignments.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "attacker profile `{}` has no assignments; \
+                     a no-op profile should be expressed via the robustness baseline \
+                     flag, not an empty profile entry",
+                    profile.name
+                )));
+            }
+            if let Some(faction) = &profile.faction
+                && !scenario.factions.contains_key(faction)
+            {
+                return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+            let mut seen_paths: std::collections::BTreeSet<&str> =
+                std::collections::BTreeSet::new();
+            for a in &profile.assignments {
+                if a.path.is_empty() {
+                    return Err(ScenarioError::Custom(format!(
+                        "attacker profile `{}` has an assignment with an empty path",
+                        profile.name
+                    )));
+                }
+                if !seen_paths.insert(a.path.as_str()) {
+                    return Err(ScenarioError::Custom(format!(
+                        "attacker profile `{}` assigns to path `{}` more than once",
+                        profile.name, a.path
+                    )));
+                }
+                if !a.value.is_finite() {
+                    return Err(ScenarioError::ValueOutOfRange {
+                        field: format!(
+                            "attacker profile `{}` assignment to `{}`",
+                            profile.name, a.path
+                        ),
+                        value: a.value,
+                        expected: "finite (no NaN / inf)".into(),
+                    });
+                }
+            }
+        }
     }
 
     // Networks (Epic L). Topological invariants only; engine-side
@@ -1409,6 +1471,7 @@ mod tests {
                 },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let err = validate_scenario(&scenario).expect_err("empty path must reject");
         assert!(format!("{err}").contains("empty path"));
@@ -1430,6 +1493,7 @@ mod tests {
         scenario.strategy_space = StrategySpace {
             variables: vec![dup.clone(), dup],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let err = validate_scenario(&scenario).expect_err("duplicate paths must reject");
         assert!(format!("{err}").contains("declared more than once"));
@@ -1450,6 +1514,7 @@ mod tests {
                 },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let err = validate_scenario(&scenario).expect_err("low > high must reject");
         assert!(format!("{err}").contains("<= high"));
@@ -1470,6 +1535,7 @@ mod tests {
                 },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let err = validate_scenario(&scenario).expect_err("steps == 0 must reject");
         assert!(format!("{err}").contains("steps"));
@@ -1486,6 +1552,7 @@ mod tests {
                 domain: Domain::Discrete { values: vec![] },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let err = validate_scenario(&scenario).expect_err("empty discrete values must reject");
         assert!(format!("{err}").contains("empty discrete"));
@@ -1507,6 +1574,7 @@ mod tests {
                 },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         assert!(validate_scenario(&scenario).is_err());
     }
@@ -1531,6 +1599,7 @@ mod tests {
             objectives: vec![SearchObjective::MaximizeWinRate {
                 faction: FactionId::from("ghost"),
             }],
+            attacker_profiles: Vec::new(),
         };
         assert!(validate_scenario(&scenario).is_err());
     }
@@ -1564,6 +1633,7 @@ mod tests {
             objectives: vec![SearchObjective::MaximizeWinRate {
                 faction: FactionId::from("gov"),
             }],
+            attacker_profiles: Vec::new(),
         };
         validate_scenario(&scenario).expect("well-formed strategy_space must validate");
     }

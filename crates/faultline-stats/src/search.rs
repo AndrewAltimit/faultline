@@ -873,6 +873,7 @@ mod tests {
                 },
             }],
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         s
     }
@@ -1345,6 +1346,7 @@ mod tests {
         let space = StrategySpace {
             variables,
             objectives: vec![],
+            attacker_profiles: Vec::new(),
         };
         let cfg = SearchConfig {
             trials: 4,
@@ -1603,6 +1605,7 @@ mod tests {
                 },
                 SearchObjective::MinimizeDuration,
             ],
+            attacker_profiles: Vec::new(),
         };
         let toml_str = toml::to_string(&s).expect("serialize TOML");
         let parsed: Scenario = toml::from_str(&toml_str).expect("parse TOML");

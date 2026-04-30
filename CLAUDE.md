@@ -73,6 +73,24 @@ cargo run -p faultline-cli -- scenarios/defender_posture_optimization.toml \
     --search-objective minimize_max_chain_success \
     --search-objective maximize_detection
 
+# Defender-posture robustness analysis (Epic I — round two). Evaluates
+# every defender posture against every attacker profile declared in
+# `[strategy_space.attacker_profiles]` and ranks postures by worst-case
+# profile. Either feed in a saved `search.json` (full pipeline) or omit
+# `--robustness-from-search` to evaluate the natural-state baseline.
+cargo run -p faultline-cli -- scenarios/defender_robustness_demo.toml \
+    --search --search-method grid --search-trials 8 --search-runs 16 \
+    --search-objective "maximize_win_rate:blue" \
+    --search-objective minimize_max_chain_success \
+    -o ./output/search_phase
+cargo run -p faultline-cli -- scenarios/defender_robustness_demo.toml \
+    --robustness \
+    --robustness-from-search ./output/search_phase/search.json \
+    --robustness-runs 16 \
+    --robustness-objective "maximize_win_rate:blue" \
+    --robustness-objective minimize_max_chain_success \
+    -o ./output/robustness_phase
+
 # Adversarial co-evolution between an attacker and defender
 # (Epic H — round two). Both sides must own at least one
 # `[strategy_space]` variable via the `owner = "<faction>"` tag.
@@ -219,6 +237,28 @@ with `owner` set, so legacy attacker-only spaces stay unchanged.
 `ManifestMode::Search` records `compute_baseline` so verify replays
 match. Bundled archetype: `scenarios/defender_posture_optimization.toml`.
 
+**Defender-posture robustness (Epic I — round two).** Closes the
+deferred robustness-analysis item from Epic I round-one by adding
+a `--robustness` CLI mode and a new
+`faultline_stats::robustness::run_robustness` runner. Given a set of
+defender postures (typically the Pareto frontier of a prior `--search`)
+and a library of named attacker profiles declared in
+`[strategy_space.attacker_profiles]`, the runner evaluates every
+(posture × profile) cell via Monte Carlo and surfaces per-posture
+worst / best / mean / stdev rollups across profiles. The expected
+analyst flow is search → robustness: first identify Pareto-optimal
+postures against a single attacker baseline, then re-rank them by
+worst-case profile to surface which postures are fragile to which
+attacker strategies. Worst/best are direction-aware on the objective:
+for a `MinimizeMaxChainSuccess` objective, "worst" is the largest cell
+value (chain succeeds most often). The runner has no RNG of its own —
+the cross-product is iterated deterministically and every cell reuses
+the same inner MC seed, so cell-to-cell deltas reflect parameter
+changes only. `ManifestMode::Robustness` records the full posture list
+inline plus the SHA-256 of the source `search.json` (when one was
+provided) so `--verify` refuses a stale source file. Bundled archetype:
+`scenarios/defender_robustness_demo.toml`.
+
 **Adversarial co-evolution (Epic H — round two).** Closes the deferred
 adversarial-co-evolution item from Epic H by layering an alternating
 best-response loop on top of `run_search`. Each round, one side
@@ -300,7 +340,7 @@ defender-budget detection penalty). See `docs/improvement-plan.md` R3-2
 for deferred items (`upkeep`, `mobility`, `diplomacy`,
 population-segment activation, tech-card costs).
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> js-tests**.
+CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> verify-robustness -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
 heatmap aggregation, the Pinned MC results store, the comparison-delta
@@ -330,6 +370,15 @@ migration framework and the bundled scenarios. Schema versioning
 lives in `crates/faultline-types/src/migration.rs`; see
 `docs/scenario_schema.md` for the schema-evolution policy. Run
 locally: `./tools/ci/verify-migration.sh`.
+
+The verify-robustness stage (`tools/ci/verify-robustness-pipeline.sh`)
+exercises the full `--search → --robustness --robustness-from-search →
+--verify` flow against `scenarios/defender_robustness_demo.toml`, then
+tampers with the source `search.json` and confirms `--verify` rejects
+on hash mismatch. Catches CLI-glue regressions in the search-then-
+robustness flow that the library-level tests in
+`crates/faultline-stats/tests/epic_i_robustness.rs` can't reach. Run
+locally: `./tools/ci/verify-robustness-pipeline.sh`.
 
 To match CI exactly (containerized):
 ```bash

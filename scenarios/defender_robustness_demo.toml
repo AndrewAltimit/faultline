@@ -1,0 +1,390 @@
+# Defender Robustness Demo (Epic I — round two)
+#
+# Closes the deferred robustness-analysis item from Epic I round-one.
+# This scenario reuses the geometry of `defender_posture_optimization`
+# but adds three named attacker profiles to
+# `[strategy_space.attacker_profiles]`. The robustness runner evaluates
+# each defender posture (or, in the simple invocation, just the natural
+# baseline) against every profile and reports per-posture worst / best /
+# mean / stdev across profiles, ranked by worst-case profile.
+#
+# Profiles model qualitatively different attacker behaviours:
+#
+# - `opportunist` — attacker picks high-success / low-cost actions
+#   from a notional opportunist menu (high recon success, modest
+#   infiltrate success).
+# - `committed` — attacker accepts higher cost for higher infiltrate
+#   success and a longer recon window.
+# - `stealth` — attacker prioritises low detection probability over
+#   raw success rate; longer recon, gentler infiltrate.
+#
+# **Smoke-test scenario, not an analytical example.** Capability
+# numbers are notional — chosen so each profile produces measurably
+# different outcomes inside the verify-bundled CI budget. The point is
+# to exercise the end-to-end robustness path: profile validation,
+# posture × profile cell evaluation, per-posture rollups, manifest
+# replay.
+#
+# CLI (natural-baseline-only invocation):
+#   cargo run -p faultline-cli -- \
+#     scenarios/defender_robustness_demo.toml --robustness \
+#     --robustness-runs 16 \
+#     --robustness-objective "maximize_win_rate:blue" \
+#     --robustness-objective minimize_max_chain_success
+#
+# CLI (full pipeline — search Pareto frontier then robustness):
+#   cargo run -p faultline-cli -- \
+#     scenarios/defender_robustness_demo.toml --search \
+#     --search-method grid --search-trials 8 --search-runs 16 \
+#     --search-objective "maximize_win_rate:blue" \
+#     --search-objective minimize_max_chain_success \
+#     -o ./output/search_phase
+#   cargo run -p faultline-cli -- \
+#     scenarios/defender_robustness_demo.toml --robustness \
+#     --robustness-from-search ./output/search_phase/search.json \
+#     --robustness-runs 16 \
+#     --robustness-objective "maximize_win_rate:blue" \
+#     --robustness-objective minimize_max_chain_success \
+#     -o ./output/robustness_phase
+#
+# All capability parameters are notional. Purely synthetic — no
+# historical analogue.
+
+[meta]
+schema_version = 1
+name = "Defender Robustness Demo"
+description = """
+Robustness-analysis fixture: three attacker profiles and a small
+defender strategy space. The robustness runner evaluates each posture
+against every profile and ranks postures by worst-case profile.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["search", "epic-i", "robustness", "synthetic"]
+confidence = "Low"
+
+# -- Map: 2x2 grid ---------------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.capital]
+id = "capital"
+name = "Capital"
+population = 800000
+urbanization = 0.9
+initial_control = "blue"
+strategic_value = 1.0
+borders = ["industrial", "border"]
+
+[map.regions.industrial]
+id = "industrial"
+name = "Industrial"
+population = 600000
+urbanization = 0.8
+initial_control = "blue"
+strategic_value = 0.7
+borders = ["capital", "hinterland"]
+
+[map.regions.border]
+id = "border"
+name = "Border"
+population = 200000
+urbanization = 0.3
+initial_control = "blue"
+strategic_value = 0.4
+borders = ["capital", "hinterland"]
+
+[map.regions.hinterland]
+id = "hinterland"
+name = "Hinterland"
+population = 150000
+urbanization = 0.2
+initial_control = "red"
+strategic_value = 0.3
+borders = ["industrial", "border"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "capital"
+terrain_type = "Urban"
+movement_modifier = 0.9
+defense_modifier = 1.2
+visibility = 0.7
+
+[[map.terrain]]
+region = "industrial"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "border"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "hinterland"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 1.0
+
+# -- Factions --------------------------------------------------------------
+
+[factions.blue]
+id = "blue"
+name = "Blue (Defender)"
+description = "Defender state with garrisons in three regions."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 12.0
+initial_resources = 200.0
+resource_rate = 8.0
+command_resilience = 0.6
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.blue.forces.blue_garrison]
+id = "blue_garrison"
+name = "Blue Garrison"
+unit_type = "Infantry"
+region = "capital"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red]
+id = "red"
+name = "Red (Attacker)"
+description = "Attacker insurgent cell operating from the hinterland."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 8.0
+initial_resources = 120.0
+resource_rate = 4.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Guerrilla"
+
+[factions.red.faction_type]
+kind = "Insurgent"
+
+[factions.red.forces.red_cell]
+id = "red_cell"
+name = "Red Insurgent Cell"
+unit_type = "Militia"
+region = "hinterland"
+strength = 80.0
+mobility = 1.1
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) -----------------------------------------------------
+
+[technology]
+
+# -- Political climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.3
+state_control = 0.3
+social_media_penetration = 0.6
+internet_availability = 0.85
+
+[events]
+
+# -- Kill chain: red two-phase covert insertion ----------------------------
+
+[kill_chains.red_op]
+id = "red_op"
+name = "Covert Insertion"
+description = "Notional two-phase insertion against the defender's industrial region."
+attacker = "red"
+target = "blue"
+entry_phase = "recon"
+
+[kill_chains.red_op.phases.recon]
+id = "recon"
+name = "Reconnaissance"
+description = "Observation of garrison rotation and access points."
+base_success_probability = 0.7
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.06
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.7
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.red_op.phases.recon.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 100_000.0
+attacker_resources = 1.0
+
+[[kill_chains.red_op.phases.recon.outputs]]
+type = "IntelligenceGain"
+amount = 0.1
+
+[[kill_chains.red_op.phases.recon.branches]]
+next_phase = "infiltrate"
+[kill_chains.red_op.phases.recon.branches.condition]
+type = "OnSuccess"
+
+[kill_chains.red_op.phases.infiltrate]
+id = "infiltrate"
+name = "Infiltration"
+description = "Movement of operatives into the industrial region under cover of recon-derived gaps."
+prerequisites = ["recon"]
+base_success_probability = 0.55
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.10
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.6
+targets_domains = ["PhysicalSecurity"]
+
+[kill_chains.red_op.phases.infiltrate.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 350_000.0
+attacker_resources = 2.0
+
+[[kill_chains.red_op.phases.infiltrate.outputs]]
+type = "InstitutionalErosion"
+delta = 0.02
+
+# -- Simulation config -----------------------------------------------------
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 16
+fog_of_war = false
+snapshot_interval = 0
+seed = 23
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Victory conditions ----------------------------------------------------
+
+[victory_conditions.blue_control]
+id = "blue_control"
+name = "Blue Strategic Control"
+faction = "blue"
+
+[victory_conditions.blue_control.condition]
+type = "StrategicControl"
+threshold = 0.65
+
+[victory_conditions.red_dominance]
+id = "red_dominance"
+name = "Red Military Dominance"
+faction = "red"
+
+[victory_conditions.red_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 0.4
+
+# -- Strategy space (Epic I round-two) -------------------------------------
+#
+# Two blue-side decision variables shadow the
+# `defender_posture_optimization` scenario but with a slightly tighter
+# domain so the search is fast. Three attacker profiles model
+# qualitatively different red-side behaviours.
+
+[strategy_space]
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.recon.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.04
+high = 0.18
+steps = 2
+
+[[strategy_space.variables]]
+path = "kill_chain.red_op.phase.infiltrate.detection_probability_per_tick"
+owner = "blue"
+
+[strategy_space.variables.domain]
+kind = "continuous"
+low = 0.08
+high = 0.28
+steps = 2
+
+[[strategy_space.objectives]]
+metric = "maximize_win_rate"
+faction = "blue"
+
+[[strategy_space.objectives]]
+metric = "minimize_max_chain_success"
+
+# -- Attacker profiles -----------------------------------------------------
+
+[[strategy_space.attacker_profiles]]
+name = "opportunist"
+description = "High recon success but modest infiltrate; quick / cheap operations."
+faction = "red"
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.recon.base_success_probability"
+value = 0.85
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.infiltrate.base_success_probability"
+value = 0.55
+
+[[strategy_space.attacker_profiles]]
+name = "committed"
+description = "Patient attacker willing to spend more for higher infiltrate success."
+faction = "red"
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.recon.base_success_probability"
+value = 0.75
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.infiltrate.base_success_probability"
+value = 0.78
+
+[[strategy_space.attacker_profiles]]
+name = "stealth"
+description = "Stealth-prioritised — lower success rates, lower detection signature."
+faction = "red"
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.recon.base_success_probability"
+value = 0.7
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.infiltrate.base_success_probability"
+value = 0.5
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.recon.detection_probability_per_tick"
+value = 0.02
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.infiltrate.detection_probability_per_tick"
+value = 0.04

@@ -138,7 +138,7 @@ struct Cli {
         long = "search",
         conflicts_with_all = [
             "single_run", "sensitivity", "counterfactual",
-            "compare", "verify", "validate", "migrate"
+            "compare", "verify", "validate", "migrate", "robustness"
         ]
     )]
     search: bool,
@@ -207,7 +207,7 @@ struct Cli {
         long = "coevolve",
         conflicts_with_all = [
             "single_run", "sensitivity", "counterfactual",
-            "compare", "search", "verify", "validate", "migrate"
+            "compare", "search", "verify", "validate", "migrate", "robustness"
         ]
     )]
     coevolve: bool,
@@ -291,6 +291,78 @@ struct Cli {
         requires = "coevolve"
     )]
     coevolve_initial_mover: CliCoevolveSide,
+
+    /// Run defender-posture robustness analysis (Epic I — round two).
+    ///
+    /// Evaluates each defender posture against every attacker profile
+    /// declared in `[strategy_space.attacker_profiles]` and surfaces
+    /// per-posture worst/best/mean across profiles. The expected
+    /// workflow is `--search` followed by `--robustness
+    /// --robustness-from-search ./output/search.json`: first identify
+    /// Pareto-optimal defender postures against a single (implicit)
+    /// attacker baseline, then re-rank them by worst-case profile.
+    ///
+    /// When `--robustness-from-search` is omitted, the runner evaluates
+    /// every profile against the scenario's natural state — useful for
+    /// sanity-checking that profiles apply cleanly before running a
+    /// full search.
+    ///
+    /// Mutually exclusive with the other run modes.
+    #[arg(
+        long = "robustness",
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "search", "coevolve",
+            "verify", "validate", "migrate"
+        ]
+    )]
+    robustness: bool,
+
+    /// Path to a saved `search.json` whose Pareto-frontier trials
+    /// supply the defender postures evaluated by `--robustness`. When
+    /// omitted, only the scenario's natural state is evaluated.
+    ///
+    /// The CLI re-hashes the file at run time and records the hash in
+    /// the manifest so `--verify` refuses a stale source file. This
+    /// mirrors how `--compare` handles the alt scenario file.
+    #[arg(
+        long = "robustness-from-search",
+        value_name = "SEARCH_JSON",
+        requires = "robustness"
+    )]
+    robustness_from_search: Option<PathBuf>,
+    /// Inner Monte Carlo run count for each (posture, profile) cell.
+    /// Defaults to 100 — same default as `--search-runs`. Smaller
+    /// values trade noisier per-cell estimates for faster turnaround.
+    #[arg(
+        long = "robustness-runs",
+        default_value_t = 100,
+        requires = "robustness"
+    )]
+    robustness_runs: u32,
+
+    /// Robustness objective. Pass repeatedly to evaluate the cells
+    /// against multiple metrics. Same format as `--search-objective`.
+    /// When omitted, falls back to the scenario's
+    /// `[strategy_space].objectives`; if that is also empty the run
+    /// fails with a clear error.
+    #[arg(
+        long = "robustness-objective",
+        value_name = "OBJECTIVE",
+        requires = "robustness"
+    )]
+    robustness_objective: Vec<String>,
+
+    /// Skip the natural-state baseline row in `--robustness`. By
+    /// default the runner prepends a `posture = baseline` row so
+    /// per-posture deltas read against "do nothing" rather than
+    /// against an arbitrary trial.
+    #[arg(
+        long = "robustness-skip-baseline",
+        default_value_t = false,
+        requires = "robustness"
+    )]
+    robustness_skip_baseline: bool,
 
     /// Verify a saved run by replaying it from a manifest.
     ///
@@ -490,6 +562,10 @@ fn main() -> Result<()> {
 
     if cli.coevolve {
         return run_coevolve_analysis(&cli, &scenario);
+    }
+
+    if cli.robustness {
+        return run_robustness_analysis(&cli, &scenario);
     }
 
     // Monte Carlo run.
@@ -1228,6 +1304,196 @@ fn write_coevolve_outputs(
 }
 
 // ---------------------------------------------------------------------------
+// Robustness (Epic I — round two)
+// ---------------------------------------------------------------------------
+
+fn run_robustness_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    use faultline_stats::manifest::{ManifestAssignment, ManifestPosture};
+    use faultline_stats::robustness::{RobustnessConfig, run_robustness};
+
+    // Resolve objectives. Same pattern as `--search`: CLI flags
+    // override the embedded scenario list, and an empty intersection
+    // is rejected by the runner with a clear error.
+    let objectives: Vec<SearchObjective> = if cli.robustness_objective.is_empty() {
+        scenario.strategy_space.objectives.clone()
+    } else {
+        cli.robustness_objective
+            .iter()
+            .map(|s| SearchObjective::parse_cli(s).map_err(anyhow::Error::msg))
+            .collect::<Result<Vec<_>>>()
+            .with_context(|| "failed to parse --robustness-objective")?
+    };
+
+    // Resolve postures. Either lifted from a saved search.json or
+    // empty (in which case the runner just evaluates the natural-state
+    // baseline). The hash of any source file is captured for manifest
+    // verification.
+    let (postures, from_search_path, from_search_hash) =
+        load_robustness_postures(cli).with_context(|| "failed to load robustness postures")?;
+
+    let mc_seed = cli
+        .seed
+        .unwrap_or_else(|| rand::Rng::r#gen::<u64>(&mut rand::thread_rng()));
+    let mc_config = MonteCarloConfig {
+        num_runs: cli.robustness_runs,
+        seed: Some(mc_seed),
+        collect_snapshots: false,
+        parallel: false,
+    };
+
+    let include_baseline = !cli.robustness_skip_baseline;
+    let config = RobustnessConfig {
+        postures: postures.clone(),
+        include_baseline,
+        mc_config: mc_config.clone(),
+        objectives: objectives.clone(),
+    };
+
+    info!(
+        postures = postures.len(),
+        include_baseline,
+        runs = cli.robustness_runs,
+        objectives = objectives.len(),
+        "starting robustness analysis"
+    );
+
+    let result = run_robustness(scenario, &config).with_context(|| "robustness analysis failed")?;
+
+    write_robustness_outputs(cli, &result)?;
+
+    let manifest_postures: Vec<ManifestPosture> = postures
+        .iter()
+        .map(|p| ManifestPosture {
+            label: p.label.clone(),
+            assignments: p
+                .assignments
+                .iter()
+                .map(|a| ManifestAssignment {
+                    path: a.path.clone(),
+                    value: a.value,
+                })
+                .collect(),
+        })
+        .collect();
+    let manifest_mc = ManifestMcConfig::from_config(&mc_config, mc_seed);
+    let mode = ManifestMode::Robustness {
+        objectives: objectives.iter().map(SearchObjective::label).collect(),
+        include_baseline,
+        postures: manifest_postures,
+        from_search_path,
+        from_search_hash,
+    };
+    let output_hash =
+        manifest::output_hash(&result).with_context(|| "failed to hash robustness result")?;
+    let manifest_obj = build_manifest_object(cli, scenario, manifest_mc, mode, output_hash)?;
+
+    if matches!(cli.format, OutputFormat::Csv) {
+        tracing::warn!(
+            "--format csv is not meaningful for robustness output \
+             (per-cell CSV shape doesn't apply); falling back to JSON + Markdown"
+        );
+    }
+    let md_path = cli.output.join("robustness_report.md");
+    let body = faultline_stats::report::render_robustness_markdown(&result, scenario);
+    let md = with_manifest_front_matter(&body, Some(&manifest_obj));
+    fs::write(&md_path, md).with_context(|| format!("failed to write {}", md_path.display()))?;
+    info!(path = %md_path.display(), "wrote robustness Markdown report");
+
+    write_manifest_object(cli, &manifest_obj)?;
+    Ok(())
+}
+
+fn write_robustness_outputs(
+    cli: &Cli,
+    result: &faultline_stats::robustness::RobustnessResult,
+) -> Result<()> {
+    let json_path = cli.output.join("robustness.json");
+    let json = serde_json::to_string_pretty(result)
+        .with_context(|| "failed to serialize robustness result")?;
+    fs::write(&json_path, json)
+        .with_context(|| format!("failed to write {}", json_path.display()))?;
+    info!(path = %json_path.display(), "wrote robustness JSON");
+    Ok(())
+}
+
+/// Load defender postures for a robustness run, from either an inline
+/// list or a saved `search.json`. Returns the postures, the source
+/// file path (relative to CWD) and its SHA-256 — both `None` when no
+/// source file was supplied.
+fn load_robustness_postures(
+    cli: &Cli,
+) -> Result<(
+    Vec<faultline_stats::robustness::DefenderPosture>,
+    Option<String>,
+    Option<String>,
+)> {
+    use faultline_stats::robustness::DefenderPosture;
+    let Some(ref path) = cli.robustness_from_search else {
+        return Ok((Vec::new(), None, None));
+    };
+
+    // Same path-safety check `--compare` applies to its alt scenario:
+    // refuse absolute paths and parent traversals so a crafted command
+    // line can't read arbitrary files via this flag.
+    if path.is_absolute() {
+        anyhow::bail!(
+            "--robustness-from-search path is absolute, refusing for safety: {}",
+            path.display()
+        );
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        anyhow::bail!(
+            "--robustness-from-search path contains parent traversal, refusing for safety: {}",
+            path.display()
+        );
+    }
+
+    let bytes = fs::read(path).with_context(|| {
+        format!(
+            "failed to read --robustness-from-search: {}",
+            path.display()
+        )
+    })?;
+    let hash = manifest::sha256_hex(&bytes);
+    let saved: SearchResult = serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "failed to parse --robustness-from-search as a SearchResult JSON: {}",
+            path.display()
+        )
+    })?;
+
+    // Resolve every Pareto index explicitly. A `filter_map` here would
+    // silently drop stale or out-of-bounds indices (a hand-edited or
+    // corrupted `search.json` could quietly shrink the posture set
+    // without the analyst noticing); fail loudly instead so the
+    // mismatch is named.
+    let mut postures: Vec<DefenderPosture> = Vec::with_capacity(saved.pareto_indices.len());
+    for idx in &saved.pareto_indices {
+        let trial = saved.trials.get(*idx as usize).ok_or_else(|| {
+            anyhow::anyhow!(
+                "--robustness-from-search references Pareto index {idx} but the saved \
+                 SearchResult only has {n} trial(s); the source file is stale or corrupted",
+                idx = idx,
+                n = saved.trials.len(),
+            )
+        })?;
+        postures.push(DefenderPosture {
+            label: format!("posture_{}", idx),
+            assignments: trial.assignments.clone(),
+        });
+    }
+    // An empty Pareto frontier (degenerate search artifact) is a valid
+    // input: the caller may still want to evaluate the natural-state
+    // baseline against any declared profiles via `--robustness-skip-baseline=false`.
+    // Defer the empty-vs-no-baseline rejection to `run_robustness`, which
+    // already enforces "at least one posture or include_baseline=true".
+    Ok((postures, Some(path.display().to_string()), Some(hash)))
+}
+
+// ---------------------------------------------------------------------------
 // Schema migration (Epic O)
 // ---------------------------------------------------------------------------
 
@@ -1714,6 +1980,118 @@ fn replay_manifest_mode(
                 h,
             )
         },
+        ManifestMode::Robustness {
+            objectives,
+            include_baseline,
+            postures,
+            from_search_path,
+            from_search_hash,
+        } => {
+            use faultline_stats::counterfactual::ParamOverride;
+            use faultline_stats::robustness::{DefenderPosture, RobustnessConfig, run_robustness};
+
+            // If a source search file was recorded, re-read it and
+            // refuse on hash mismatch — same safety pattern as
+            // ManifestMode::Compare's alt scenario check. We don't
+            // re-derive postures from the file (the manifest already
+            // carries them frozen); we only verify the source hasn't
+            // drifted, so an analyst chasing reproducibility against
+            // the original search artifact has a one-step check.
+            //
+            // Why: a hand-crafted manifest with only one of the two
+            // fields populated would otherwise silently skip the
+            // hash check (the if-let-tuple needs both Some to fire).
+            // The CLI always writes both together, so a half-populated
+            // pair is a malformed manifest, not a soft fallback.
+            if from_search_path.is_some() != from_search_hash.is_some() {
+                anyhow::bail!(
+                    "manifest is malformed: robustness from_search_path and \
+                     from_search_hash must both be present or both absent \
+                     (got path={}, hash={})",
+                    if from_search_path.is_some() {
+                        "Some"
+                    } else {
+                        "None"
+                    },
+                    if from_search_hash.is_some() {
+                        "Some"
+                    } else {
+                        "None"
+                    },
+                );
+            }
+            if let (Some(rel), Some(saved_hash)) = (from_search_path, from_search_hash) {
+                let p = Path::new(rel);
+                if p.is_absolute() {
+                    anyhow::bail!(
+                        "robustness from_search_path in manifest is absolute, refusing: {}",
+                        rel
+                    );
+                }
+                if p.components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+                {
+                    anyhow::bail!(
+                        "robustness from_search_path in manifest contains parent traversal, refusing: {}",
+                        rel
+                    );
+                }
+                let live_bytes = fs::read(p).with_context(|| {
+                    format!("failed to read robustness source search.json: {}", rel)
+                })?;
+                let live_hash = manifest::sha256_hex(&live_bytes);
+                if &live_hash != saved_hash {
+                    anyhow::bail!(
+                        "robustness source search.json hash mismatch:\n  saved:    {}\n  live:     {}",
+                        saved_hash,
+                        live_hash
+                    );
+                }
+            }
+
+            let parsed_objectives: Vec<SearchObjective> = objectives
+                .iter()
+                .map(|s| SearchObjective::parse_cli(s).map_err(anyhow::Error::msg))
+                .collect::<Result<Vec<_>>>()
+                .with_context(|| {
+                    "failed to reparse robustness objective labels from manifest \
+                     (a recorded label is no longer recognised)"
+                })?;
+            let lifted_postures: Vec<DefenderPosture> = postures
+                .iter()
+                .map(|p| DefenderPosture {
+                    label: p.label.clone(),
+                    assignments: p
+                        .assignments
+                        .iter()
+                        .map(|a| ParamOverride {
+                            path: a.path.clone(),
+                            value: a.value,
+                        })
+                        .collect(),
+                })
+                .collect();
+            let robustness_cfg = RobustnessConfig {
+                postures: lifted_postures,
+                include_baseline: *include_baseline,
+                mc_config: config.clone(),
+                objectives: parsed_objectives,
+            };
+            let result = run_robustness(scenario, &robustness_cfg)
+                .with_context(|| "robustness replay failed")?;
+            let h = manifest::output_hash(&result)
+                .with_context(|| "failed to hash robustness replay")?;
+            (
+                ManifestMode::Robustness {
+                    objectives: objectives.clone(),
+                    include_baseline: *include_baseline,
+                    postures: postures.clone(),
+                    from_search_path: from_search_path.clone(),
+                    from_search_hash: from_search_hash.clone(),
+                },
+                h,
+            )
+        },
     };
 
     manifest::build_manifest(
@@ -1821,6 +2199,7 @@ fn with_manifest_front_matter(body: &str, manifest_obj: Option<&RunManifest>) ->
         ManifestMode::Sensitivity { .. } => "sensitivity".to_string(),
         ManifestMode::Search { .. } => "search".to_string(),
         ManifestMode::Coevolve { .. } => "coevolve".to_string(),
+        ManifestMode::Robustness { .. } => "robustness".to_string(),
     };
     // Modes whose deterministic replay depends on a second RNG seed
     // beyond `mc_config.base_seed` surface that seed in the prose so an

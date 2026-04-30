@@ -965,6 +965,33 @@ Determinism is triple-seeded: `--coevolve-seed` drives the per-round sub-search 
 
 `--coevolve` is mutually exclusive with the other run modes including `--search`. The per-side flags (`--coevolve-rounds`, `--coevolve-attacker`, `--coevolve-defender`, `--coevolve-attacker-objective`, `--coevolve-defender-objective`, `--coevolve-method`, `--coevolve-trials`, `--coevolve-runs`, `--coevolve-seed`, `--coevolve-initial-mover`) all `require = "coevolve"` so a stray subflag without the mode is rejected at parse time. Bundled archetype: `scenarios/coevolution_demo.toml`.
 
+**Defender-posture robustness (`--robustness`, Epic I — round two).** Layered on top of `[strategy_space]` via a new sibling table:
+
+```toml
+[[strategy_space.attacker_profiles]]
+name = "opportunist"
+description = "High recon success but modest infiltrate."
+faction = "red"  # informational only — does not gate which paths the assignments may touch
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.recon.base_success_probability"
+value = 0.85
+[[strategy_space.attacker_profiles.assignments]]
+path = "kill_chain.red_op.phase.infiltrate.base_success_probability"
+value = 0.55
+```
+
+Each profile is a named full assignment to attacker-side parameter paths. The runner clones the scenario, applies the profile's assignments via `set_param`, then evaluates each defender posture against that fixed attacker. Per-profile validation rejects: empty `name`, duplicate `name` within the table, empty `assignments`, NaN/inf values, duplicate paths within a profile, and unknown faction tags.
+
+The `--robustness` CLI mode evaluates every (posture × profile) cell via Monte Carlo. Defender postures come from one of three sources:
+
+1. `--robustness-from-search <path>`: every Pareto-frontier trial in the saved `search.json` becomes a posture labeled `posture_<trial_index>`. The CLI re-hashes the file and the manifest records the SHA-256 so a stale source is rejected at `--verify` time.
+2. No source flag + `--robustness-skip-baseline=false` (default): only the natural-state baseline row is evaluated. Useful for sanity-checking that profiles apply cleanly before running a full search.
+3. (Future: inline `--robustness-posture <path=value>` flags.)
+
+Output: `robustness.json` (full per-cell summaries), `robustness_report.md` (per-objective rollup tables ranking postures by worst-case profile, plus cell matrices for small N), and the standard `manifest.json`. The runner has no RNG of its own — the cross-product is iterated deterministically and every cell reuses the same inner MC seed, so cell-to-cell deltas reflect parameter changes only. `ManifestMode::Robustness` records the inline posture list (so the manifest hash closes over the postures) plus the `from_search_path` / `from_search_hash` pair so a verify replay rebuilds an identical `RobustnessConfig`. Bundled archetype: `scenarios/defender_robustness_demo.toml`.
+
+**Path-collision semantics.** When a posture and a profile both assign to the same parameter path, the profile wins (it is applied second, after the posture). The schema does not enforce ownership separation because the dotted-path layer doesn't carry an ownership label; in practice, postures touch defender-controlled parameters and profiles touch attacker-controlled ones, so collisions are rare and typically express a deliberate "attacker action that bypasses a defender investment". Within a *single* posture or profile, duplicate paths are rejected by validation so the order-of-application is never ambiguous in either direction.
+
 ---
 
 ## Determinism guarantees

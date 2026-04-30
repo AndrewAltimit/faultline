@@ -301,6 +301,14 @@ pub fn run_coevolution(
         sub_scenario.strategy_space = StrategySpace {
             variables: mover_vars.clone(),
             objectives: vec![mover_cfg.objective.clone()],
+            // Sub-search ignores attacker profiles — the mover this
+            // round is searching over its own variables, not robustness-
+            // testing against scripted attackers. Carrying the parent
+            // scenario's profiles through would still parse cleanly,
+            // but explicitly clearing them prevents a future profile-
+            // dependent code path in `run_search` from accidentally
+            // engaging mid-coevolve.
+            attacker_profiles: Vec::new(),
         };
 
         // Per-round seed. Each round gets a distinct sampler so
@@ -876,6 +884,7 @@ mod tests {
                     },
                 ],
                 objectives: vec![],
+                attacker_profiles: Vec::new(),
             },
             networks: BTreeMap::new(),
         }
