@@ -302,27 +302,34 @@ mod tests {
     /// emit a heading. This locks in the "composer never asks
     /// 'should I call you?'" contract — moving the gate into the
     /// composer for any section would silently break it.
+    ///
+    /// Contract: only `Header` and `Methodology` may emit anything
+    /// for empty inputs. Every other section must produce an empty
+    /// string, because emitting even a bare heading would change
+    /// the manifest content hash for legacy scenarios that have no
+    /// data for that section.
     #[test]
     fn every_section_elides_cleanly_on_empty_inputs() {
         let summary = empty_summary();
         let scenario = minimal_scenario();
-        for section in monte_carlo_sections() {
+        // Indices in `monte_carlo_sections()` whose sections are
+        // unconditional. Pinned by position so a reordering of the
+        // array surfaces here as a test failure rather than silently
+        // permitting a different section to emit on empty input.
+        // 0 = Header, 17 = Methodology.
+        let unconditional_indices = [0usize, 17];
+        for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);
-            // Header and Methodology unconditionally render. Every
-            // other section must emit nothing for empty inputs.
-            // We can't name them by index without coupling to the
-            // ordering test, so instead assert that any output is
-            // either empty or does not start with `## ` for a
-            // non-header section. The unconditional sections are
-            // the only ones that emit headings for empty input;
-            // the rest must be silent.
-            if !out.is_empty() {
-                let starts_with_h2 = out.starts_with("## ");
-                let starts_with_h1 = out.starts_with("# ");
+            if unconditional_indices.contains(&idx) {
                 assert!(
-                    starts_with_h1 || starts_with_h2,
-                    "non-empty section output must start with a heading; got:\n{out}"
+                    !out.is_empty() && (out.starts_with("# ") || out.starts_with("## ")),
+                    "unconditional section at index {idx} must emit a heading; got:\n{out}"
+                );
+            } else {
+                assert!(
+                    out.is_empty(),
+                    "data section at index {idx} must be silent for empty inputs; got:\n{out}"
                 );
             }
         }
