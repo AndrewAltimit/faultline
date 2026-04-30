@@ -282,8 +282,9 @@ records all per-side knobs so `--verify` replays bit-identical, and a
 `COEVOLVE <status> rounds=N manifest_hash=...` line is printed on
 stdout for CI scripts. Bundled archetype: `scenarios/coevolution_demo.toml`.
 The implementation lives in `crates/faultline-stats/src/coevolve.rs`;
-the report renderer (`render_coevolve_markdown`) lives alongside the
-search renderer in `crates/faultline-stats/src/report.rs`.
+the report renderer (`render_coevolve_markdown`) lives in
+`crates/faultline-stats/src/report/coevolve.rs` (the report module is
+decomposed by section — see "Report module layout" below).
 
 **Engine model depth (Epic D — round one).** Three additions
 expand authoring expressiveness without touching the determinism
@@ -384,6 +385,38 @@ To match CI exactly (containerized):
 ```bash
 docker compose --profile ci run --rm rust-ci cargo test
 ```
+
+## Report module layout (R3-3)
+
+The Markdown report renderer was decomposed in R3-3 from a single
+`report.rs` into `crates/faultline-stats/src/report/` — one file per
+section.
+
+- `mod.rs` — public API (`render_markdown`, plus `pub use` re-exports
+  of the four other render functions), the `ReportSection` trait, and
+  the `monte_carlo_sections()` array that declares section ordering.
+- One file per Monte Carlo section (`header.rs`, `win_rates.rs`,
+  `feasibility.rs`, `phase_breakdown.rs`, `time_dynamics.rs`, etc.).
+  Each file defines a unit struct that `impl ReportSection` and lives
+  *only* in the array in `mod.rs`.
+- `comparison.rs`, `search.rs`, `coevolve.rs`, `robustness.rs` —
+  the four other report-type renderers (each with its own input shape).
+- `util.rs` — three helpers (`escape_md_cell`, `fmt_scalar`,
+  `confidence_word`) that more than one section consumes. Helpers used
+  by exactly one section live in that section's module.
+- `test_support.rs` — `empty_summary` / `minimal_scenario` fixtures
+  for per-section unit tests, gated behind `#[cfg(test)]`.
+
+**Adding a new section** — create one file in `report/` with a unit
+struct implementing `ReportSection`, then add one entry to the
+`monte_carlo_sections()` array in `mod.rs`. Section gating (elision
+when the underlying data is empty) lives in the `impl`, not the
+composer.
+
+**Determinism contract** — the rendered Markdown is part of the
+manifest content hash, so changing section ordering or adding any
+unconditional output flips every bundled scenario's `output_hash`
+and breaks `--verify`. The `verify-bundled` CI step catches this.
 
 ## Code Style
 

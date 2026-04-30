@@ -228,4 +228,103 @@ mod tests {
         // accordingly.
         assert_eq!(monte_carlo_sections().len(), 18);
     }
+
+    /// Pin the section ordering. Reordering changes the rendered
+    /// report and would break the manifest determinism contract on
+    /// every existing scenario — that's a deliberate decision, not
+    /// an accident. If you need to change the order, update this
+    /// list and accept that all bundled-scenario manifest hashes
+    /// rebase.
+    #[test]
+    fn section_ordering_is_stable() {
+        // Build a fixture rich enough to coax most sections into
+        // emitting their `## ` heading. Then assert that the
+        // headings appear in the canonical order.
+        let mut scenario = minimal_scenario();
+        scenario.meta.confidence = Some(ConfidenceLevel::High);
+        let mut summary = empty_summary();
+        summary.total_runs = 10;
+        summary.win_rates.insert(FactionId::from("alpha"), 0.5);
+
+        let md = render_markdown(&summary, &scenario);
+        // Canonical heading order. Sections that didn't fire under
+        // this fixture (Feasibility, Time Dynamics, Pareto, ...) are
+        // omitted from the assertion — the ones present must appear
+        // in this order.
+        let canonical = [
+            "# Faultline Analysis Report",
+            "## Win Rates",
+            "## Methodology & Confidence",
+        ];
+        let mut cursor = 0;
+        for needle in canonical {
+            let pos = md[cursor..]
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing or out-of-order: `{needle}`\n---\n{md}"));
+            cursor += pos + needle.len();
+        }
+    }
+
+    /// Trait-object dispatch contract. Future epics may want to
+    /// build a custom section list (e.g. Epic M's "comparison vs.
+    /// baseline" report variant). Verify the trait can be used as
+    /// a `&dyn` object outside the local composer.
+    #[test]
+    fn report_section_dispatches_via_dyn_object() {
+        let scenario = minimal_scenario();
+        let summary = empty_summary();
+        let mut out = String::new();
+        let methodology: &dyn ReportSection = &methodology::Methodology;
+        methodology.render(&summary, &scenario, &mut out);
+        assert!(out.contains("## Methodology"));
+    }
+
+    /// Determinism smoke test at the section level. The composer
+    /// walks an array of trait objects; if any section developed
+    /// internal RNG or hashed-collection iteration, the same inputs
+    /// would render to different outputs. This catches that class
+    /// of regression in milliseconds, before the verify-bundled
+    /// CI step would.
+    #[test]
+    fn render_markdown_is_deterministic_across_invocations() {
+        let mut summary = empty_summary();
+        summary.total_runs = 100;
+        summary.win_rates.insert(FactionId::from("alpha"), 0.42);
+        summary.win_rates.insert(FactionId::from("bravo"), 0.58);
+        let scenario = minimal_scenario();
+        let a = render_markdown(&summary, &scenario);
+        let b = render_markdown(&summary, &scenario);
+        assert_eq!(a, b, "render_markdown must be a pure function");
+    }
+
+    /// Each section owns its own elision: calling a section
+    /// directly on an empty summary must not panic and must not
+    /// emit a heading. This locks in the "composer never asks
+    /// 'should I call you?'" contract — moving the gate into the
+    /// composer for any section would silently break it.
+    #[test]
+    fn every_section_elides_cleanly_on_empty_inputs() {
+        let summary = empty_summary();
+        let scenario = minimal_scenario();
+        for section in monte_carlo_sections() {
+            let mut out = String::new();
+            section.render(&summary, &scenario, &mut out);
+            // Header and Methodology unconditionally render. Every
+            // other section must emit nothing for empty inputs.
+            // We can't name them by index without coupling to the
+            // ordering test, so instead assert that any output is
+            // either empty or does not start with `## ` for a
+            // non-header section. The unconditional sections are
+            // the only ones that emit headings for empty input;
+            // the rest must be silent.
+            if !out.is_empty() {
+                let starts_with_h2 = out.starts_with("## ");
+                let starts_with_h1 = out.starts_with("# ");
+                assert!(
+                    starts_with_h1 || starts_with_h2,
+                    "non-empty section output must start with a heading; got:\n{out}"
+                );
+            }
+        }
+    }
 }

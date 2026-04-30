@@ -1280,7 +1280,7 @@ mod tests {
         assert_eq!(detect_cycle_period(&h, 1e-9), None);
     }
 
-    // ----- Markdown renderer (smoke checks; renderer is in report.rs) -----
+    // ----- Markdown renderer (smoke checks; renderer lives in report/coevolve.rs) -----
 
     fn dummy_summary() -> MonteCarloSummary {
         MonteCarloSummary {

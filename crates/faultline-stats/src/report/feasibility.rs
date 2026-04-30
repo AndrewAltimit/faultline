@@ -7,9 +7,7 @@
 use std::fmt::Write;
 
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::{
-    ConfidenceInterval, ConfidenceLevel, FeasibilityConfidence, FeasibilityRow, MonteCarloSummary,
-};
+use faultline_types::stats::{ConfidenceInterval, ConfidenceLevel, MonteCarloSummary};
 
 use super::ReportSection;
 use super::util::escape_md_cell;
@@ -81,8 +79,3 @@ fn fmt_cell(value: f64, conf: ConfidenceLevel, ci: Option<&ConfidenceInterval>) 
         None => format!("{:.2} [{}]", value, tag),
     }
 }
-
-// Anchor types touched only via field-access through `summary.feasibility_matrix`
-// so the unused-import lint stays quiet on a `dyn`-narrow trait API.
-#[allow(dead_code)]
-fn _type_anchor(_r: &FeasibilityRow, _c: &FeasibilityConfidence) {}
