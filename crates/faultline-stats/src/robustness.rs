@@ -120,11 +120,17 @@ pub struct RobustnessConfig {
     pub mc_config: MonteCarloConfig,
     /// Objectives to evaluate per cell. Empty `objectives` is rejected
     /// — robustness ranking needs at least one metric to rank against.
-    /// Unlike search, robustness does **not** consult
-    /// `scenario.strategy_space.objectives` as a fallback: an analyst
-    /// may want to evaluate robustness against a different metric than
-    /// the search optimised for, so requiring an explicit list here
-    /// makes that decision visible.
+    /// At the **library level**, this runner does not consult
+    /// `scenario.strategy_space.objectives` as a fallback: callers must
+    /// pass an explicit list, since an analyst may want to evaluate
+    /// robustness against a different metric than the search optimised
+    /// for and the runner refuses to silently pick one.
+    ///
+    /// The `faultline-cli` `--robustness-objective` flag layers its own
+    /// fallback on top of this contract: when the flag is omitted, the
+    /// CLI populates this field from the scenario's
+    /// `[strategy_space].objectives` before constructing the config.
+    /// Library consumers do not get that fallback for free.
     pub objectives: Vec<SearchObjective>,
 }
 

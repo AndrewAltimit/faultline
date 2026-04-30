@@ -99,7 +99,7 @@ fi
 echo "[verify-robustness] step 4: hash-mismatch rejection on tampered source"
 echo " " >> "$WORKDIR_REL/search/search.json"
 if "$BIN" "$SCENARIO" --verify "$WORKDIR_REL/robustness/manifest.json" \
-        -o "$WORKDIR_REL/replay-tampered" --quiet 2>/dev/null; then
+        -o "$WORKDIR_REL/replay-tampered" --quiet; then
     echo "[verify-robustness] FAIL: verify accepted tampered search.json"
     exit 1
 fi
