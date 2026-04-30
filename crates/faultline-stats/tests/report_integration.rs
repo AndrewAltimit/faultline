@@ -2,10 +2,10 @@
 //!
 //! Builds a minimal but non-trivial scenario, runs the Monte Carlo
 //! pipeline, and asserts on the structure of the rendered Markdown
-//! report. This catches wiring regressions the unit tests in
-//! `report.rs` cannot — specifically that `MonteCarloRunner` populates
-//! the new `win_rate_cis` / `FeasibilityRow.ci_95` fields, and that
-//! `render_markdown` emits the new sections in response.
+//! report. This catches wiring regressions the per-section unit tests
+//! in the `report/` module cannot — specifically that `MonteCarloRunner`
+//! populates the new `win_rate_cis` / `FeasibilityRow.ci_95` fields, and
+//! that `render_markdown` emits the new sections in response.
 
 use std::collections::BTreeMap;
 
