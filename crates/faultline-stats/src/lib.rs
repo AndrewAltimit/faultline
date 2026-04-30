@@ -13,6 +13,7 @@ pub mod manifest;
 pub mod morris;
 pub mod network_metrics;
 pub mod report;
+pub mod robustness;
 pub mod search;
 pub mod sensitivity;
 pub mod time_dynamics;

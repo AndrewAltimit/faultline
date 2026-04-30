@@ -98,6 +98,32 @@ pub enum ManifestMode {
         #[serde(default)]
         compute_baseline: bool,
     },
+    /// `--robustness` — defender-posture robustness sweep (Epic I
+    /// round two). Records the postures evaluated, the source the CLI
+    /// pulled them from, and the objective labels so a verify replay
+    /// rebuilds an identical `RobustnessConfig`.
+    ///
+    /// `from_search_path` and `from_search_hash` are populated when
+    /// the postures came from a saved `search.json`; the verify path
+    /// re-reads that file, hashes it, and refuses on mismatch — same
+    /// safety pattern as `--compare`. When the postures came from
+    /// inline data (just the natural-state baseline), both fields are
+    /// `None`.
+    ///
+    /// Postures are recorded as a list of `(label, assignments)` pairs.
+    /// The list is part of the manifest hash so swapping a posture
+    /// invalidates citation. Profile assignments are not recorded —
+    /// they live on the scenario, so the scenario hash already covers
+    /// them.
+    Robustness {
+        objectives: Vec<String>,
+        include_baseline: bool,
+        postures: Vec<ManifestPosture>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_search_path: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_search_hash: Option<String>,
+    },
     /// `--coevolve` — adversarial co-evolution (Epic H round two).
     /// Stores the side configs as labels + faction IDs + per-side
     /// trials/method so the verify path can rebuild a `CoevolveConfig`
@@ -123,6 +149,26 @@ pub enum ManifestMode {
         /// runtime default ever shifts.
         assignment_tolerance: f64,
     },
+}
+
+/// One defender posture as recorded in a manifest. Pairs with
+/// [`ManifestMode::Robustness`].
+///
+/// Distinct from `crate::robustness::DefenderPosture` so the manifest
+/// schema can evolve independently of the runner's in-memory shape
+/// (e.g. if the runner gains a `metadata` field, the manifest can
+/// stay backwards-compatible by not mirroring it).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ManifestPosture {
+    pub label: String,
+    pub assignments: Vec<ManifestAssignment>,
+}
+
+/// One (path, value) assignment recorded inside a [`ManifestPosture`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ManifestAssignment {
+    pub path: String,
+    pub value: f64,
 }
 
 /// The Monte Carlo parameters that, combined with the scenario, fix
@@ -224,6 +270,16 @@ pub fn summary_hash(summary: &MonteCarloSummary) -> Result<String, serde_json::E
 /// run results).
 pub fn output_hash<T: Serialize>(output: &T) -> Result<String, serde_json::Error> {
     canonical_json_hash(output)
+}
+
+/// SHA-256 hex of arbitrary bytes. Lives here so external callers
+/// (currently the CLI's `--robustness-from-search` source-file
+/// integrity check) don't need a direct `sha2` dependency just to
+/// hash a single byte slice.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
 }
 
 /// Best-effort host platform descriptor — `{arch}-{os}`. This is

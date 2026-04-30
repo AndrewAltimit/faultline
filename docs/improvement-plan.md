@@ -510,18 +510,81 @@ configuration?" Distinct enough to ship independently.
       CIs on rate-valued win-rate objectives. Anchored on a "do
       nothing" baseline trial that the search runner now computes
       alongside the sampled trials.
-- [ ] Sensitivity of the optimal posture to assumed attacker strategy
+- [x] Sensitivity of the optimal posture to assumed attacker strategy
       (robustness analysis — "this defender wins if the attacker is
       Profile A or C, but not Profile B")
 
-**Status:** Epic I **closed** (round one). Single PR (branch
-`epic-i-defender-posture`) shipped three of the four items — the
-"single-side defender posture optimization with Pareto frontier and
-counter-recommendation" arc the epic was scoped against. Robustness
-analysis (the attacker-strategy sensitivity sweep) is the deferred
-fourth item and slots naturally into a round-two PR alongside the
-Epic H adversarial-co-evolution loop, since both involve nested
-search across attacker and defender spaces.
+**Status:** Epic I **closed**. Round-one shipped three of four items.
+Round-two (single PR, branch `epic-i-robustness-analysis`) closed the
+deferred fourth item — defender-posture robustness analysis — by
+adding a `[strategy_space.attacker_profiles]` schema extension on
+`StrategySpace`, a new `faultline_stats::robustness` runner, the
+`--robustness` CLI mode (with `--robustness-from-search <path>` to
+lift Pareto postures from a saved search artifact), a new
+`render_robustness_markdown` report section, and a
+`ManifestMode::Robustness` variant that records the posture list
+inline plus the SHA-256 of any source `search.json` so `--verify`
+refuses a stale source file. The runner has no RNG — the
+posture × profile cross-product is iterated deterministically with
+the same inner MC seed across cells, so cell-to-cell deltas reflect
+parameter changes only. Per-posture rollups (worst / best / mean /
+stdev across profiles) are direction-aware on the objective so a
+`MinimizeMaxChainSuccess` worst is the row max (chain succeeds most)
+rather than the row min. Bundled archetype:
+`scenarios/defender_robustness_demo.toml` — three attacker profiles
+(`opportunist` / `committed` / `stealth`) over a 2x2 defender grid;
+the demo run exposes a posture that cuts chain success by 3.7× under
+two profiles but is degraded by 0× under the stealth profile, exactly
+the analytical signal the epic was after.
+
+What landed in round two:
+
+- New `AttackerProfile` and `ProfileAssignment` types on
+  `faultline_types::strategy_space`. `Scenario.strategy_space.attacker_profiles`
+  is `#[serde(default, skip_serializing_if = "Vec::is_empty")]` so
+  legacy scenarios stay byte-identical. Engine validation rejects
+  empty paths, duplicate profile names, empty assignment lists,
+  unknown faction tags, NaN values, and duplicate paths within a
+  profile.
+- New `faultline_stats::robustness` module with `RobustnessConfig` /
+  `DefenderPosture` / `RobustnessCell` / `PostureRollup` /
+  `NamedValue` / `RobustnessResult`. `run_robustness(scenario, config)`
+  validates posture and profile paths via `set_param` round-trips
+  before doing any expensive MC work; structurally-bad input surfaces
+  as `InvalidConfig` with the bad path named in the error.
+- CLI flags: `--robustness`, `--robustness-from-search <path>`,
+  `--robustness-runs N`, `--robustness-objective <metric>` (repeatable),
+  `--robustness-skip-baseline`. The `--robustness-from-search` path is
+  rejected if absolute or contains parent traversals (same safety
+  pattern `--compare` uses for its alt scenario). The CLI lifts every
+  Pareto-frontier trial from the saved search and labels each posture
+  `posture_<trial_index>` for stable cross-referencing.
+- `ManifestMode::Robustness` records `objectives` (as labels), the
+  full inline posture list, `from_search_path`, and `from_search_hash`.
+  The verify path re-reads the source file (when present) and refuses
+  on hash mismatch. Posture replay is bit-identical without
+  consulting the source file because the posture list is part of the
+  manifest hash. New `manifest::sha256_hex(&[u8])` helper in the
+  stats crate so the CLI doesn't need a direct `sha2` dep.
+- `render_robustness_markdown` produces five sections: scenario
+  metadata, attacker profile metadata, per-posture rollup tables (one
+  per objective), full cell matrices (one per objective, elided when
+  posture × profile > 64), and a reproducibility footer. Cell
+  matrices are direction-blind — the rollup tables already convey the
+  direction-aware analyst question.
+- 14 integration tests in `tests/epic_i_robustness.rs` cover
+  determinism, baseline prepending, cell-count invariants, the
+  worst/best direction-awareness regression that caught my first-draft
+  bug, all four validation rejections, manifest round-trip, and the
+  rendered-report contains-required-sections check. Plus 3 unit tests
+  in the runner module covering `pick_extreme` ordering and the
+  config-rejection branches without needing a full scenario.
+
+All schema additions are `#[serde(default)]` so legacy scenarios
+load unchanged; all 15 bundled scenarios still verify bit-identical
+via the manifest determinism contract; cargo deny / clippy / fmt /
+verify-bundled / verify-migration / grep-guard / JS tests / WASM
+build all clean.
 
 What landed:
 
