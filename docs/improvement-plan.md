@@ -1076,14 +1076,46 @@ area.
 
   See `crates/faultline-engine/tests/audit_unread_params.rs` for the
   pinning regressions covering the round-one wired parameters.
-- **R3-3: Decompose `report.rs`.** The single 2000-line file
-  emitting one Markdown string is approaching the legibility
-  ceiling. Refactor to a `ReportSection` trait with composable
-  renderers — each new epic ships a section without reading the
-  whole file, conditional elision and section ordering become
-  declarative, and per-section unit testing becomes possible.
-  Should land before the next analytics-heavy epic (M, N) so
-  those don't compound the problem.
+- **R3-3: Decompose `report.rs`.** **Closed.** Single PR (branch
+  `r3-3-report-decompose`) split the 2258-line `report.rs` into a
+  `report/` directory of 23 focused files: 18 Monte Carlo section
+  modules (one section per file), 4 modules for the other report
+  types (`comparison.rs`, `search.rs`, `coevolve.rs`,
+  `robustness.rs`), and `util.rs` for the three helpers (`escape_md_cell`,
+  `fmt_scalar`, `confidence_word`) that more than one section consumes.
+  Helpers used by exactly one section moved into that section's
+  module rather than into `util.rs` — keeps each module self-contained
+  and avoids growing a kitchen-sink helper file. A new `ReportSection`
+  trait + an array of `&'static dyn ReportSection` in `mod.rs` make
+  section ordering declarative: adding a new section is a matter of
+  creating one file plus one entry in the array, with section gating
+  (elision when the underlying data is empty) living in the `impl`
+  rather than as conditionals in the composer. The composer's body
+  is now five lines.
+
+  Section gating is structurally identical to the pre-decompose form,
+  so output is byte-stable for a fixed `(summary, scenario)` pair —
+  proven by all 15 bundled scenarios verifying bit-identical against
+  their pre-decompose manifest hashes via the verify-bundled CI step,
+  plus the verify-robustness pipeline still passing end-to-end.
+
+  The plan's stated benefit "per-section unit testing becomes
+  possible" is demonstrated by 6 new per-section unit tests (in
+  `header.rs`, `win_rates.rs`, `continuous_metrics.rs`,
+  `environment_schedule.rs`) covering elision paths, banner-glyph
+  variants, the bootstrap-CI-header-must-mirror-cell-content invariant,
+  and the cycle-activation glyph rendering. These pin behavior the
+  comments in the renderer documented but had no test coverage for —
+  exactly the wins the decompose was meant to unlock. Shared test
+  fixtures (`empty_summary` / `minimal_scenario`) live in `report/test_support.rs`
+  behind `#[cfg(test)]` so they're free in release builds.
+
+  The refactor unblocks the next analytics-heavy epics (M, N): future
+  sections (e.g. belief-state traces from Epic M, calibration-confidence
+  callouts from Epic N) ship as one new file plus one array entry
+  instead of editing a 2000-line monolith. fmt / clippy / cargo-deny
+  / verify-bundled / verify-migration / verify-robustness / grep-guard
+  / JS tests / WASM build all clean.
 - **R3-4: Generalize the leadership morale-cap.** The current
   Epic-D leadership cadre couples decapitation to morale via a
   separate per-tick clamp step in `tick::apply_leadership_caps`.
