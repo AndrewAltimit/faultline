@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{DefenderRoleId, FactionId, ForceId, InstitutionId, RegionId, TechCardId};
+use crate::ids::{
+    DefenderRoleId, EventId, FactionId, ForceId, InstitutionId, RegionId, TechCardId,
+};
 use crate::strategy::Doctrine;
 
 /// A participant in the simulation.
@@ -54,6 +56,18 @@ pub struct Faction {
     /// behavior (faction has no decapitation surface to expose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leadership: Option<LeadershipCadre>,
+    /// Declarative alliance-fracture rules (Epic D round two). Names
+    /// conditions under which this faction's diplomatic stance toward
+    /// a counterparty flips — typically `Cooperative` / `Allied` ->
+    /// `Hostile` when the counterparty is publicly attributed for an
+    /// attack, takes unsustainable casualties, etc. Each rule fires
+    /// at most once per run (latched via `fired_fractures` on the
+    /// runtime state). Empty / absent = legacy behavior (alliances
+    /// never break mid-run). Engine validation rejects unknown
+    /// counterparty / attacker / event ids and out-of-range
+    /// thresholds at scenario load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alliance_fracture: Option<AllianceFracture>,
 }
 
 /// A faction's leadership cadre — ranks plus succession dynamics.
@@ -372,11 +386,111 @@ pub struct DiplomaticStance {
 }
 
 /// Levels of diplomatic relations.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Default` = `Neutral` so `..Default::default()` spread in test
+/// fixtures lands on the most innocuous stance; switching this default
+/// would silently flip baseline scenario behavior.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Diplomacy {
     War,
     Hostile,
+    #[default]
     Neutral,
     Cooperative,
     Allied,
+}
+
+/// Declarative alliance-fracture configuration (Epic D round two).
+///
+/// Authors describe coalitions as static at scenario start (via
+/// `Faction.diplomacy`) and then list the conditions under which each
+/// alliance can break. The engine evaluates rules at end-of-tick after
+/// the campaign phase, so a fracture triggered by attribution from a
+/// chain that succeeded *this* tick is observable on the next tick's
+/// downstream effects (e.g. an Allied faction switching to Hostile
+/// against the attacker).
+///
+/// Each rule fires at most once per run; the runtime tracks fired rule
+/// ids on `SimulationState.fired_fractures`. Per-run fracture events
+/// are recorded on `RunResult.fracture_events` and aggregated across
+/// runs by `MonteCarloSummary.alliance_dynamics`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct AllianceFracture {
+    /// One or more fracture rules. Empty `rules` is rejected at
+    /// scenario load (an opted-in empty `alliance_fracture` is almost
+    /// certainly an unfilled author template).
+    pub rules: Vec<FractureRule>,
+}
+
+/// One alliance-fracture rule.
+///
+/// `id` is a stable identifier used by the report and the runtime
+/// `fired_fractures` set; it must be unique within a faction's
+/// `alliance_fracture.rules`. `counterparty` is the faction whose
+/// stance changes — the relationship being fractured runs from this
+/// faction *to* `counterparty`. `condition` evaluates against
+/// `SimulationState` at end of tick.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FractureRule {
+    pub id: String,
+    pub counterparty: FactionId,
+    /// Stance to flip to when the rule fires. Defaults to `Hostile`
+    /// — the most common analyst use case is "Cooperative -> Hostile
+    /// when attribution lands."
+    #[serde(default = "default_fracture_stance")]
+    pub new_stance: Diplomacy,
+    pub condition: FractureCondition,
+    /// Optional human-readable label surfaced by the report. Free
+    /// text; not consumed by the engine.
+    #[serde(default)]
+    pub description: String,
+}
+
+fn default_fracture_stance() -> Diplomacy {
+    Diplomacy::Hostile
+}
+
+/// Conditions under which an alliance fractures.
+///
+/// All thresholds are evaluated at end-of-tick after the campaign
+/// phase. Pure functions of `SimulationState` plus the in-flight
+/// campaign reports — no RNG, so determinism follows from the
+/// existing engine contract.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum FractureCondition {
+    /// Mean attribution confidence across all in-flight kill chains
+    /// owned by `attacker` is at or above `threshold`. Models a
+    /// covert operation losing its protective ambiguity — once the
+    /// attribution lands publicly, an Allied counterparty can no
+    /// longer politically sustain cooperation with the attacker.
+    AttributionThreshold {
+        attacker: FactionId,
+        /// Threshold in `[0, 1]`. Fires when measured >= threshold.
+        threshold: f64,
+    },
+    /// This faction's runtime morale is at or below `floor`. Models
+    /// a coalition partner losing the political will to remain
+    /// engaged.
+    MoraleFloor { floor: f64 },
+    /// Political tension is at or above `threshold`. Models
+    /// environmental pressure breaking a fragile coalition without
+    /// any single attribution event.
+    TensionThreshold { threshold: f64 },
+    /// A specific event has fired in the run. Most permissive form
+    /// — gives authors full control over fracture triggers via the
+    /// existing event scaffolding (e.g. an event with custom prose
+    /// that fires on a tech-driven trigger then fractures an
+    /// alliance).
+    EventFired { event: EventId },
+    /// This faction's strength has dropped by at least
+    /// `delta_fraction` of its starting value. Models a coalition
+    /// partner taking unsustainable casualties.
+    StrengthLossFraction {
+        /// Threshold in `[0, 1]`. Fires when
+        /// `(initial - current) / initial >= delta_fraction`. A
+        /// faction that started at zero strength never fires this
+        /// condition (the divisor would be zero).
+        delta_fraction: f64,
+    },
 }

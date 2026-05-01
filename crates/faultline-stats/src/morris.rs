@@ -525,6 +525,7 @@ mod tests {
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
             leadership: None,
+            alliance_fracture: None,
         }
     }
 

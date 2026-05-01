@@ -166,14 +166,102 @@ all at once — each is substantial.
 - [ ] Info-op narrative competition (so `MediaEvent` isn't
       fire-and-forget)
 - [x] Weather / time-of-day modifiers on terrain
-- [ ] Coalition / alliance fracture mechanic (beyond
+- [x] Coalition / alliance fracture mechanic (beyond
       `Foreign.is_proxy` flag)
 - [ ] Refugee / displacement flows with cross-regional propagation
 - [x] `BranchCondition::OrAny` for prerequisite OR logic
 
-**Status:** Epic D **closed** (round one). Single PR (branch
-`epic-d-engine-depth`) shipped three of the seven items — the
-"pick 2–3" bar this epic was scoped to. (1) `BranchCondition::OrAny`
+**Status:** Epic D **round one closed**, **round two extended with
+coalition fracture**. Round one (branch `epic-d-engine-depth`)
+shipped three of the seven items — the "pick 2–3" bar this epic was
+scoped to.
+
+**Round two (coalition fracture).** Single PR (branch
+`epic-d-coalition-fracture`) closed the coalition / alliance
+fracture mechanic and wired the previously-unhandled
+`EventEffect::DiplomacyChange` event effect at the same time. What
+landed:
+
+- New `Faction.alliance_fracture` schema with `FractureRule {
+  id, counterparty, new_stance, condition, description }`. Five
+  `FractureCondition` variants — `AttributionThreshold {
+  attacker, threshold }` (mean attribution across attacker's
+  in-flight chains crosses threshold), `MoraleFloor { floor }`
+  (faction's morale drops to/below floor), `TensionThreshold {
+  threshold }` (political tension reaches threshold),
+  `EventFired { event }` (named event has fired in the run), and
+  `StrengthLossFraction { delta_fraction }` (faction has lost at
+  least N% of its starting strength). All five evaluate at end-of-
+  tick after the campaign phase via a new `fracture_phase` in
+  `crates/faultline-engine/src/fracture.rs`. One-shot semantics
+  via `SimulationState.fired_fractures`. Pure function of state —
+  no RNG, so determinism follows from the existing engine
+  contract.
+- Engine validation rejects empty `alliance_fracture` blocks,
+  unknown counterparties / attackers / events, self-targeting
+  rules, duplicate rule ids within a faction, NaN / out-of-range
+  thresholds, and `AttributionThreshold` against a faction that
+  owns no kill chain (the silent-no-op shape — mean would always
+  be 0). Catches authoring mistakes at scenario load instead of
+  at runtime.
+- `EventEffect::DiplomacyChange { faction_a, faction_b,
+  new_stance }` is now wired in `tick.rs::apply_event_effects` —
+  populates `SimulationState.diplomacy_overrides`, the same map
+  the fracture phase writes to. The override map is direction-
+  aware; symmetric flips emit two events. Resolution priority
+  (`fracture::current_stance`): runtime overrides ⪰
+  `Faction.diplomacy` ⪰ `Diplomacy::Neutral`.
+- Per-run output on `RunResult.fracture_events` (one entry per
+  firing, with previous and new stance captured live so a chain
+  of fractures records each transition correctly). Cross-run
+  rollup on `MonteCarloSummary.alliance_dynamics` aggregates per-
+  rule fire rate, mean fire tick, fire-tick samples, and the
+  terminal-stance distribution across runs. Both fields skip
+  serialization when empty/None so legacy-scenario manifest
+  hashes are unchanged.
+- New `## Alliance Dynamics` report section
+  (`crates/faultline-stats/src/report/alliance_dynamics.rs`).
+  Per-rule table with fire rate (with explicit `(fired/total)`
+  count), mean fire tick (`—` for unfired rules), and the
+  terminal-stance histogram. Elides entirely when no scenario
+  declares an `alliance_fracture` block.
+- `Diplomacy` gained `Default`, `PartialOrd`, `Ord`, and `Copy`
+  so it can key `BTreeMap`s, be spread via `..Default::default()`,
+  and round-trip cheaply through the override map.
+- `SimulationState` gained four serde-default fields:
+  `diplomacy_overrides`, `fired_fractures`,
+  `initial_faction_strengths` (snapshot for the strength-loss
+  condition), and `fracture_events`. All zero-overhead for
+  scenarios with no rules.
+- Bundled `scenarios/coalition_fracture_demo.toml`: three-faction
+  archetype where a Cooperative `gray_partner` declares two
+  fracture rules against `red_attacker`. Demo run produces
+  ~22% attribution-driven fracture rate at tick ~13 and 100%
+  tension-driven fracture rate at tick ~23 — exactly the
+  analytical signal "P(coalition breaks under this attribution
+  profile) given the run conditions" the epic was after. All 16
+  bundled scenarios still verify bit-identical via the manifest
+  determinism contract.
+- 18 integration tests in
+  `crates/faultline-engine/tests/epic_d_alliance_fracture.rs`
+  cover all 9 validation rejections, the four engine-side
+  condition variants, one-shot semantics, the
+  `EventEffect::DiplomacyChange` wiring, MC determinism under
+  fixed seed, the legacy-zero-overhead contract, and the bundled
+  demo's analytical signal. Plus 4 module-level unit tests in
+  `alliance_dynamics.rs` covering the cross-run rollup logic and
+  3 in the report renderer covering elision and rendering of
+  fired/unfired rules.
+
+The remaining four round-two items (supply-network interdiction
+on top of Epic L, multi-front resource contention beyond Epic K,
+info-op narrative competition, refugee flows) stay deferred. fmt /
+clippy / cargo deny / verify-bundled / verify-migration /
+verify-robustness / grep-guard / JS tests / WASM build all clean.
+
+The original round-one writeup follows.
+
+**Round one** (branch `epic-d-engine-depth`) shipped three items. (1) `BranchCondition::OrAny`
 adds an OR composition over inner conditions with short-circuit
 left-to-right evaluation; the engine-side escalation-window walker
 recurses through it so an `EscalationThreshold` nested in an `OrAny`
@@ -197,7 +285,8 @@ Lanchester outcomes. Faction becomes leaderless when the rank index
 passes the cadre — morale floors at zero and further strikes saturate
 the index without going negative. The remaining four items
 (supply-network graph, info-op competition, coalition fracture,
-refugee flows) are deferred. All schema additions are
+refugee flows) were deferred to round two; coalition fracture
+landed in the round-two PR documented above. All schema additions are
 `#[serde(default)]` so legacy scenarios load unchanged; all 10
 bundled scenarios still verify bit-identical via the manifest
 determinism contract; cargo deny / clippy / fmt / verify-bundled /

@@ -128,6 +128,10 @@ fn make_ai_test_state() -> SimulationState {
         defender_queues: BTreeMap::new(),
         network_states: std::collections::BTreeMap::new(),
         defender_over_budget_tick: None,
+        diplomacy_overrides: BTreeMap::new(),
+        fired_fractures: std::collections::BTreeSet::new(),
+        initial_faction_strengths: BTreeMap::new(),
+        fracture_events: vec![],
     }
 }
 

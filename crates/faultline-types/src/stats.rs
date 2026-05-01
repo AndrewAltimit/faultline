@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::faction::Diplomacy;
 use crate::ids::{
     DefenderRoleId, EdgeId, EventId, FactionId, InfraId, KillChainId, NetworkId, NodeId, PhaseId,
     RegionId,
@@ -66,6 +67,31 @@ pub struct RunResult {
     /// runs by [`MonteCarloSummary::network_summaries`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_reports: BTreeMap<NetworkId, NetworkReport>,
+    /// Log of every alliance-fracture firing in this run (Epic D
+    /// round two), in tick order. Each entry records which faction's
+    /// stance flipped against which counterparty, the rule that
+    /// fired, and the previous / new stance. Empty when the scenario
+    /// declares no `alliance_fracture` rules or none of its
+    /// conditions were satisfied during the run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fracture_events: Vec<FractureEvent>,
+}
+
+/// One alliance-fracture firing (Epic D round two).
+///
+/// Captured at the tick when the rule's condition was first satisfied.
+/// `previous_stance` reflects the live runtime stance — including any
+/// prior `EventEffect::DiplomacyChange` overrides — at the moment of
+/// firing, so a chain of fractures (Allied -> Cooperative -> Hostile)
+/// records each leg correctly.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FractureEvent {
+    pub tick: u32,
+    pub faction: FactionId,
+    pub counterparty: FactionId,
+    pub rule_id: String,
+    pub previous_stance: Diplomacy,
+    pub new_stance: Diplomacy,
 }
 
 /// End-of-run snapshot of one network's resilience trajectory (Epic L).
@@ -247,6 +273,59 @@ pub struct MonteCarloSummary {
     /// fragmentation counts across runs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_summaries: BTreeMap<NetworkId, NetworkSummary>,
+    /// Per-alliance-rule fracture analytics aggregated across runs
+    /// (Epic D round two). `None` when no scenario faction declares
+    /// an `alliance_fracture` rule — the report section elides
+    /// entirely in that case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alliance_dynamics: Option<AllianceDynamics>,
+}
+
+/// Cross-run alliance-fracture analytics (Epic D round two).
+///
+/// Each [`FractureRuleSummary`] aggregates one declared rule across
+/// the full Monte Carlo batch. `final_stance_distribution` reports
+/// how many runs ended at each terminal stance for the
+/// (faction, counterparty) pair; the sum across stances equals
+/// `n_runs` because every run contributes exactly one terminal
+/// stance — including the scenario's authored baseline for runs
+/// where the rule never fired.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AllianceDynamics {
+    pub rules: Vec<FractureRuleSummary>,
+}
+
+/// Aggregate fracture analytics for one declared rule across runs.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FractureRuleSummary {
+    pub faction: FactionId,
+    pub counterparty: FactionId,
+    pub rule_id: String,
+    /// Free-text label copied from `FractureRule.description`. Empty
+    /// when the author didn't supply one.
+    #[serde(default)]
+    pub description: String,
+    /// Total runs in the batch. Stored explicitly so the report can
+    /// render `fire_count / n_runs` without consulting the parent
+    /// summary.
+    pub n_runs: u32,
+    /// Number of runs where this rule fired at any tick.
+    pub fire_count: u32,
+    /// `fire_count / n_runs`, in `[0, 1]`.
+    pub fire_rate: f64,
+    /// Mean tick of firing across runs that fired. `None` when the
+    /// rule never fired in any run (so any value would be misleading
+    /// — empty support).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_fire_tick: Option<f64>,
+    /// Tick of firing in each run that fired, in ascending order.
+    /// Empty when `fire_count == 0`. Surfaced so the report can
+    /// render percentile timing if it wants to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fire_ticks: Vec<u32>,
+    /// Distribution over terminal stance at run end. Sums to
+    /// `n_runs`. Stances absent from the map have count zero.
+    pub final_stance_distribution: BTreeMap<Diplomacy, u32>,
 }
 
 /// Aggregate per-run network analytics (Epic L).
@@ -752,4 +831,8 @@ pub struct DeltaEncodedRun {
     /// Network reports — preserved verbatim, not delta-encoded.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_reports: BTreeMap<NetworkId, NetworkReport>,
+    /// Alliance-fracture event log — preserved verbatim. Empty when
+    /// no scenario faction declares an `alliance_fracture` block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fracture_events: Vec<FractureEvent>,
 }

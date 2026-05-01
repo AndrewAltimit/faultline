@@ -106,6 +106,19 @@ cargo run -p faultline-cli -- scenarios/coevolution_demo.toml --coevolve \
     --coevolve-trials 4 --coevolve-runs 10 \
     --coevolve-rounds 6 --coevolve-seed 1
 
+# Coalition fracture demo (Epic D — round two). The scenario declares
+# two alliance_fracture rules on a Cooperative `gray_partner` faction:
+# one trips on attribution accumulation against `red_attacker`'s
+# kill chain, the other on political tension. The report's
+# `## Alliance Dynamics` section ranks per-rule fire rate, mean fire
+# tick, and terminal-stance distribution across runs.
+#
+# Note: alliance fracture is currently *analytical accounting* — the
+# engine does not yet consume the post-fracture stance for combat /
+# AI / victory dynamics. The fracture is observable in the report and
+# in `RunResult.fracture_events`, not in tick-level run behavior.
+cargo run -p faultline-cli -- scenarios/coalition_fracture_demo.toml -n 32
+
 # Replay a saved manifest and assert bit-identical output (Epic Q)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
     --verify ./output/manifest.json
@@ -314,6 +327,60 @@ unchanged.
   degraded value directly. Past-end = leaderless: morale floors at
   zero. Validation rejects decapitation against a faction without a
   cadre as an authoring mistake (silent runtime no-op otherwise).
+
+**Coalition fracture (Epic D — round two).** Adds declarative
+alliance-fracture rules so authors can express "this alliance breaks
+when conditions X, Y, Z are met". Pairs with the previously-
+unhandled `EventEffect::DiplomacyChange` event effect, which is now
+wired in `tick.rs::apply_event_effects`. Both write to a shared
+runtime override map (`SimulationState.diplomacy_overrides`) so
+runtime stance is direction-aware and queryable via
+`fracture::current_stance` / `fracture::baseline_stance`.
+
+**Scope caveat: analytical accounting only.** The current engine
+does not consume `Diplomacy` stance for downstream effects — combat
+targeting (`tick::find_contested_regions`) treats every co-located
+faction as a combatant regardless of stance, and the AI / victory-
+check / political phases never consult diplomacy. A fracture is
+observable in `RunResult.fracture_events`, in the cross-run rollup
+on `MonteCarloSummary.alliance_dynamics`, and in the rendered
+report's `## Alliance Dynamics` section, but not in tick-level run
+dynamics. Treat fire rates as scenario-design diagnostics rather
+than live behavioral predictions. A future round will add behavioral
+coupling (combat targeting respecting `Diplomacy::Allied`, AI
+de-prioritizing Cooperative neighbors).
+
+- Optional `[factions.<id>.alliance_fracture]` block declares one or
+  more `FractureRule { id, counterparty, new_stance, condition }`.
+  Five condition variants: `AttributionThreshold { attacker,
+  threshold }` (mean attribution across attacker's chains crosses
+  threshold), `MoraleFloor { floor }`, `TensionThreshold { threshold }`,
+  `EventFired { event }`, and `StrengthLossFraction { delta_fraction }`.
+  Evaluation runs end-of-tick after the campaign phase via the new
+  `fracture_phase` in `crates/faultline-engine/src/fracture.rs`. One-
+  shot per rule (latched in `SimulationState.fired_fractures`). Pure
+  function of state — no RNG, so determinism is preserved.
+- Validation rejects empty rules vector, unknown counterparty /
+  attacker / event ids, self-targeting rules, duplicate rule ids
+  within a faction, NaN / out-of-range thresholds, and
+  `AttributionThreshold` against a faction that owns no kill chain
+  (the silent-no-op shape).
+- Per-run output on `RunResult.fracture_events` (one
+  [`FractureEvent`](crates/faultline-types/src/stats.rs) per firing
+  with previous and new stance captured live). Cross-run rollup in
+  `MonteCarloSummary.alliance_dynamics` via
+  `faultline_stats::alliance_dynamics::compute_alliance_dynamics` —
+  per-rule fire rate, mean fire tick, and terminal-stance
+  distribution. Both fields skip serialization when empty/None so
+  legacy-scenario manifest hashes are unchanged.
+- New `## Alliance Dynamics` report section in
+  `crates/faultline-stats/src/report/alliance_dynamics.rs`. Elides
+  entirely when no scenario declares `alliance_fracture`.
+- Bundled archetype: `scenarios/coalition_fracture_demo.toml`. A
+  Cooperative `gray_partner` declares both an attribution-driven
+  rule and a tension-driven rule against `red_attacker`. Demo run
+  produces ~22% attribution-fracture rate and 100% tension-fracture
+  rate over 32 runs.
 
 **Unread-parameter audit (R3-2 round one).** Three previously-silent
 fields now affect simulation outcomes; each was authored in dozens of

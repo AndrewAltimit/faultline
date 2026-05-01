@@ -5,6 +5,7 @@
 //! statistics including win probabilities, duration distributions,
 //! and metric distributions.
 
+pub mod alliance_dynamics;
 pub mod analysis;
 pub mod coevolve;
 pub mod counterfactual;
@@ -136,6 +137,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             pareto_frontier: None,
             defender_capacity: Vec::new(),
             network_summaries: BTreeMap::new(),
+            alliance_dynamics: None,
         };
     }
 
@@ -295,6 +297,13 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // declares no networks.
     let network_summaries = network_metrics::compute_network_summaries(runs, scenario);
 
+    // Alliance fracture rollup (Epic D round two). Pure post-
+    // processing of per-run fracture-event logs; preserves
+    // determinism. `None` when no scenario faction declares an
+    // `alliance_fracture` block — the report section elides on that
+    // signal.
+    let alliance_dynamics = alliance_dynamics::compute_alliance_dynamics(runs, scenario);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -310,6 +319,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         pareto_frontier,
         defender_capacity,
         network_summaries,
+        alliance_dynamics,
     }
 }
 
@@ -943,6 +953,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         }
     }
 
@@ -1137,6 +1148,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         }
     }
 
@@ -1672,6 +1684,7 @@ mod tests {
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
             leadership: None,
+            alliance_fracture: None,
         }
     }
 }

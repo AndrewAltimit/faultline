@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use faultline_types::faction::{ForceUnit, UnitType};
+use faultline_types::faction::{Diplomacy, ForceUnit, UnitType};
 use faultline_types::ids::{
     DefenderRoleId, EdgeId, EventId, FactionId, ForceId, InfraId, InstitutionId, NetworkId, NodeId,
     RegionId, TechCardId,
@@ -65,6 +65,39 @@ pub struct SimulationState {
     /// understaffed against in-flight attacks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub defender_over_budget_tick: Option<u32>,
+    /// Runtime overrides to the scenario's authored
+    /// [`Faction.diplomacy`] table. Keyed by `(source_faction,
+    /// target_faction)`; `None` in inner result means the relationship
+    /// has not been overridden and the scenario baseline applies.
+    /// Populated by `EventEffect::DiplomacyChange` and by the
+    /// alliance-fracture phase (Epic D round two). Empty when no
+    /// scenario faction declares an `alliance_fracture` rule and no
+    /// event ever fires `DiplomacyChange`, so legacy scenarios pay
+    /// zero overhead.
+    #[serde(default)]
+    pub diplomacy_overrides: BTreeMap<FactionId, BTreeMap<FactionId, Diplomacy>>,
+    /// Set of `(faction, rule_id)` pairs whose alliance-fracture rule
+    /// has fired in the current run. Used to enforce one-shot
+    /// semantics — a rule that fired once will not be re-evaluated.
+    /// Empty when no faction declares `alliance_fracture`.
+    #[serde(default)]
+    pub fired_fractures: BTreeSet<(FactionId, String)>,
+    /// Per-faction starting strength snapshot, captured once at
+    /// initialization. Used by `FractureCondition::StrengthLossFraction`
+    /// to compute the loss ratio without keeping a running history.
+    /// Always populated at startup with one entry per faction (the
+    /// snapshot is cheap and unconditional); the fracture phase only
+    /// consults it when a rule references the strength condition.
+    #[serde(default)]
+    pub initial_faction_strengths: BTreeMap<FactionId, f64>,
+    /// Log of every alliance-fracture firing in the current run, in
+    /// emission order. Surfaced post-run on
+    /// [`faultline_types::stats::RunResult::fracture_events`] and
+    /// aggregated across runs by
+    /// `MonteCarloSummary.alliance_dynamics`. Empty when no
+    /// alliance-fracture rule fired.
+    #[serde(default)]
+    pub fracture_events: Vec<faultline_types::stats::FractureEvent>,
 }
 
 /// Per-run runtime state for one declared [`Network`](
