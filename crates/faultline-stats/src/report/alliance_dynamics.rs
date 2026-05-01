@@ -37,6 +37,11 @@ impl ReportSection for AllianceDynamics {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
+            "**Scope.** This section is **analytical accounting** — it reports *that* an alliance fractured under the conditions the author declared. The current engine does not consume diplomatic stance for downstream effects (combat targeting, AI decisions, victory checks); a fracture is observable in the post-run log and in this section, not in tick-level run dynamics. Treat fire rates as scenario-design diagnostics rather than live behavioral predictions. Terminal stances reflect alliance-fracture rule firings only; `EventEffect::DiplomacyChange` overrides set by scripted events are not retraced into the per-run log and so are not represented in the terminal-stance distribution."
+        );
+        let _ = writeln!(out);
+        let _ = writeln!(
+            out,
             "| Source | Counterparty | Rule | Description | Fire rate | Mean fire tick | Terminal stance distribution |"
         );
         let _ = writeln!(out, "|---|---|---|---|---|---|---|");

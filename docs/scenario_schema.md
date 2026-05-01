@@ -214,6 +214,7 @@ Multiple active windows compose multiplicatively, so a scenario can stack a dail
 | `escalation_rules` | table? | _Optional._ Declarative doctrine / ROE ladder (see Epic B) |
 | `defender_capacities` | table? | _Optional._ Per-role investigative-queue model (see Epic K) — keyed by `[factions.<id>.defender_capacities.<role_id>]` |
 | `leadership` | table? | _Optional._ Leadership cadre with named ranks + succession (see Epic D) |
+| `alliance_fracture` | table? | _Optional._ Declarative alliance-fracture rules — when conditions fire this faction's stance toward a counterparty flips (see Epic D — round two) |
 
 ### `[factions.<id>.escalation_rules]` (Epic B)
 
@@ -285,6 +286,71 @@ morale_shock = 0.2
 ```
 
 The `morale_shock` is a one-time clamp-respecting drop applied on the strike tick before the leadership cap clamps morale further; `0.0` disables the shock and lets the leadership cap do all the work.
+
+### `[factions.<id>.alliance_fracture]` (Epic D — round two)
+
+Optional declarative alliance-fracture rules. Each rule names a
+counterparty and a condition; when the condition is satisfied at
+end-of-tick (after the campaign phase), this faction's diplomatic
+stance toward the counterparty flips to `new_stance` (default
+`Hostile`). Each rule fires at most once per run — latched in
+`SimulationState.fired_fractures`.
+
+**Scope.** This is **analytical accounting**: per-run firings are
+captured on `RunResult.fracture_events` and aggregated in
+`MonteCarloSummary.alliance_dynamics` with per-rule fire rate, mean
+fire tick, and terminal-stance distribution. The current engine does
+not consume the resulting stance for downstream effects — combat,
+AI, victory checks, and political phases all read state independent
+of `Diplomacy`. Use this to characterize *that* a coalition would
+break under given conditions, not to drive live behavior.
+
+```toml
+[factions.gray_partner.alliance_fracture]
+[[factions.gray_partner.alliance_fracture.rules]]
+id = "attribution_break"
+counterparty = "red_attacker"
+new_stance = "Hostile"
+description = "Public attribution forces the coalition partner to flip."
+[factions.gray_partner.alliance_fracture.rules.condition]
+kind = "AttributionThreshold"
+attacker = "red_attacker"
+threshold = 0.4
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `rules` | `[FractureRule]` | At least one entry — empty `rules` is rejected |
+
+Each rule:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Stable identifier (e.g. `"attribution_break"`); unique within the faction |
+| `counterparty` | `FactionId` | Faction whose stance flips. Cannot equal the source |
+| `new_stance` | `Diplomacy` | Stance to flip to. Default: `"Hostile"` |
+| `condition` | `FractureCondition` | Trigger (see below) |
+| `description` | string | _Optional._ Free-text label surfaced in the report |
+
+**Condition variants** (TOML uses `kind = "..."` discriminator):
+
+| `kind` | Fields | Fires when |
+|---|---|---|
+| `"AttributionThreshold"` | `attacker: FactionId`, `threshold: f64` | Mean attribution confidence across `attacker`'s in-flight kill chains is `>= threshold`. The validator rejects `threshold == 0.0` (silent always-fire) and `attacker` having no chain (silent never-fire) |
+| `"MoraleFloor"` | `floor: f64` | This faction's runtime morale is `<= floor`. Rejected when `floor >= 1.0` (always fires; morale ∈ [0, 1]) |
+| `"TensionThreshold"` | `threshold: f64` | Political tension is `>= threshold`. Rejected when `threshold == 0.0` |
+| `"EventFired"` | `event: EventId` | Named event has fired in the run. Validator rejects unknown event ids |
+| `"StrengthLossFraction"` | `delta_fraction: f64` | This faction has lost at least `delta_fraction` of its starting `total_strength`. Rejected when `delta_fraction == 0.0` |
+
+`EventEffect::DiplomacyChange { faction_a, faction_b, new_stance }`
+is the imperative counterpart to alliance fracture: it writes the
+same runtime override map directly without going through a rule.
+Useful for one-off scripted diplomacy changes that don't fit the
+condition vocabulary above.
+
+Determinism: the fracture phase is a pure function of state — no
+RNG, BTreeMap-ordered iteration, last-write-wins on the override
+map — so runs are bit-identical under fixed seed.
 
 ### `[factions.<id>.defender_capacities.<role_id>]` (Epic K)
 

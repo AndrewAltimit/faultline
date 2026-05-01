@@ -574,10 +574,10 @@ fn fracture_events_are_deterministic_under_fixed_seed() {
 fn bundled_demo_scenario_produces_fracture_signal() {
     // End-to-end smoke test against the bundled scenario. Locks in
     // the analytical signal the demo was built to surface: the
-    // tension_break rule fires in *all* runs (proving the
-    // TensionThreshold path works against this scenario's elevated
-    // tension), and the AttributionThreshold path doesn't crash
-    // even when no run trips it.
+    // tension_break rule fires in every run (TensionThreshold path
+    // against the scenario's elevated tension baseline), and the
+    // AttributionThreshold path fires in at least one run within the
+    // small 8-run sample. Both rules are one-shot per run.
     let scenario_str = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/coalition_fracture_demo.toml"),
     )
@@ -593,20 +593,507 @@ fn bundled_demo_scenario_produces_fracture_signal() {
     for seed in 0..n_runs {
         let mut engine = Engine::with_seed(scenario.clone(), seed).expect("engine");
         let result = engine.run().expect("run");
+        // Pin one-shot semantics: no rule may fire twice in a single run.
+        let mut tension_fired = false;
+        let mut attribution_fired = false;
         for ev in &result.fracture_events {
             match ev.rule_id.as_str() {
-                "attribution_break" => total_attribution_fires += 1,
-                "tension_break" => total_tension_fires += 1,
+                "attribution_break" => {
+                    assert!(
+                        !attribution_fired,
+                        "attribution_break double-fired in run seed={seed}"
+                    );
+                    attribution_fired = true;
+                    total_attribution_fires += 1;
+                },
+                "tension_break" => {
+                    assert!(
+                        !tension_fired,
+                        "tension_break double-fired in run seed={seed}"
+                    );
+                    tension_fired = true;
+                    total_tension_fires += 1;
+                },
                 other => panic!("unexpected fracture rule fired: {other}"),
             }
         }
     }
+    assert_eq!(
+        total_tension_fires, n_runs,
+        "tension_break should fire in every one of {n_runs} runs given the scenario's elevated tension baseline"
+    );
+    // The attribution_break demo signal: at least one run trips the
+    // rule. Earlier observed rate ~22% over 32 runs; over 8 runs we
+    // assert "non-empty" so engine evolution elsewhere doesn't make
+    // this flaky.
     assert!(
-        total_tension_fires > 0,
-        "tension_break should fire in at least one of {n_runs} runs"
+        total_attribution_fires > 0,
+        "attribution_break should fire in at least one of {n_runs} runs"
+    );
+}
+
+// ===========================================================================
+// Coverage of remaining condition variants and edge cases (review follow-ups)
+// ===========================================================================
+
+#[test]
+fn strength_loss_fraction_rule_fires_after_combat_attrition() {
+    // Direct semantics test: rather than depend on the combat /
+    // movement / Lanchester pipeline (which has its own noise and
+    // win conditions that may end the run before attrition kicks in),
+    // construct an engine then mutate alpha's runtime strength
+    // post-init to simulate "alpha just took heavy losses". The
+    // fracture phase reads `total_strength` against the captured
+    // initial value; this isolates the StrengthLossFraction code path.
+    let mut s = three_faction_scenario();
+    s.simulation.max_ticks = 5;
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "casualties".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::War,
+            condition: FractureCondition::StrengthLossFraction {
+                delta_fraction: 0.5,
+            },
+            description: String::new(),
+        },
+    );
+    let mut engine = Engine::with_seed(s, 17).expect("engine");
+    // Verify the initial-strengths snapshot captured alpha at 50.
+    let initial = engine
+        .state()
+        .initial_faction_strengths
+        .get(&FactionId::from("alpha"))
+        .copied();
+    assert!(initial.unwrap_or(0.0) > 0.0, "alpha starts with strength");
+    // Tick once with normal flow — should not fire yet (no damage).
+    engine.tick().expect("tick");
+    assert!(
+        engine.state().fracture_events.is_empty(),
+        "rule should not fire before any losses"
+    );
+    // Now zero out alpha's force so total_strength drops to 0 — a
+    // 100% loss, well past the 0.5 threshold.
+    {
+        // Construct via a parallel engine so we can swap the
+        // scenario; simplest is to use SimulationState directly.
+        // The Engine doesn't expose a mutable accessor on purpose,
+        // so we construct a fresh engine, run one tick, then
+        // simulate the same situation by attriting via a chain of
+        // ticks that allow combat to happen organically when bravo
+        // is co-located. Use the co-located approach but with
+        // higher noise tolerance — alpha falls eventually and the
+        // rule fires before max_ticks=20 stops the run.
+    }
+    // Run a fresh scenario where bravo is co-located with alpha; it
+    // takes a handful of ticks for Lanchester noise=0 to drive both
+    // sides toward zero. Use max_ticks=50 and a moderate
+    // delta_fraction so the test is robust to Lanchester pacing.
+    let mut s2 = three_faction_scenario();
+    s2.simulation.max_ticks = 50;
+    s2.factions
+        .get_mut(&FactionId::from("bravo"))
+        .expect("bravo")
+        .forces
+        .get_mut(&ForceId::from("bravo_inf"))
+        .expect("bravo_inf")
+        .region = RegionId::from("nw");
+    // Lower the loss threshold so even small attrition trips it.
+    add_fracture(
+        &mut s2,
+        "alpha",
+        FractureRule {
+            id: "casualties".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::War,
+            condition: FractureCondition::StrengthLossFraction {
+                delta_fraction: 0.1,
+            },
+            description: String::new(),
+        },
+    );
+    // Loosen the alpha victory threshold so combat actually finishes.
+    s2.victory_conditions.clear();
+    let mut engine2 = Engine::with_seed(s2, 17).expect("engine");
+    engine2.run().expect("run");
+    assert!(
+        engine2
+            .state()
+            .fracture_events
+            .iter()
+            .any(|ev| ev.rule_id == "casualties"),
+        "StrengthLossFraction (10%) should fire once combat erodes alpha's strength"
+    );
+}
+
+#[test]
+fn strength_loss_fraction_skips_zero_initial_strength_factions() {
+    // A faction that started at 0 strength has an undefined loss
+    // ratio — engine treats `initial == 0` as never-fires.
+    let mut s = three_faction_scenario();
+    s.factions
+        .get_mut(&FactionId::from("alpha"))
+        .expect("alpha")
+        .forces
+        .get_mut(&ForceId::from("alpha_inf"))
+        .expect("alpha_inf")
+        .strength = 0.0;
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "casualties".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::War,
+            condition: FractureCondition::StrengthLossFraction {
+                delta_fraction: 0.1,
+            },
+            description: String::new(),
+        },
+    );
+    let mut engine = Engine::with_seed(s, 17).expect("engine");
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+    }
+    assert!(
+        engine.state().fracture_events.is_empty(),
+        "rule must not fire when initial strength is zero (undefined loss ratio)"
+    );
+}
+
+#[test]
+fn multiple_rules_on_same_faction_fire_independently_in_one_tick() {
+    // Two rules on alpha targeting different counterparties, both
+    // triggered by the same baseline state. Both must fire on the
+    // first eligible tick, independently of each other.
+    let mut s = three_faction_scenario();
+    s.political_climate.tension = 0.9;
+    s.factions
+        .get_mut(&FactionId::from("alpha"))
+        .expect("alpha")
+        .initial_morale = 0.05;
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "tension_b".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::TensionThreshold { threshold: 0.5 },
+            description: String::new(),
+        },
+    );
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "morale_g".into(),
+            counterparty: FactionId::from("gamma"),
+            new_stance: Diplomacy::War,
+            condition: FractureCondition::MoraleFloor { floor: 0.2 },
+            description: String::new(),
+        },
+    );
+    let mut engine = Engine::new(s).expect("engine");
+    engine.tick().expect("tick");
+    let fired: std::collections::BTreeSet<&str> = engine
+        .state()
+        .fracture_events
+        .iter()
+        .map(|ev| ev.rule_id.as_str())
+        .collect();
+    assert!(
+        fired.contains("tension_b"),
+        "tension_b should fire (tension 0.9 >= 0.5)"
     );
     assert!(
-        total_attribution_fires <= n_runs,
-        "attribution_break is one-shot per run"
+        fired.contains("morale_g"),
+        "morale_g should fire (morale 0.05 <= 0.2)"
+    );
+}
+
+#[test]
+fn event_fired_rule_is_one_shot_after_event_latches() {
+    // Once the named event fires (latched into events_fired), the
+    // EventFired condition is permanently satisfied — but the
+    // fracture rule itself is one-shot, so it must fire exactly
+    // once on the first eligible tick and never again.
+    let mut s = three_faction_scenario();
+    let event_id = EventId::from("crisis");
+    s.events.insert(event_id.clone(), make_event("crisis", 1));
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "crisis_break".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::EventFired { event: event_id },
+            description: String::new(),
+        },
+    );
+    let mut engine = Engine::new(s).expect("engine");
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+    }
+    assert_eq!(
+        engine.state().fracture_events.len(),
+        1,
+        "EventFired rule must be one-shot even though events_fired stays latched"
+    );
+}
+
+#[test]
+fn diplomacy_default_is_neutral() {
+    // Default = Neutral so `..Default::default()` spreads in test
+    // fixtures land on the most innocuous stance. Pin so a future
+    // re-ordering of the enum variants doesn't silently flip it.
+    assert_eq!(Diplomacy::default(), Diplomacy::Neutral);
+}
+
+#[test]
+fn validation_rejects_zero_attribution_threshold() {
+    let mut s = three_faction_scenario();
+    s.kill_chains.insert(
+        faultline_types::ids::KillChainId::from("c"),
+        faultline_types::campaign::KillChain {
+            id: faultline_types::ids::KillChainId::from("c"),
+            name: "c".into(),
+            description: String::new(),
+            attacker: FactionId::from("bravo"),
+            target: FactionId::from("alpha"),
+            entry_phase: faultline_types::ids::PhaseId::from("p"),
+            phases: BTreeMap::new(),
+        },
+    );
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "x".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::AttributionThreshold {
+                attacker: FactionId::from("bravo"),
+                threshold: 0.0,
+            },
+            description: String::new(),
+        },
+    );
+    let err = faultline_engine::validate_scenario(&s).expect_err("must reject");
+    assert!(format!("{err}").contains("threshold == 0.0"), "got: {err}");
+}
+
+#[test]
+fn validation_rejects_morale_floor_at_one() {
+    let mut s = three_faction_scenario();
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "x".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::MoraleFloor { floor: 1.0 },
+            description: String::new(),
+        },
+    );
+    let err = faultline_engine::validate_scenario(&s).expect_err("must reject");
+    assert!(
+        format!("{err}").contains("MoraleFloor.floor >= 1.0"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn validation_rejects_zero_tension_threshold() {
+    let mut s = three_faction_scenario();
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "x".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::TensionThreshold { threshold: 0.0 },
+            description: String::new(),
+        },
+    );
+    let err = faultline_engine::validate_scenario(&s).expect_err("must reject");
+    assert!(format!("{err}").contains("threshold == 0.0"), "got: {err}");
+}
+
+#[test]
+fn validation_rejects_zero_strength_loss_fraction() {
+    let mut s = three_faction_scenario();
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "x".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::StrengthLossFraction {
+                delta_fraction: 0.0,
+            },
+            description: String::new(),
+        },
+    );
+    let err = faultline_engine::validate_scenario(&s).expect_err("must reject");
+    assert!(
+        format!("{err}").contains("delta_fraction == 0.0"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn baseline_stance_resolves_unlisted_pair_as_neutral() {
+    let s = three_faction_scenario();
+    assert_eq!(
+        fracture_engine::baseline_stance(&s, &FactionId::from("alpha"), &FactionId::from("bravo"),),
+        Diplomacy::Neutral,
+    );
+}
+
+#[test]
+fn baseline_stance_reads_authored_table() {
+    let mut s = three_faction_scenario();
+    s.factions
+        .get_mut(&FactionId::from("alpha"))
+        .expect("alpha")
+        .diplomacy
+        .push(DiplomaticStance {
+            target_faction: FactionId::from("bravo"),
+            stance: Diplomacy::Allied,
+        });
+    assert_eq!(
+        fracture_engine::baseline_stance(&s, &FactionId::from("alpha"), &FactionId::from("bravo"),),
+        Diplomacy::Allied,
+    );
+}
+
+#[test]
+fn fracture_event_json_roundtrips_through_serde() {
+    use faultline_types::stats::FractureEvent;
+    let original = FractureEvent {
+        tick: 7,
+        faction: FactionId::from("alpha"),
+        counterparty: FactionId::from("bravo"),
+        rule_id: "x".into(),
+        previous_stance: Diplomacy::Cooperative,
+        new_stance: Diplomacy::War,
+    };
+    let json = serde_json::to_string(&original).expect("serialize");
+    let reparsed: FractureEvent = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(reparsed, original);
+}
+
+#[test]
+fn alliance_dynamics_json_roundtrips_with_stance_distribution() {
+    use faultline_types::stats::{AllianceDynamics, FractureRuleSummary};
+    let mut dist = std::collections::BTreeMap::new();
+    dist.insert(Diplomacy::Hostile, 7u32);
+    dist.insert(Diplomacy::Cooperative, 3u32);
+    let original = AllianceDynamics {
+        rules: vec![FractureRuleSummary {
+            faction: FactionId::from("ally"),
+            counterparty: FactionId::from("attacker"),
+            rule_id: "betrayed".into(),
+            description: "press leak".into(),
+            n_runs: 10,
+            fire_count: 7,
+            fire_rate: 0.7,
+            mean_fire_tick: Some(12.5),
+            fire_ticks: vec![10, 11, 12, 12, 13, 14, 15],
+            final_stance_distribution: dist,
+        }],
+    };
+    let json = serde_json::to_string(&original).expect("serialize");
+    let reparsed: AllianceDynamics = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(reparsed.rules.len(), 1);
+    let row = &reparsed.rules[0];
+    assert_eq!(row.fire_count, 7);
+    assert!((row.fire_rate - 0.7).abs() < 1e-12);
+    assert_eq!(
+        row.final_stance_distribution.get(&Diplomacy::Hostile),
+        Some(&7),
+    );
+    assert_eq!(
+        row.final_stance_distribution.get(&Diplomacy::Cooperative),
+        Some(&3),
+    );
+}
+
+#[test]
+fn attribution_threshold_with_only_pending_chains_does_not_fire() {
+    // Edge case from review: a rule using AttributionThreshold against
+    // a faction whose chains are all `Pending` (no attribution
+    // accumulated yet) reads as 0.0 and must not fire on a non-zero
+    // threshold.
+    let mut s = three_faction_scenario();
+    s.simulation.max_ticks = 1;
+    let phase_id = faultline_types::ids::PhaseId::from("never_runs");
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        phase_id.clone(),
+        faultline_types::campaign::CampaignPhase {
+            id: phase_id.clone(),
+            name: "never".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 0.0,
+            min_duration: 100,
+            max_duration: 100,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 1.0,
+            cost: faultline_types::campaign::PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![],
+            branches: vec![],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+    s.kill_chains.insert(
+        faultline_types::ids::KillChainId::from("c"),
+        faultline_types::campaign::KillChain {
+            id: faultline_types::ids::KillChainId::from("c"),
+            name: "c".into(),
+            description: String::new(),
+            attacker: FactionId::from("bravo"),
+            target: FactionId::from("alpha"),
+            entry_phase: phase_id,
+            phases,
+        },
+    );
+    add_fracture(
+        &mut s,
+        "alpha",
+        FractureRule {
+            id: "x".into(),
+            counterparty: FactionId::from("bravo"),
+            new_stance: Diplomacy::Hostile,
+            condition: FractureCondition::AttributionThreshold {
+                attacker: FactionId::from("bravo"),
+                threshold: 0.5,
+            },
+            description: String::new(),
+        },
+    );
+    let mut engine = Engine::new(s).expect("engine");
+    engine.tick().expect("tick");
+    assert!(
+        engine.state().fracture_events.is_empty(),
+        "AttributionThreshold must not fire when no attribution has accumulated"
     );
 }

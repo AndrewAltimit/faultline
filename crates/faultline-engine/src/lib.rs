@@ -786,12 +786,53 @@ fn validate_fracture_condition(
                 )));
             }
             bad_threshold("AttributionThreshold.threshold", *threshold)?;
+            // `threshold == 0.0` is technically valid (an attribution
+            // of exactly 0 satisfies `>= 0`) but always fires on the
+            // first eligible tick, burning the one-shot rule with no
+            // analytical signal. Reject as an authoring mistake.
+            if *threshold == 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     has AttributionThreshold.threshold == 0.0, which fires \
+                     on the first tick regardless of any attribution signal. \
+                     Use a positive threshold (e.g. 0.1) to gate on actual \
+                     attribution accumulation."
+                )));
+            }
         },
         FractureCondition::MoraleFloor { floor } => {
             bad_threshold("MoraleFloor.floor", *floor)?;
+            // `floor >= 1.0` always satisfies (morale ∈ [0, 1] and the
+            // condition is `morale <= floor`). The rule fires on tick
+            // 1 unconditionally, which is almost certainly an
+            // authoring mistake — reject loudly.
+            if *floor >= 1.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     has MoraleFloor.floor >= 1.0; morale is bounded to \
+                     [0, 1] and the condition is `morale <= floor`, so this \
+                     fires on the first tick regardless of any morale \
+                     dynamics. Use a floor in (0, 1) (e.g. 0.3) to gate \
+                     on actual morale collapse."
+                )));
+            }
         },
         FractureCondition::TensionThreshold { threshold } => {
             bad_threshold("TensionThreshold.threshold", *threshold)?;
+            // Same trap as AttributionThreshold: tension is bounded to
+            // [0, 1] starting at the scenario's authored value, and
+            // `threshold == 0.0` always satisfies `>=`. Reject so an
+            // analyst writing `threshold = 0` (typo for `0.7`?) gets
+            // a diagnostic instead of an instant-fire rule.
+            if *threshold == 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     has TensionThreshold.threshold == 0.0, which fires \
+                     on the first tick regardless of political dynamics. \
+                     Use a positive threshold (e.g. 0.5) to gate on actual \
+                     tension escalation."
+                )));
+            }
         },
         FractureCondition::EventFired { event } => {
             if !scenario.events.contains_key(event) {
@@ -803,6 +844,19 @@ fn validate_fracture_condition(
         },
         FractureCondition::StrengthLossFraction { delta_fraction } => {
             bad_threshold("StrengthLossFraction.delta_fraction", *delta_fraction)?;
+            // `delta_fraction == 0.0` always satisfies on tick 1
+            // (initial - current = 0 trivially divides to 0/initial >= 0).
+            // Reject the silent-no-op shape so the analyst gets a
+            // diagnostic.
+            if *delta_fraction == 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     has StrengthLossFraction.delta_fraction == 0.0, which \
+                     fires on the first tick regardless of any combat \
+                     losses. Use a positive fraction (e.g. 0.3) to gate \
+                     on actual strength erosion."
+                )));
+            }
         },
     }
     Ok(())

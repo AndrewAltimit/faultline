@@ -113,6 +113,16 @@ pub fn current_stance(
     {
         return *stance;
     }
+    baseline_stance(scenario, source, target)
+}
+
+/// Resolve `(source -> target)` stance from the scenario's authored
+/// `Faction.diplomacy` table, ignoring runtime overrides. Useful for
+/// post-run analytics that have no `SimulationState` in scope (e.g. the
+/// cross-run rollup in `faultline_stats::alliance_dynamics`). Same
+/// fallback semantics as `current_stance`: unlisted pairs read as
+/// `Diplomacy::Neutral`.
+pub fn baseline_stance(scenario: &Scenario, source: &FactionId, target: &FactionId) -> Diplomacy {
     if let Some(faction) = scenario.factions.get(source) {
         for entry in &faction.diplomacy {
             if entry.target_faction == *target {

@@ -116,9 +116,10 @@ pub fn compute_alliance_dynamics(
 /// reconstructable from the run report (the report records only
 /// alliance-fracture events, not arbitrary diplomacy changes). For
 /// the alliance-dynamics rollup that's the right contract — the
-/// section's whole job is to characterize fracture-rule firings —
-/// but downstream tooling that wants the full diplomacy trace would
-/// need a richer log.
+/// section's whole job is to characterize fracture-rule firings. The
+/// rendered report flags this caveat in its preamble so an analyst
+/// reading a scenario that mixes fracture rules with `DiplomacyChange`
+/// events isn't misled.
 fn terminal_stance(
     scenario: &Scenario,
     run: &RunResult,
@@ -133,46 +134,7 @@ fn terminal_stance(
     if let Some(ev) = latest {
         return ev.new_stance;
     }
-    // Fall through to the engine's resolution helper to keep the
-    // baseline semantics in one place.
-    fracture_engine::current_stance(
-        // Build a throwaway empty SimulationState? No — current_stance
-        // needs `&SimulationState` to read overrides, but we already
-        // know there are none for this branch. Use the baseline-only
-        // fallback directly.
-        &empty_state(scenario),
-        scenario,
-        source,
-        target,
-    )
-}
-
-/// Construct an empty `SimulationState` for the baseline-resolution
-/// path. Avoids cloning the engine's startup-init logic — we only
-/// need the empty `diplomacy_overrides` map so `current_stance` falls
-/// through to the scenario baseline.
-fn empty_state(scenario: &Scenario) -> faultline_engine::SimulationState {
-    use std::collections::{BTreeMap, BTreeSet};
-    faultline_engine::SimulationState {
-        tick: 0,
-        faction_states: BTreeMap::new(),
-        region_control: BTreeMap::new(),
-        infra_status: BTreeMap::new(),
-        institution_loyalty: BTreeMap::new(),
-        political_climate: scenario.political_climate.clone(),
-        events_fired: BTreeSet::new(),
-        events_fired_this_tick: Vec::new(),
-        snapshots: Vec::new(),
-        non_kinetic: Default::default(),
-        metric_history: Vec::new(),
-        defender_queues: BTreeMap::new(),
-        network_states: BTreeMap::new(),
-        defender_over_budget_tick: None,
-        diplomacy_overrides: BTreeMap::new(),
-        fired_fractures: BTreeSet::new(),
-        initial_faction_strengths: BTreeMap::new(),
-        fracture_events: Vec::new(),
-    }
+    fracture_engine::baseline_stance(scenario, source, target)
 }
 
 #[cfg(test)]
@@ -260,6 +222,117 @@ mod tests {
         assert!(row.mean_fire_tick.is_none());
         // No runs -> no terminal-stance counts at all (sum is zero).
         assert!(row.final_stance_distribution.is_empty());
+    }
+
+    #[test]
+    fn latest_fracture_event_wins_for_terminal_stance() {
+        // When a single (faction, counterparty) pair has multiple
+        // fracture events in one run (e.g. two rules flipped it
+        // through different stances), `terminal_stance` must pick
+        // the highest-tick event — matching the engine's last-write-
+        // wins semantics on `diplomacy_overrides`.
+        let (s, alpha, beta) = scenario_with_rule();
+        let mut run = empty_run();
+        run.fracture_events.push(FractureEvent {
+            tick: 5,
+            faction: alpha.clone(),
+            counterparty: beta.clone(),
+            rule_id: "rule_a".into(),
+            previous_stance: Diplomacy::Cooperative,
+            new_stance: Diplomacy::Hostile,
+        });
+        run.fracture_events.push(FractureEvent {
+            tick: 10,
+            faction: alpha.clone(),
+            counterparty: beta.clone(),
+            rule_id: "rule_b".into(),
+            previous_stance: Diplomacy::Hostile,
+            new_stance: Diplomacy::War,
+        });
+        let stance = terminal_stance(&s, &run, &alpha, &beta);
+        assert_eq!(
+            stance,
+            Diplomacy::War,
+            "later fracture (tick 10, War) must dominate the earlier one (tick 5, Hostile)"
+        );
+    }
+
+    #[test]
+    fn baseline_stance_resolves_unlisted_pair_via_helper() {
+        // The refactor that replaced `empty_state()` with
+        // `fracture_engine::baseline_stance` is the path
+        // `terminal_stance` follows on a run with no fracture events.
+        // Pin that the helper reads the scenario baseline correctly
+        // when no override exists.
+        let (s, alpha, beta) = scenario_with_rule();
+        let run = empty_run();
+        let stance = terminal_stance(&s, &run, &alpha, &beta);
+        assert_eq!(
+            stance,
+            Diplomacy::Cooperative,
+            "baseline (Cooperative) should be returned when no fracture event applies"
+        );
+    }
+
+    #[test]
+    fn baseline_stance_unlisted_pair_returns_neutral() {
+        // Pair with no scenario-authored diplomacy entry: the
+        // baseline-stance helper falls through to Neutral.
+        let (mut s, alpha, _) = scenario_with_rule();
+        // Add a third faction never mentioned in alpha's diplomacy.
+        let gamma = FactionId::from("gamma");
+        s.factions.insert(
+            gamma.clone(),
+            Faction {
+                id: gamma.clone(),
+                ..Default::default()
+            },
+        );
+        let run = empty_run();
+        let stance = terminal_stance(&s, &run, &alpha, &gamma);
+        assert_eq!(stance, Diplomacy::Neutral);
+    }
+
+    #[test]
+    fn report_render_includes_alliance_dynamics_section_when_present() {
+        // The render-gate fix in the CLI must not affect the stats-
+        // level renderer — it's the CLI's "should I write report.md
+        // at all?" check, not a section gate. Verify that
+        // `render_markdown` includes the alliance-dynamics section
+        // for a scenario with a populated rollup.
+        let (s, alpha, beta) = scenario_with_rule();
+        let mut summary = faultline_types::stats::MonteCarloSummary {
+            total_runs: 4,
+            win_rates: BTreeMap::new(),
+            win_rate_cis: BTreeMap::new(),
+            average_duration: 0.0,
+            metric_distributions: BTreeMap::new(),
+            regional_control: BTreeMap::new(),
+            event_probabilities: BTreeMap::new(),
+            campaign_summaries: BTreeMap::new(),
+            feasibility_matrix: vec![],
+            seam_scores: BTreeMap::new(),
+            correlation_matrix: None,
+            pareto_frontier: None,
+            defender_capacity: vec![],
+            network_summaries: BTreeMap::new(),
+            alliance_dynamics: None,
+        };
+        let runs = vec![empty_run()];
+        summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);
+        assert!(summary.alliance_dynamics.is_some(), "rule declared");
+        let md = crate::report::render_markdown(&summary, &s);
+        assert!(
+            md.contains("## Alliance Dynamics"),
+            "rendered report must include the alliance dynamics section: {md}"
+        );
+        assert!(
+            md.contains("analytical accounting"),
+            "rendered report must include the analytical-accounting scope caveat"
+        );
+        // Each row contains the source/counterparty cells.
+        assert!(md.contains(&format!("`{}`", alpha.0)));
+        assert!(md.contains(&format!("`{}`", beta.0)));
     }
 
     #[test]
