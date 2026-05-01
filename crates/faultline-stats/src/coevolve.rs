@@ -745,6 +745,7 @@ mod tests {
             escalation_rules: None,
             defender_capacities: BTreeMap::new(),
             leadership: None,
+            alliance_fracture: None,
         }
     }
 
@@ -1298,6 +1299,7 @@ mod tests {
             pareto_frontier: None,
             defender_capacity: Vec::new(),
             network_summaries: std::collections::BTreeMap::new(),
+            alliance_dynamics: None,
         }
     }
 

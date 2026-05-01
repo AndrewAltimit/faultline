@@ -1280,6 +1280,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         pareto_frontier: None,
         defender_capacity: Vec::new(),
         network_summaries: std::collections::BTreeMap::new(),
+        alliance_dynamics: None,
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

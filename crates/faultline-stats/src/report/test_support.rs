@@ -27,6 +27,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         pareto_frontier: None,
         defender_capacity: Vec::new(),
         network_summaries: std::collections::BTreeMap::new(),
+        alliance_dynamics: None,
     }
 }
 

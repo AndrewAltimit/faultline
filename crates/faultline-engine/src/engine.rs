@@ -17,6 +17,7 @@ use faultline_types::strategy::FactionState;
 
 use crate::campaign::{self, CampaignState};
 use crate::error::EngineError;
+use crate::fracture as fracture_phase;
 use crate::network as network_phase;
 use crate::state::{DefenderQueueState, RuntimeFactionState, SimulationState};
 use crate::tick::{self, TickResult};
@@ -144,6 +145,14 @@ impl Engine {
         // declaring a `leadership` cadre.
         tick::apply_leadership_caps(&mut self.state, &self.scenario);
 
+        // Phase 7e: Alliance-fracture evaluation (Epic D round two).
+        // Reads the post-campaign attribution / morale / tension /
+        // strength state plus the cumulative `events_fired` log and
+        // mutates `diplomacy_overrides` when a rule's condition is
+        // satisfied. No-op for scenarios with no `alliance_fracture`
+        // declarations.
+        fracture_phase::fracture_phase(&mut self.state, &self.scenario, &self.campaigns);
+
         // Phase 7d: Network resilience capture (Epic L). Records one
         // [`NetworkSample`] per declared network at end-of-tick so
         // any same-tick interdiction event is reflected in the sample.
@@ -205,6 +214,7 @@ impl Engine {
                     campaign_reports: campaign::reports(&self.campaigns),
                     defender_queue_reports: collect_queue_reports(&self.state),
                     network_reports: collect_network_reports(&self.state, &self.scenario),
+                    fracture_events: self.state.fracture_events.clone(),
                 });
             }
 
@@ -226,6 +236,7 @@ impl Engine {
                     campaign_reports: campaign::reports(&self.campaigns),
                     defender_queue_reports: collect_queue_reports(&self.state),
                     network_reports: collect_network_reports(&self.state, &self.scenario),
+                    fracture_events: self.state.fracture_events.clone(),
                 });
             }
         }
@@ -334,6 +345,16 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
 
     let defender_queues = initialize_defender_queues(scenario);
     let network_states = initialize_network_states(scenario);
+    // Snapshot initial faction strengths once at startup. Used by
+    // `FractureCondition::StrengthLossFraction` so the loss ratio
+    // doesn't need a per-tick history. Captured for every faction
+    // (cheap), though the fracture phase only consults it when a
+    // rule references the strength condition. `BTreeMap` order is
+    // deterministic; the engine never mutates this map.
+    let initial_faction_strengths: BTreeMap<FactionId, f64> = faction_states
+        .iter()
+        .map(|(fid, fs)| (fid.clone(), fs.total_strength))
+        .collect();
 
     Ok(SimulationState {
         tick: 0,
@@ -350,6 +371,10 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         defender_queues,
         network_states,
         defender_over_budget_tick: None,
+        diplomacy_overrides: BTreeMap::new(),
+        fired_fractures: BTreeSet::new(),
+        initial_faction_strengths,
+        fracture_events: Vec::new(),
     })
 }
 

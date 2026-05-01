@@ -12,6 +12,7 @@ pub mod campaign;
 pub mod combat;
 pub mod engine;
 pub mod error;
+pub mod fracture;
 pub mod network;
 pub mod state;
 pub mod tick;
@@ -309,6 +310,56 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     });
                 }
             }
+        }
+    }
+
+    // Alliance fracture (Epic D round two). Catch silent-no-op shapes:
+    // empty rule list, unknown counterparty / attacker / event refs,
+    // duplicate rule ids within a faction, NaN / out-of-range
+    // thresholds. Each fracture rule fires at most once per run, so a
+    // typo here would burn a single rule slot for the whole run rather
+    // than just one phase — extra value in catching it loudly.
+    for (fid, faction) in &scenario.factions {
+        let Some(af) = &faction.alliance_fracture else {
+            continue;
+        };
+        if af.rules.is_empty() {
+            return Err(ScenarioError::Custom(format!(
+                "faction {fid} declares an empty `alliance_fracture` block; \
+                 either remove it or add at least one rule. An empty block \
+                 is almost always an unfilled author template."
+            )));
+        }
+        let mut seen_rule_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for rule in &af.rules {
+            if rule.id.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} alliance_fracture rule has empty `id`; \
+                     each rule needs a stable identifier so the report \
+                     and the runtime fired-set can name it."
+                )));
+            }
+            if !seen_rule_ids.insert(rule.id.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} alliance_fracture rule id `{}` is \
+                     declared more than once; rule ids must be unique \
+                     within a faction so the post-run rollup attributes \
+                     fires correctly.",
+                    rule.id
+                )));
+            }
+            if !scenario.factions.contains_key(&rule.counterparty) {
+                return Err(ScenarioError::UnknownFaction(rule.counterparty.clone()));
+            }
+            if rule.counterparty == *fid {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} alliance_fracture rule `{}` names the \
+                     same faction as both source and counterparty; \
+                     a faction cannot fracture its alliance with itself.",
+                    rule.id
+                )));
+            }
+            validate_fracture_condition(scenario, fid, &rule.id, &rule.condition)?;
         }
     }
 
@@ -688,6 +739,75 @@ fn validate_search_objective(
     Ok(())
 }
 
+fn validate_fracture_condition(
+    scenario: &Scenario,
+    faction: &faultline_types::ids::FactionId,
+    rule_id: &str,
+    cond: &faultline_types::faction::FractureCondition,
+) -> Result<(), ScenarioError> {
+    use faultline_types::faction::FractureCondition;
+    let bad_threshold = |label: &str, value: f64| -> Result<(), ScenarioError> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("faction {faction} alliance_fracture rule {rule_id} {label}"),
+                value,
+                expected: "[0.0, 1.0]".into(),
+            });
+        }
+        Ok(())
+    };
+    match cond {
+        FractureCondition::AttributionThreshold {
+            attacker,
+            threshold,
+        } => {
+            if !scenario.factions.contains_key(attacker) {
+                return Err(ScenarioError::UnknownFaction(attacker.clone()));
+            }
+            // An AttributionThreshold rule reads attribution from
+            // chains owned by `attacker`. If `attacker` owns no chains
+            // the mean is always 0 and the rule can only fire when
+            // `threshold <= 0`, which is a silent no-op for any
+            // non-trivial threshold. Catch up front so the analyst
+            // sees the diagnostic instead of debugging why the rule
+            // never fires.
+            let owns_chain = scenario
+                .kill_chains
+                .values()
+                .any(|c| c.attacker == *attacker);
+            if !owns_chain {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     uses AttributionThreshold against `{attacker}`, but \
+                     no kill chain names `{attacker}` as its attacker — \
+                     the mean attribution would always be 0 and the rule \
+                     could never fire. Either add a chain or pick a \
+                     different condition."
+                )));
+            }
+            bad_threshold("AttributionThreshold.threshold", *threshold)?;
+        },
+        FractureCondition::MoraleFloor { floor } => {
+            bad_threshold("MoraleFloor.floor", *floor)?;
+        },
+        FractureCondition::TensionThreshold { threshold } => {
+            bad_threshold("TensionThreshold.threshold", *threshold)?;
+        },
+        FractureCondition::EventFired { event } => {
+            if !scenario.events.contains_key(event) {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {faction} alliance_fracture rule `{rule_id}` \
+                     references unknown event `{event}`"
+                )));
+            }
+        },
+        FractureCondition::StrengthLossFraction { delta_fraction } => {
+            bad_threshold("StrengthLossFraction.delta_fraction", *delta_fraction)?;
+        },
+    }
+    Ok(())
+}
+
 fn validate_environment_window(
     window: &faultline_types::map::EnvironmentWindow,
 ) -> Result<(), ScenarioError> {
@@ -852,6 +972,7 @@ mod tests {
                 escalation_rules: None,
                 defender_capacities: BTreeMap::new(),
                 leadership: None,
+                alliance_fracture: None,
             },
         );
 

@@ -33,6 +33,7 @@ use faultline_types::scenario::Scenario;
 const BUNDLED_SCENARIOS: &[&str] = &[
     "alert_fatigue_soc.toml",
     "capabilities_demo.toml",
+    "coalition_fracture_demo.toml",
     "coevolution_demo.toml",
     "compound_kill_chains.toml",
     "defender_posture_optimization.toml",

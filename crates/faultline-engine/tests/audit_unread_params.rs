@@ -91,6 +91,7 @@ fn make_faction(
         escalation_rules: None,
         defender_capacities: BTreeMap::new(),
         leadership,
+        alliance_fracture: None,
     }
 }
 

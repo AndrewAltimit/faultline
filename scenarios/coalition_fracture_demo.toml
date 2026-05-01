@@ -1,0 +1,377 @@
+# Coalition Fracture Demo — Epic D round two archetype
+#
+# Demonstrates the alliance_fracture mechanic: a Cooperative neighbor
+# that flips to Hostile when the attribution confidence on an attacker
+# crosses a threshold. Models the canonical "covert operation loses
+# its protective ambiguity once publicly attributed" dynamic — a
+# coalition partner can no longer politically sustain cooperation
+# with the attacker once the operation lands in open press.
+#
+# Three factions:
+#   - red_attacker: runs a covert chain that gradually accumulates
+#     attribution confidence (low attribution_difficulty values mean
+#     the defender quickly becomes confident about who's behind it)
+#   - blue_defender: target of the chain
+#   - gray_partner: a third-party Cooperative ally of red_attacker.
+#     Declares an alliance_fracture rule that flips the relationship
+#     to Hostile when red's mean attribution >= 0.4 — the analyst
+#     reads the per-rule fire rate in the report as "P(coalition
+#     breaks under this attribution profile)".
+#
+# All parameters are aggregate statistical descriptors. The scenario
+# is descriptive, not prescriptive, and contains no classified, CUI,
+# or export-controlled information.
+
+[meta]
+schema_version = 1
+name = "Coalition Fracture Demo — Attribution-Driven Alliance Break"
+description = "Three-faction archetype showing an alliance fracturing under attribution pressure on a covert kill chain. Surfaces the per-rule fire rate, mean fire tick, and terminal stance distribution in the report's Alliance Dynamics section."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["alliance-fracture", "kill-chain", "attribution", "coalition", "epic-d"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500_000
+urbanization = 0.5
+initial_control = "blue_defender"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East"
+population = 500_000
+urbanization = 0.5
+initial_control = "red_attacker"
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West"
+population = 500_000
+urbanization = 0.5
+initial_control = "gray_partner"
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500_000
+urbanization = 0.5
+initial_control = "blue_defender"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red_attacker]
+id = "red_attacker"
+name = "Red Attacker"
+description = "Runs the covert kill chain. Starts with a Cooperative relationship with gray_partner that is at risk of fracturing under attribution pressure."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+doctrine = "Conventional"
+
+[factions.red_attacker.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.red_attacker.forces.red_inf]
+id = "red_inf"
+name = "Red 1st Infantry"
+unit_type = "Infantry"
+region = "north_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# Authored baseline diplomacy: red_attacker initially views
+# gray_partner as Allied (the relationship that may fracture).
+[[factions.red_attacker.diplomacy]]
+target_faction = "gray_partner"
+stance = "Allied"
+
+[[factions.red_attacker.diplomacy]]
+target_faction = "blue_defender"
+stance = "Hostile"
+
+[factions.blue_defender]
+id = "blue_defender"
+name = "Blue Defender"
+description = "Target of the covert kill chain. Builds attribution confidence as the chain progresses."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.7
+doctrine = "Conventional"
+
+[factions.blue_defender.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue_defender.forces.blue_inf]
+id = "blue_inf"
+name = "Blue 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[[factions.blue_defender.diplomacy]]
+target_faction = "red_attacker"
+stance = "Hostile"
+
+[[factions.blue_defender.diplomacy]]
+target_faction = "gray_partner"
+stance = "Neutral"
+
+[factions.gray_partner]
+id = "gray_partner"
+name = "Gray Partner"
+description = "Third-party Cooperative ally of red_attacker. The alliance_fracture rule declared on this faction flips the stance toward red_attacker to Hostile when red's mean attribution exceeds 0.4 — the analyst reads the fire rate in the report as the probability that the coalition actually breaks under the attribution profile produced by red's chain."
+color = "#888888"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+doctrine = "Conventional"
+
+[factions.gray_partner.faction_type]
+kind = "Civilian"
+
+[factions.gray_partner.forces.gray_inf]
+id = "gray_inf"
+name = "Gray 1st Garrison"
+unit_type = "Infantry"
+region = "south_west"
+strength = 60.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[[factions.gray_partner.diplomacy]]
+target_faction = "red_attacker"
+stance = "Cooperative"
+
+[[factions.gray_partner.diplomacy]]
+target_faction = "blue_defender"
+stance = "Neutral"
+
+# Alliance fracture rules: gray_partner's stance toward red_attacker
+# flips to Hostile when red's attribution crosses 0.4. A second rule
+# fires on tension reaching 0.7 — models the same coalition breaking
+# even without a single attribution event, simply because the
+# political environment grew too hot.
+[factions.gray_partner.alliance_fracture]
+[[factions.gray_partner.alliance_fracture.rules]]
+id = "attribution_break"
+counterparty = "red_attacker"
+new_stance = "Hostile"
+description = "Public attribution forces the coalition partner to flip Cooperative -> Hostile."
+[factions.gray_partner.alliance_fracture.rules.condition]
+kind = "AttributionThreshold"
+attacker = "red_attacker"
+threshold = 0.4
+
+[[factions.gray_partner.alliance_fracture.rules]]
+id = "tension_break"
+counterparty = "red_attacker"
+new_stance = "Hostile"
+description = "High political tension breaks the coalition independently of attribution."
+[factions.gray_partner.alliance_fracture.rules.condition]
+kind = "TensionThreshold"
+threshold = 0.7
+
+# -- Technology -------------------------------------------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.45
+institutional_trust = 0.65
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.50
+disinformation_susceptibility = 0.40
+state_control = 0.20
+social_media_penetration = 0.85
+internet_availability = 0.95
+
+# -- Events -----------------------------------------------------------------
+
+[events]
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 60
+monte_carlo_runs = 32
+fog_of_war = false
+snapshot_interval = 10
+seed = 17
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Kill Chain ------------------------------------------------------------
+#
+# A short three-phase covert chain. attribution_difficulty values are
+# moderate (0.5-0.7) so attribution accumulates meaningfully across
+# the run. The chain doesn't need to succeed for the fracture rule to
+# fire — what matters is whether mean attribution crosses 0.4 in the
+# in-flight chains owned by red_attacker.
+
+[kill_chains.fracture_chain]
+id = "fracture_chain"
+name = "Covert Operation"
+description = "Three-phase covert chain whose attribution accumulation drives the alliance fracture decision on gray_partner."
+attacker = "red_attacker"
+target = "blue_defender"
+entry_phase = "approach"
+
+[kill_chains.fracture_chain.phases.approach]
+id = "approach"
+name = "Approach"
+description = "Initial reconnaissance. Low attribution difficulty so the defender quickly forms a hypothesis about the attacker."
+base_success_probability = 0.85
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.04
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.65
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.fracture_chain.phases.approach.cost]
+attacker_dollars = 1_000.0
+defender_dollars = 5_000.0
+attacker_resources = 0.5
+
+[[kill_chains.fracture_chain.phases.approach.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "exploit"
+
+[kill_chains.fracture_chain.phases.exploit]
+id = "exploit"
+name = "Exploit"
+description = "Mid-chain action. Accumulates the bulk of the defender's attribution confidence."
+prerequisites = ["approach"]
+base_success_probability = 0.70
+min_duration = 4
+max_duration = 8
+detection_probability_per_tick = 0.06
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.50
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.fracture_chain.phases.exploit.cost]
+attacker_dollars = 3_000.0
+defender_dollars = 15_000.0
+attacker_resources = 1.5
+
+[[kill_chains.fracture_chain.phases.exploit.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "exfil"
+
+[kill_chains.fracture_chain.phases.exfil]
+id = "exfil"
+name = "Exfiltrate"
+description = "Final step. Lower attribution difficulty here would ordinarily shred the operation's protective ambiguity even further."
+prerequisites = ["exploit"]
+base_success_probability = 0.80
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.05
+prerequisite_success_boost = 0.10
+attribution_difficulty = 0.55
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.fracture_chain.phases.exfil.cost]
+attacker_dollars = 1_500.0
+defender_dollars = 8_000.0
+attacker_resources = 1.0
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.blue_holds]
+id = "blue_holds"
+name = "Blue Holds Strategic Control"
+faction = "blue_defender"
+
+[victory_conditions.blue_holds.condition]
+type = "StrategicControl"
+threshold = 0.50
+
+[victory_conditions.red_holds]
+id = "red_holds"
+name = "Red Strategic Control"
+faction = "red_attacker"
+
+[victory_conditions.red_holds.condition]
+type = "StrategicControl"
+threshold = 0.50

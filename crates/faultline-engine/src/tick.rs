@@ -260,10 +260,35 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
                         .insert(node.clone());
                 }
             },
+            EventEffect::DiplomacyChange {
+                faction_a,
+                faction_b,
+                new_stance,
+            } => {
+                // Wired by Epic D round two (coalition fracture).
+                // We mutate the runtime override map rather than the
+                // scenario-authored Faction.diplomacy table so the
+                // baseline stays inspectable. The override is
+                // direction-aware: `(faction_a, faction_b) -> stance`
+                // sets faction_a's stance toward faction_b. The
+                // event variant currently models a one-directional
+                // change; symmetric flips are expressed by emitting
+                // two events. Unknown faction ids are silently
+                // ignored — same defensive shape used by every
+                // event effect with a faction reference.
+                if state.faction_states.contains_key(faction_a)
+                    && state.faction_states.contains_key(faction_b)
+                {
+                    state
+                        .diplomacy_overrides
+                        .entry(faction_a.clone())
+                        .or_default()
+                        .insert(faction_b.clone(), *new_stance);
+                }
+            },
             // Effects that require more complex handling are logged
             // but not fully resolved in this skeleton.
             EventEffect::InstitutionDefection { .. }
-            | EventEffect::DiplomacyChange { .. }
             | EventEffect::TechAccess { .. }
             | EventEffect::MediaEvent { .. }
             | EventEffect::Narrative { .. } => {

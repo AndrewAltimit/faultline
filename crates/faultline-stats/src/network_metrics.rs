@@ -942,6 +942,7 @@ mod tests {
                 m.insert(nid.clone(), report);
                 m
             },
+            fracture_events: Vec::new(),
         };
         let runs = vec![make_run(0, report1), make_run(1, report2)];
 

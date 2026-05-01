@@ -182,6 +182,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
         pareto_frontier: None,
         defender_capacity: Vec::new(),
         network_summaries: std::collections::BTreeMap::new(),
+        alliance_dynamics: None,
     };
     summary.win_rates.insert(FactionId::from("blue"), 0.5);
 

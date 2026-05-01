@@ -36,6 +36,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         campaign_reports: run.campaign_reports.clone(),
         defender_queue_reports: run.defender_queue_reports.clone(),
         network_reports: run.network_reports.clone(),
+        fracture_events: run.fracture_events.clone(),
     }
 }
 
@@ -64,6 +65,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         campaign_reports: encoded.campaign_reports.clone(),
         defender_queue_reports: encoded.defender_queue_reports.clone(),
         network_reports: encoded.network_reports.clone(),
+        fracture_events: encoded.fracture_events.clone(),
     }
 }
 
@@ -257,6 +259,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -316,6 +319,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -371,6 +375,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -397,6 +402,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -441,6 +447,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -526,6 +533,7 @@ mod tests {
             campaign_reports: Default::default(),
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
+            fracture_events: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

@@ -354,6 +354,7 @@ mod tests {
             pareto_frontier: None,
             defender_capacity: Vec::new(),
             network_summaries: std::collections::BTreeMap::new(),
+            alliance_dynamics: None,
         };
         let mut variant = base.clone();
 
