@@ -674,19 +674,6 @@ fn strength_loss_fraction_rule_fires_after_combat_attrition() {
         engine.state().fracture_events.is_empty(),
         "rule should not fire before any losses"
     );
-    // Now zero out alpha's force so total_strength drops to 0 — a
-    // 100% loss, well past the 0.5 threshold.
-    {
-        // Construct via a parallel engine so we can swap the
-        // scenario; simplest is to use SimulationState directly.
-        // The Engine doesn't expose a mutable accessor on purpose,
-        // so we construct a fresh engine, run one tick, then
-        // simulate the same situation by attriting via a chain of
-        // ticks that allow combat to happen organically when bravo
-        // is co-located. Use the co-located approach but with
-        // higher noise tolerance — alpha falls eventually and the
-        // rule fires before max_ticks=20 stops the run.
-    }
     // Run a fresh scenario where bravo is co-located with alpha; it
     // takes a handful of ticks for Lanchester noise=0 to drive both
     // sides toward zero. Use max_ticks=50 and a moderate

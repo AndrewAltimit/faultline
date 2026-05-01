@@ -85,8 +85,9 @@ pub struct SimulationState {
     /// Per-faction starting strength snapshot, captured once at
     /// initialization. Used by `FractureCondition::StrengthLossFraction`
     /// to compute the loss ratio without keeping a running history.
-    /// Empty when no faction declares an `alliance_fracture` rule
-    /// referencing strength.
+    /// Always populated at startup with one entry per faction (the
+    /// snapshot is cheap and unconditional); the fracture phase only
+    /// consults it when a rule references the strength condition.
     #[serde(default)]
     pub initial_faction_strengths: BTreeMap<FactionId, f64>,
     /// Log of every alliance-fracture firing in the current run, in

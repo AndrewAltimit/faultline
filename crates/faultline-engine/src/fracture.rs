@@ -29,11 +29,16 @@ use crate::state::SimulationState;
 ///
 /// The order of evaluation is deterministic: factions are visited in
 /// `BTreeMap` key order, and within each faction the rules are visited
-/// in their authored vector order. A rule that fires earlier in this
-/// order can affect a later rule's condition only via
-/// `previous_stance` reads on `EventFired` — every other condition
-/// reads runtime metrics (morale, tension, attribution, strength) that
-/// the fracture phase does not mutate.
+/// in their authored vector order. Rule evaluation is fully
+/// independent — no `FractureCondition` variant reads
+/// `diplomacy_overrides`, so an earlier firing has no effect on the
+/// condition test of any subsequent rule. Every condition reads
+/// runtime metrics (morale, tension, attribution, strength) or the
+/// cumulative `events_fired` log, none of which the fracture phase
+/// mutates. The capture of `previous_stance` for the recorded event
+/// *does* read live overrides, so same-tick fractures targeting the
+/// same pair correctly chain through one another in the report's
+/// transition log.
 pub fn fracture_phase(
     state: &mut SimulationState,
     scenario: &Scenario,

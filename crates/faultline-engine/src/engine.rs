@@ -145,7 +145,7 @@ impl Engine {
         // declaring a `leadership` cadre.
         tick::apply_leadership_caps(&mut self.state, &self.scenario);
 
-        // Phase 7e: Alliance-fracture evaluation (Epic D round two).
+        // Phase 7d: Alliance-fracture evaluation (Epic D round two).
         // Reads the post-campaign attribution / morale / tension /
         // strength state plus the cumulative `events_fired` log and
         // mutates `diplomacy_overrides` when a rule's condition is
@@ -153,7 +153,7 @@ impl Engine {
         // declarations.
         fracture_phase::fracture_phase(&mut self.state, &self.scenario, &self.campaigns);
 
-        // Phase 7d: Network resilience capture (Epic L). Records one
+        // Phase 7e: Network resilience capture (Epic L). Records one
         // [`NetworkSample`] per declared network at end-of-tick so
         // any same-tick interdiction event is reflected in the sample.
         // No-op for scenarios with no `[networks.*]` declarations.
