@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use faultline_engine::Engine;
+use faultline_engine::{Engine, tick, validate_scenario};
 use faultline_types::campaign::{
     BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
 };
@@ -23,12 +23,15 @@ use faultline_types::faction::{
     Faction, FactionType, ForceUnit, LeadershipCadre, LeadershipRank, MilitaryBranch, UnitType,
 };
 use faultline_types::ids::{FactionId, ForceId, KillChainId, PhaseId, RegionId, VictoryId};
-use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
+use faultline_types::map::{
+    Activation, EnvironmentSchedule, EnvironmentWindow, MapConfig, MapSource, Region,
+    TerrainModifier, TerrainType,
+};
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
 use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
 use faultline_types::stats::PhaseOutcome;
-use faultline_types::strategy::Doctrine;
+use faultline_types::strategy::{Doctrine, FactionAction};
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
 // ---------------------------------------------------------------------------
@@ -60,6 +63,7 @@ fn make_force(id: &str, region: &RegionId, strength: f64, morale_modifier: f64) 
         upkeep: 1.0,
         morale_modifier,
         capabilities: vec![],
+        move_progress: 0.0,
     }
 }
 
@@ -677,5 +681,255 @@ fn defender_budget_overrun_reduces_post_overrun_detection_rate() {
         detected_overrun < detected_no_overrun,
         "expected fewer detections when defender is over budget; \
          got overrun={detected_overrun} no_overrun={detected_no_overrun}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 4: ForceUnit.mobility / TerrainModifier.movement_modifier /
+//          EnvironmentWindow.movement_factor gate per-tick movement
+// ---------------------------------------------------------------------------
+//
+// All three fields were silent no-ops before R3-2 round-two. They now
+// compose multiplicatively into a per-tick "effective mobility" that
+// drives a `move_progress` accumulator on the unit; a queued
+// `MoveUnit` action only fires when the accumulator reaches `1.0`.
+// The tests below pin the rate-gating semantics by counting how many
+// queued attempts it takes for a unit to actually move under various
+// (mobility, terrain, env) combinations.
+
+/// Build a 4-region chain (r1 - r2 - r3 - r4) with one alpha unit at
+/// `r1` and no enemies / kill chains. Caller customizes mobility and
+/// the terrain.movement_modifier on r1 (the source region for moves).
+fn movement_rate_scenario(
+    mobility: f64,
+    terrain_movement_modifier: f64,
+    environment: EnvironmentSchedule,
+) -> Scenario {
+    let mut sc = empty_scenario(42, 50);
+
+    let r1 = RegionId::from("r1");
+    let r2 = RegionId::from("r2");
+    let r3 = RegionId::from("r3");
+    let r4 = RegionId::from("r4");
+
+    let mut regions = BTreeMap::new();
+    regions.insert(r1.clone(), make_region("r1", vec![r2.clone()]));
+    regions.insert(r2.clone(), make_region("r2", vec![r1.clone(), r3.clone()]));
+    regions.insert(r3.clone(), make_region("r3", vec![r2.clone(), r4.clone()]));
+    regions.insert(r4.clone(), make_region("r4", vec![r3.clone()]));
+    sc.map.regions = regions;
+
+    sc.map.terrain = vec![
+        TerrainModifier {
+            region: r1.clone(),
+            terrain_type: TerrainType::Rural,
+            movement_modifier: terrain_movement_modifier,
+            defense_modifier: 1.0,
+            visibility: 1.0,
+        },
+        TerrainModifier {
+            region: r2,
+            terrain_type: TerrainType::Rural,
+            movement_modifier: 1.0,
+            defense_modifier: 1.0,
+            visibility: 1.0,
+        },
+        TerrainModifier {
+            region: r3,
+            terrain_type: TerrainType::Rural,
+            movement_modifier: 1.0,
+            defense_modifier: 1.0,
+            visibility: 1.0,
+        },
+        TerrainModifier {
+            region: r4,
+            terrain_type: TerrainType::Rural,
+            movement_modifier: 1.0,
+            defense_modifier: 1.0,
+            visibility: 1.0,
+        },
+    ];
+
+    sc.environment = environment;
+
+    let mut force = make_force("u", &r1, 50.0, 0.0);
+    force.mobility = mobility;
+    let mut forces = BTreeMap::new();
+    forces.insert(ForceId::from("u"), force);
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc
+}
+
+/// Initialize an Engine, then call `tick::movement_phase` `attempts`
+/// times with a queued `MoveUnit u → r2` action. Returns the number
+/// of attempts on which the unit actually changed region (i.e. moves
+/// that succeeded). Bypasses the AI to isolate the rate-gate
+/// behavior from decision logic.
+fn count_successful_moves(scenario: Scenario, attempts: u32) -> u32 {
+    let map = faultline_geo::load_map(&scenario.map).expect("map loads");
+    let engine = Engine::with_seed(scenario.clone(), 42).expect("engine init");
+    let mut state = engine.state().clone();
+
+    let alpha = FactionId::from("alpha");
+    let force = ForceId::from("u");
+    let dest = RegionId::from("r2");
+    let queued = BTreeMap::from([(
+        alpha.clone(),
+        vec![FactionAction::MoveUnit {
+            force: force.clone(),
+            destination: dest.clone(),
+        }],
+    )]);
+
+    let mut moves = 0;
+    for tick_n in 1..=attempts {
+        // Reset the unit back to r1 between attempts so we keep
+        // queueing the same r1→r2 move; the test is about *rate*,
+        // not about chained-region traversal.
+        if let Some(fs) = state.faction_states.get_mut(&alpha)
+            && let Some(unit) = fs.forces.get_mut(&force)
+        {
+            unit.region = RegionId::from("r1");
+        }
+        state.tick = tick_n;
+        tick::movement_phase(&mut state, &scenario, &map, &queued);
+        let after_region = state
+            .faction_states
+            .get(&alpha)
+            .and_then(|fs| fs.forces.get(&force))
+            .map(|u| u.region.clone());
+        if after_region == Some(dest.clone()) {
+            moves += 1;
+        }
+    }
+    moves
+}
+
+#[test]
+fn mobility_one_moves_every_tick_legacy_default() {
+    // mobility=1, terrain=1, no env — the legacy baseline. Every
+    // attempt should succeed.
+    let sc = movement_rate_scenario(1.0, 1.0, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(
+        moves, 10,
+        "default mobility=1.0 must preserve legacy 1-region-per-tick movement"
+    );
+}
+
+#[test]
+fn mobility_half_halves_movement_rate() {
+    // mobility=0.5 — accumulator hits 1.0 every other attempt.
+    let sc = movement_rate_scenario(0.5, 1.0, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(
+        moves, 5,
+        "mobility=0.5 should produce one successful move per two attempts"
+    );
+}
+
+#[test]
+fn mobility_zero_freezes_unit() {
+    // mobility=0 — accumulator never grows, unit never moves.
+    let sc = movement_rate_scenario(0.0, 1.0, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(moves, 0, "mobility=0 must freeze the unit entirely");
+}
+
+#[test]
+fn mobility_above_one_capped_at_one_per_tick() {
+    // The accumulator caps at 1.0 to prevent saved-up moves; a
+    // mobility>1 unit still moves every tick (no faster).
+    let sc = movement_rate_scenario(2.0, 1.0, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(
+        moves, 10,
+        "mobility>1 should still move every tick (capped, not faster)"
+    );
+}
+
+#[test]
+fn terrain_movement_modifier_scales_rate() {
+    // terrain modifier 0.5 on the source region — same effect as
+    // mobility 0.5: half-rate movement.
+    let sc = movement_rate_scenario(1.0, 0.5, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(
+        moves, 5,
+        "terrain.movement_modifier=0.5 should halve the movement rate"
+    );
+}
+
+#[test]
+fn environment_movement_factor_scales_rate() {
+    // Active env window with movement_factor=0.5 — same effect as
+    // halving mobility or the terrain modifier.
+    let env = EnvironmentSchedule {
+        windows: vec![EnvironmentWindow {
+            id: "storm".into(),
+            name: "Storm".into(),
+            activation: Activation::Always,
+            applies_to: vec![],
+            movement_factor: 0.5,
+            defense_factor: 1.0,
+            visibility_factor: 1.0,
+            detection_factor: 1.0,
+        }],
+    };
+    let sc = movement_rate_scenario(1.0, 1.0, env);
+    let moves = count_successful_moves(sc, 10);
+    assert_eq!(
+        moves, 5,
+        "active env window with movement_factor=0.5 should halve the movement rate"
+    );
+}
+
+#[test]
+fn movement_factors_compose_multiplicatively() {
+    // mobility 0.5 × terrain 0.5 = effective 0.25 → moves every 4
+    // attempts. Pins the multiplicative composition contract.
+    let sc = movement_rate_scenario(0.5, 0.5, EnvironmentSchedule::default());
+    let moves = count_successful_moves(sc, 12);
+    assert_eq!(
+        moves, 3,
+        "mobility=0.5 × terrain=0.5 → 0.25 effective → 1 move per 4 attempts (12 / 4 = 3)"
+    );
+}
+
+#[test]
+fn validate_rejects_negative_mobility() {
+    let sc = movement_rate_scenario(-0.5, 1.0, EnvironmentSchedule::default());
+    let err = validate_scenario(&sc).expect_err("negative mobility must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("mobility"),
+        "expected mobility-related rejection, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_nan_mobility() {
+    let sc = movement_rate_scenario(f64::NAN, 1.0, EnvironmentSchedule::default());
+    let err = validate_scenario(&sc).expect_err("NaN mobility must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("mobility"),
+        "expected mobility-related rejection, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_negative_terrain_movement_modifier() {
+    let sc = movement_rate_scenario(1.0, -0.1, EnvironmentSchedule::default());
+    let err =
+        validate_scenario(&sc).expect_err("negative terrain.movement_modifier must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("movement_modifier"),
+        "expected movement_modifier-related rejection, got `{msg}`"
     );
 }

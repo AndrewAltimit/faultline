@@ -64,6 +64,25 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Terrain movement modifier (R3-2 round-two — wired into
+    // `movement_phase` via the move-accumulator gate). NaN or
+    // negative values would silently invert / poison the gate
+    // (the `.max(0.0)` clamp turns them into 0.0, which freezes
+    // any unit standing on the region). Reject loudly at load
+    // time rather than at tick N — same shape as the analogous
+    // checks for environment-window factors and defender-capacity
+    // service rates.
+    for terrain in &scenario.map.terrain {
+        if !terrain.movement_modifier.is_finite() || terrain.movement_modifier < 0.0 {
+            return Err(ScenarioError::Custom(format!(
+                "terrain modifier for region `{}` declares non-finite or negative \
+                 movement_modifier {}; it would silently freeze units standing on \
+                 the region under the move-accumulator gate.",
+                terrain.region, terrain.movement_modifier
+            )));
+        }
+    }
+
     for (fid, faction) in &scenario.factions {
         for unit in faction.forces.values() {
             if !scenario.map.regions.contains_key(&unit.region) {
@@ -72,6 +91,19 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     faction: fid.clone(),
                     region: unit.region.clone(),
                 });
+            }
+            // Mobility (R3-2 round-two). Same rationale as the
+            // terrain-modifier check above: a non-finite or negative
+            // mobility silently freezes the unit under the move-
+            // accumulator gate (the `.max(0.0)` clamp turns it into
+            // 0.0). Fail loud.
+            if !unit.mobility.is_finite() || unit.mobility < 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "force unit `{}` in faction `{}` declares non-finite or negative \
+                     mobility {}; it would silently freeze the unit under the move-\
+                     accumulator gate.",
+                    unit.name, fid, unit.mobility
+                )));
             }
         }
 

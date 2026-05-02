@@ -103,6 +103,7 @@ fn minimal_search_scenario(low: f64, high: f64) -> Scenario {
                 upkeep: 1.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
         Faction {

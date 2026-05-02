@@ -335,16 +335,21 @@ pub fn decision_phase(
 // -----------------------------------------------------------------------
 
 /// Resolve queued movement actions. Units move to adjacent regions
-/// if the move is valid.
+/// if the move is valid and their movement accumulator has reached
+/// the unit threshold (R3-2 round-two — wires `ForceUnit.mobility`,
+/// `TerrainModifier.movement_modifier`, and active environment
+/// windows' `movement_factor` into a single per-tick rate gate).
 pub fn movement_phase(
     state: &mut SimulationState,
+    scenario: &Scenario,
     map: &GameMap,
     queued_actions: &BTreeMap<FactionId, Vec<FactionAction>>,
 ) {
+    let tick = state.tick;
     for (faction_id, actions) in queued_actions {
         for action in actions {
             if let FactionAction::MoveUnit { force, destination } = action {
-                move_unit(state, faction_id, force, destination, map);
+                move_unit(state, scenario, faction_id, force, destination, map, tick);
             }
         }
     }
@@ -352,10 +357,12 @@ pub fn movement_phase(
 
 fn move_unit(
     state: &mut SimulationState,
+    scenario: &Scenario,
     faction_id: &FactionId,
     force_id: &ForceId,
     destination: &RegionId,
     map: &GameMap,
+    tick: u32,
 ) {
     let fs = match state.faction_states.get_mut(faction_id) {
         Some(fs) => fs,
@@ -373,8 +380,36 @@ fn move_unit(
         return;
     }
 
-    // Move the unit.
+    // Compute effective mobility: unit mobility × terrain modifier
+    // (source region) × environment movement_factor. NaN/negative
+    // values are clamped to 0.0 via `.max(0.0)` (IEEE-754 fmax
+    // semantics turn NaN into the other operand) so a malicious or
+    // buggy override can't drive the accumulator negative. Mirrors
+    // the graceful-degradation pattern in `find_contested_regions`
+    // for `morale_modifier`.
+    let source_terrain = scenario
+        .map
+        .terrain
+        .iter()
+        .find(|t| t.region == force.region);
+    let terrain_modifier = source_terrain.map_or(1.0, |t| t.movement_modifier);
+    let terrain_type = source_terrain.map_or(TerrainType::Rural, |t| t.terrain_type.clone());
+    let env_factor = environment_movement_factor(scenario, &terrain_type, tick);
+    let effective_mobility = (force.mobility * terrain_modifier * env_factor).max(0.0);
+
+    // Move accumulator. Capped at 1.0 so the field can never
+    // accumulate "saved up" moves between attempts — keeps the
+    // gate's per-call semantics local. Default field value is 0.0
+    // (post-deserialize), so a unit with `mobility = 1.0` and
+    // identity terrain/env multipliers reaches the 1.0 threshold on
+    // its first attempt and moves every subsequent tick — exactly
+    // the legacy behavior.
     if let Some(force) = fs.forces.get_mut(force_id) {
+        force.move_progress = (force.move_progress + effective_mobility).min(1.0);
+        if force.move_progress < 1.0 {
+            return;
+        }
+        force.move_progress -= 1.0;
         force.region = destination.clone();
     }
 }
@@ -698,6 +733,7 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
                     upkeep: recruit.cost * 0.1,
                     morale_modifier: 0.0,
                     capabilities: Vec::new(),
+                    move_progress: 0.0,
                 };
                 fs.forces.insert(new_id, unit);
                 fs.resources -= recruit.cost;
@@ -825,6 +861,7 @@ fn process_civilian_activation(
                             upkeep: unit_strength * 0.05,
                             morale_modifier: 0.0,
                             capabilities: Vec::new(),
+                            move_progress: 0.0,
                         };
                         fs.forces.insert(force_id, unit);
                     }
@@ -1115,6 +1152,21 @@ pub fn update_region_control(state: &mut SimulationState, _scenario: &Scenario) 
 /// Whether `window` applies to a region of the given terrain.
 fn window_covers(window: &EnvironmentWindow, terrain: &TerrainType) -> bool {
     window.applies_to.is_empty() || window.applies_to.contains(terrain)
+}
+
+/// Multiplicative product of every active window's `movement_factor`
+/// that covers `terrain` at `tick`. Empty schedule resolves to 1.0,
+/// so legacy scenarios are unchanged. Read by the movement phase
+/// when computing a unit's effective mobility for the accumulator
+/// gate (R3-2 round-two).
+pub fn environment_movement_factor(scenario: &Scenario, terrain: &TerrainType, tick: u32) -> f64 {
+    multiplicative_factor(&scenario.environment, tick, |w| {
+        if window_covers(w, terrain) {
+            Some(w.movement_factor)
+        } else {
+            None
+        }
+    })
 }
 
 /// Multiplicative product of every active window's `defense_factor`

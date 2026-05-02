@@ -41,11 +41,16 @@ The five highest-leverage open items, in order:
    2026** — see closed-epics list. Remaining Epic P items (Monaco
    editor, hover docs, inline validation panel) stay deferred.
 4. **R3-2 round two — finish the unread-parameter audit.** Round
-   one shipped the three highest-leverage silent-no-ops; six more
-   sit deferred (`upkeep`, `mobility`, `diplomacy`,
-   population-segment activation, tech-card costs,
-   `force_projection`). Closing the gap maintains the trust the
-   round-one audit bought.
+   one shipped the three highest-leverage silent-no-ops; round
+   two has been closing the rest opportunistically. As of May 2026:
+   `diplomacy` shipped with Epic D round-three item 1; the
+   `mobility` + `terrain.movement_modifier` +
+   `EnvironmentWindow.movement_factor` triple shipped as a coupled
+   "movement rate" wiring (R3-2 round-two item 1; `upkeep` was
+   already wired). Items still deferred: population-segment
+   activation, tech-card costs, visualization metadata
+   (`Region.centroid`, `Faction.color`), `force_projection`.
+   Closing the gap maintains the trust the round-one audit bought.
 5. **Defer Epic J (adaptive AI) and Epic M (belief states) until
    N is at least scaffolded.** Both are interesting but produce
    more outputs whose calibration is unknown. They compound the
@@ -142,7 +147,7 @@ work.
 
 ## Status snapshot
 
-**Closed (20):** A (uncertainty), B (counterfactual), C (time +
+**Closed (21):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -154,18 +159,23 @@ analysis), K (defender capacity / queue dynamics), L (network
 primitives), O (schema versioning), P sub-item (`faultline-cli
 explain` — pure-schema "what does this scenario actually model?"
 view), Q (manifest replay), R3-2 round-one (unread-parameter audit,
-three highest-leverage parameters), R3-3 (decompose `report.rs`),
-R3-5 (property tests — `proptest` coverage of engine / search /
-uncertainty / network_metrics invariants).
+three highest-leverage parameters), R3-2 round-two item 1
+(`ForceUnit.mobility` + `terrain.movement_modifier` +
+`EnvironmentWindow.movement_factor` wired into a per-tick
+move-accumulator gate; `ForceUnit.upkeep` turned out to be already
+wired), R3-3 (decompose `report.rs`), R3-5 (property tests —
+`proptest` coverage of engine / search / uncertainty /
+network_metrics invariants).
 
 **Deferred / open epics:** D round-three (2 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
 (belief asymmetry), N (calibration), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
-round-two (audit follow-up — `Faction.diplomacy` closed alongside
-Epic D round-three item 1; five items still deferred), R3-4
-(generalize leadership morale cap), R3-6 (decompose `Scenario`).
+round-two (audit follow-up — items 2 + 1 closed; four items still
+deferred: population-segment activation, tech-card costs,
+visualization metadata, `force_projection`), R3-4 (generalize
+leadership morale cap), R3-6 (decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -361,13 +371,31 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
   literal in `crates/**/tests*` migrates to the spread form.
 - **R3-2 round two: unread-parameter audit follow-up.** Round one
   wired `command_resilience`, `morale_modifier`, and
-  `defender_budget`. Six items remain, in priority order:
-  1. `ForceUnit.upkeep` and `ForceUnit.mobility`. Both authored in
+  `defender_budget`. Items in priority order:
+  1. ~~`ForceUnit.upkeep` and `ForceUnit.mobility`. Both authored in
      every bundled scenario, both unread. `upkeep` pairs with
      per-tick resource drain; `mobility` would gate `movement_phase`
      rate (currently every unit moves 1 region/tick). Movement-rate
      semantics need a policy decision (move accumulator vs. tick-rate
-     gate) that's bigger than the audit scope.
+     gate) that's bigger than the audit scope.~~ **Shipped May 2026.**
+     `ForceUnit.upkeep` turned out to already be wired (sums per-tick
+     over `fs.forces` and deducts from `resources` in
+     `tick::attrition_phase`); the original audit missed it. The
+     R3-2-round-two PR landed `ForceUnit.mobility` together with
+     `TerrainModifier.movement_modifier` and
+     `EnvironmentWindow.movement_factor` as a single coupled
+     "movement rate" wiring — a per-attempt
+     `effective_mobility = mobility × terrain_modifier × env_factor`
+     drives a `move_progress` accumulator on the unit, capped at
+     `1.0`, with the move firing only when the accumulator reaches
+     the threshold. Default authoring (`mobility = 1.0`, terrain
+     modifier 1.0, no env windows) preserves legacy
+     "moves every tick when queued" behavior. Validation rejects
+     three silent-no-op shapes: non-finite or negative mobility,
+     non-finite or negative `terrain.movement_modifier`, and
+     `EnvironmentWindow.movement_factor` (already covered).
+     See the "Unread-parameter audit (R3-2 round two — movement
+     rate)" section in `CLAUDE.md`.
   2. ~~`Faction.diplomacy`. Declared by 32 scenarios, mostly empty.
      Wiring is non-trivial (alliance dynamics affect combat
      targeting and political phase). Closes the round-two coalition-

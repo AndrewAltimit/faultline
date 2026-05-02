@@ -36,6 +36,7 @@ fn make_ai_test_state() -> SimulationState {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -53,6 +54,7 @@ fn make_ai_test_state() -> SimulationState {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -274,6 +276,7 @@ fn ai_evaluates_defend_for_threatened_region() {
                 upkeep: 2.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
 
@@ -337,6 +340,7 @@ fn ai_evaluates_attack_for_weak_enemy() {
                 upkeep: 1.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
 
@@ -463,6 +467,7 @@ fn allied_neighbor_preserves_downstream_rng_state() {
                 upkeep: 1.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
         fs

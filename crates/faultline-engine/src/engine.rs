@@ -109,7 +109,7 @@ impl Engine {
             tick::decision_phase(&mut self.state, &self.scenario, &self.map, &mut self.rng);
 
         // Phase 3: Movement.
-        tick::movement_phase(&mut self.state, &self.map, &queued_actions);
+        tick::movement_phase(&mut self.state, &self.scenario, &self.map, &queued_actions);
 
         // Phase 4: Combat.
         let combats_resolved = tick::combat_phase(&mut self.state, &self.scenario, &mut self.rng);

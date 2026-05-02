@@ -558,6 +558,66 @@ defender-budget detection penalty). See `docs/improvement-plan.md` R3-2
 for deferred items (`upkeep`, `mobility`, `diplomacy`,
 population-segment activation, tech-card costs).
 
+**Unread-parameter audit (R3-2 round two — movement rate).** Three
+movement-related fields that were silent in round one now compose
+into a single per-tick "effective mobility" gate. The wiring lives in
+`crates/faultline-engine/src/tick.rs` (`movement_phase` /
+`environment_movement_factor`) and pairs with a new runtime field
+`ForceUnit.move_progress` (`#[serde(default)]`, so legacy TOML loads
+unchanged).
+
+- `ForceUnit.mobility` — per-unit movement rate.
+- `TerrainModifier.movement_modifier` — per-region movement
+  attenuator. Read from the unit's *source* region; a unit moving
+  out of a 0.5-modifier region is gated by 0.5 regardless of the
+  destination.
+- `EnvironmentWindow.movement_factor` — globally-scoped weather /
+  time-of-day attenuator on top of the per-region modifier.
+  Composes via `tick::environment_movement_factor` (multiplicative
+  over every active window covering the source-region terrain).
+
+Per move-attempt:
+`effective_mobility = (mobility × terrain_modifier × env_factor).max(0.0)`
+is added to `move_progress`, capped at `1.0`. The queued
+`MoveUnit` action only fires once `move_progress >= 1.0`, at which
+point exactly `1.0` is consumed (a unit with mobility 0.5 takes
+two attempts to move; a unit with mobility 2.0 still moves every
+tick — the cap prevents saved-up moves). Default authoring
+(`mobility = 1.0`, terrain modifier 1.0, no env windows) reproduces
+the previous "unit moves every tick when queued" behavior exactly.
+
+Validation rejects three silent-no-op shapes: non-finite or
+negative `ForceUnit.mobility`, non-finite or negative
+`TerrainModifier.movement_modifier` (negative would silently invert
+the gate; NaN would propagate via `(1.0 + NaN).max(0.0) → 0.0`,
+freezing the unit on that region); env-window factor validation
+(`validate_environment_window`) already rejected non-finite
+`movement_factor` from Epic D round-one.
+
+Determinism: every helper is a pure function of `(scenario, state,
+tick)` — no RNG, no allocation in the hot path. Adding a non-1.0
+`mobility`, terrain modifier, or env `movement_factor` *will* change
+the affected scenario's combat schedule (and downstream observable
+outcomes), but determinism for any fixed seed holds.
+
+Regression suite: `crates/faultline-engine/tests/audit_unread_params.rs`
+gains 10 tests pinning rate-gate semantics, multiplicative
+composition, the cap behavior, and the three validation rejections.
+The integration-test fixture in `crates/faultline-engine/tests/integration.rs::base_scenario`
+was tightened to use uniform `movement_modifier = 1.0` so combat /
+tech tests aren't accidentally exercising the new gate (defense
+modifiers and visibility keep their per-region variation, which the
+combat suite still depends on).
+
+Round-two items still deferred: `Faction.diplomacy` (closed by Epic
+D round-three item 1), population-segment activation, tech-card
+costs, `Region.centroid` / `Faction.color` (visualization metadata),
+`ForceUnit.force_projection`. See `docs/improvement-plan.md` R3-2
+for the priority order. `ForceUnit.upkeep` was already wired in an
+earlier change (sums per-tick over `fs.forces` and deducts from
+`resources` in `tick::attrition_phase`); the round-two plan entry
+listing it as silent is now corrected.
+
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> verify-robustness -> js-tests**.
 
 The JS tests cover the pure-logic frontend modules (sharing roundtrip,
