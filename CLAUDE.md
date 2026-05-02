@@ -524,6 +524,58 @@ manifest content hash, so changing section ordering or adding any
 unconditional output flips every bundled scenario's `output_hash`
 and breaks `--verify`. The `verify-bundled` CI step catches this.
 
+## Property tests (R3-5)
+
+Determinism + seeded RNG is the substrate property tests are designed
+for, so R3-5 added a `proptest`-backed suite covering the four modules
+that handle RNG or compute statistical bounds. The tests live alongside
+the existing fixed-seed integration tests; they pin *invariants* across
+the whole input space rather than checking specific outputs at one
+seed.
+
+- `crates/faultline-engine/tests/property_invariants.rs` — for any
+  seed: faction `total_strength` ≥ 0 across every snapshot, faction
+  morale stays in `[0, 1]`, tension stays in `[0, 1]`, and two engine
+  runs at the same seed produce bit-identical `RunResult` JSON
+  (the determinism contract `--verify` depends on). Uses the bundled
+  `tutorial_symmetric.toml` scenario via `include_str!` to exercise a
+  realistic engine path; proptest budget tightened to 16 cases so the
+  4 properties × ~100 ticks each finish under a second.
+- `crates/faultline-stats/tests/property_uncertainty.rs` — Wilson
+  bounds always contain the point estimate, narrow monotonically with
+  sample size, and `wilson_from_rate` agrees with the count form.
+  Bootstrap CI is bit-identical for the same `(values, seed)` and
+  always satisfies `lower ≤ upper`.
+- `crates/faultline-stats/tests/property_network_metrics.rs` —
+  disrupting nodes or zeroing edges never *increases* max-flow on a
+  static topology (the example invariant from `improvement-plan.md`),
+  max-flow is always non-negative and finite, and Brandes betweenness
+  scores stay in `[0, 1]` with descending-rank output.
+- `crates/faultline-stats/tests/property_search.rs` — same
+  `search_seed` ⇒ bit-identical `SearchResult` JSON across random
+  seeds, every trial's continuous assignments stay in `[low, high]`,
+  every grid-mode trial hits one of the enumerated `enumerate_levels`
+  values, and the Pareto frontier is strictly ascending and in-bounds.
+  Uses an inline minimal scenario fixture (two regions, two factions,
+  30 max ticks, `num_runs = 2`) so the engine path stays fast under
+  proptest's 24-case budget.
+
+The properties are intentionally lightweight: each test files runs
+in well under a second even though several involve full engine runs
+per case, because the fixtures are scenario-minimal. Adding a new
+property is one new `#[test]` inside an existing `proptest!` block —
+no scaffolding required since `proptest` is already a workspace
+dev-dependency on every relevant crate.
+
+**Why these properties.** The May 2026 priority refresh promoted
+property tests to the top-five priority list specifically because the
+seeded-RNG / `BTreeMap`-iteration determinism contract is exactly the
+invariant property tests are good at pinning. Fixed-seed integration
+tests catch the failure mode "this output is wrong at seed 42"; they
+don't catch "an unrelated refactor introduced a `HashMap` somewhere
+in the trial pipeline and now run-to-run output is non-deterministic
+under most seeds." Property tests do.
+
 ## Code Style
 
 - Rust Edition 2024. Formatting enforced by `rustfmt.toml`: 100-char max line width, 4-space indentation, Unix newlines, `Tall` fn params layout.
