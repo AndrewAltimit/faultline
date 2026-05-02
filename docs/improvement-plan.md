@@ -142,10 +142,11 @@ work.
 
 ## Status snapshot
 
-**Closed (18):** A (uncertainty), B (counterfactual), C (time +
+**Closed (19):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
-(coalition fracture), G (reference sanitization), H round-one
+(coalition fracture), D round-three item 1 (diplomacy behavioral
+coupling for combat + AI), G (reference sanitization), H round-one
 (strategy search), H round-two (adversarial co-evolution), I
 round-one (defender-posture optimization), I round-two (robustness
 analysis), K (defender capacity / queue dynamics), L (network
@@ -156,13 +157,14 @@ three highest-leverage parameters), R3-3 (decompose `report.rs`),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
-**Deferred / open epics:** D round-three (4 remaining items), E (UI
+**Deferred / open epics:** D round-three (3 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
 (belief asymmetry), N (calibration), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
-round-two (audit follow-up), R3-4 (generalize leadership morale
-cap), R3-6 (decompose `Scenario`).
+round-two (audit follow-up — `Faction.diplomacy` closed alongside
+Epic D round-three item 1; five items still deferred), R3-4
+(generalize leadership morale cap), R3-6 (decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -176,13 +178,19 @@ PR descriptions on `main`. This doc no longer carries them.
 
 Round one shipped `OrAny`, the environment schedule, and leadership
 decapitation. Round two added coalition fracture (analytical
-accounting only — see the scope caveat in `CLAUDE.md`). Four items
-remain:
+accounting only). Round three opens with diplomacy behavioral
+coupling for combat and AI; three items remain.
 
-- [ ] Behavioral coupling for diplomacy: combat targeting respects
-      `Diplomacy::Allied`, AI de-prioritizes Cooperative neighbors.
-      Closes the "analytical accounting only" caveat on the round-two
-      coalition fracture mechanic.
+- [x] **Behavioral coupling for diplomacy (combat + AI).** Shipped
+      May 2026. Mutually-Allied pairs skip combat; Cooperative
+      neighbors are de-rated to 0.3× in AI threat presence and
+      attack scoring. Reads `fracture::current_stance` so
+      post-fracture and `EventEffect::DiplomacyChange` overrides are
+      respected. Closes the round-two "analytical accounting only"
+      caveat for combat and AI; victory-check and political phases
+      still ignore diplomacy. See the "Diplomatic stance behavioral
+      coupling" section in `CLAUDE.md`. Also closes R3-2 round-two
+      item 2 (`Faction.diplomacy` unread).
 - [ ] Supply-network interdiction phase on top of Epic L's network
       primitives. The graph is shipped; the per-tick phase that turns
       capacity drops into faction-level resource pressure is not.
@@ -352,10 +360,14 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
      rate (currently every unit moves 1 region/tick). Movement-rate
      semantics need a policy decision (move accumulator vs. tick-rate
      gate) that's bigger than the audit scope.
-  2. `Faction.diplomacy`. Declared by 32 scenarios, mostly empty.
+  2. ~~`Faction.diplomacy`. Declared by 32 scenarios, mostly empty.
      Wiring is non-trivial (alliance dynamics affect combat
      targeting and political phase). Closes the round-two coalition-
-     fracture caveat in Epic D.
+     fracture caveat in Epic D.~~ **Shipped May 2026** as part of
+     Epic D round-three item 1 (combat + AI behavioral coupling for
+     `Diplomacy::Allied` and `Diplomacy::Cooperative`). Political-
+     phase and victory-check coupling remain deferred — open whenever
+     a use case appears.
   3. `MediaLandscape.{fragmentation, social_media_penetration,
      internet_availability}` and `PopulationSegment.{activation_threshold,
      activation_actions, volatility}`. The population-segment
