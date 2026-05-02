@@ -933,3 +933,28 @@ fn validate_rejects_negative_terrain_movement_modifier() {
         "expected movement_modifier-related rejection, got `{msg}`"
     );
 }
+
+#[test]
+fn validate_rejects_authored_move_progress() {
+    // `move_progress` is engine runtime state — `#[serde(default)]`
+    // keeps legacy TOML loading unchanged, but a non-zero authored
+    // value would silently pre-warm the accumulator and cause the
+    // first queued move to fire on tick 1 regardless of mobility /
+    // terrain / env. Reject loudly at load time.
+    let mut sc = movement_rate_scenario(1.0, 1.0, EnvironmentSchedule::default());
+    let alpha = FactionId::from("alpha");
+    let unit = ForceId::from("u");
+    sc.factions
+        .get_mut(&alpha)
+        .expect("alpha faction")
+        .forces
+        .get_mut(&unit)
+        .expect("unit u")
+        .move_progress = 0.9;
+    let err = validate_scenario(&sc).expect_err("authored move_progress must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("move_progress"),
+        "expected move_progress-related rejection, got `{msg}`"
+    );
+}

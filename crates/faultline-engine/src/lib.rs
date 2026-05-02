@@ -105,6 +105,24 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     unit.name, fid, unit.mobility
                 )));
             }
+            // `move_progress` is runtime state — the engine resets it
+            // to 0.0 in `state::initialize_runtime` and mutates it in
+            // `tick::move_unit`. The field carries `#[serde(default)]`
+            // so legacy TOML loads cleanly, but a non-zero authored
+            // value would silently pre-warm the accumulator (e.g.,
+            // `move_progress = 0.9` causes the first queued move to
+            // fire on tick 1 regardless of mobility / terrain / env).
+            // That violates the "units start from rest" invariant the
+            // gate's per-tick semantics depend on. Fail loud at load
+            // time rather than treat it as a silent override.
+            if unit.move_progress != 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "force unit `{}` in faction `{}` authored a non-zero \
+                     move_progress {}; this field is engine runtime state \
+                     and must not be set in scenario TOML.",
+                    unit.name, fid, unit.move_progress
+                )));
+            }
         }
 
         // Diplomacy table (Epic D round-three item 1 — behavioral
