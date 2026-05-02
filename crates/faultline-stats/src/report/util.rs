@@ -6,22 +6,12 @@
 
 use faultline_types::stats::ConfidenceLevel;
 
-/// Escape user-supplied strings for inclusion in a Markdown table cell.
-///
-/// A literal `|` closes the cell early and breaks table rendering;
-/// `\n` / `\r` would split the row across multiple table rows;
-/// backticks open inline code spans that can leak formatting into
-/// neighboring cells when unbalanced. All can appear in author-
-/// supplied scenario fields (phase / indicator names, custom
-/// discipline labels, escalation-rung action lists, environment-
-/// window IDs), so escape them at the boundary rather than relying
-/// on author hygiene.
-pub(super) fn escape_md_cell(s: &str) -> String {
-    s.replace('\\', r"\\")
-        .replace('|', r"\|")
-        .replace('`', r"\`")
-        .replace(['\n', '\r'], " ")
-}
+// Re-exported from the crate-level `markdown` module so the report
+// submodules and the `explain` renderer share the exact same escape
+// rules. Keeping the function in one place prevents silent divergence
+// when the rules need to grow (e.g. neutralizing additional table-
+// layout characters).
+pub(super) use crate::markdown::escape_md_cell;
 
 /// Adaptive number formatting: proportions get three decimals, larger
 /// magnitudes round to whole units. Keeps the metrics table legible
@@ -48,20 +38,6 @@ pub(super) fn confidence_word(c: &ConfidenceLevel) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn escape_md_cell_neutralizes_pipes_and_newlines() {
-        // Bare strings: pipe must be escaped, newlines collapsed, backslash
-        // doubled so the escape itself is not ambiguous, backticks escaped
-        // so an unbalanced one can't open an inline code span that bleeds
-        // into adjacent cells.
-        assert_eq!(escape_md_cell("a|b"), r"a\|b");
-        assert_eq!(escape_md_cell("line1\nline2"), "line1 line2");
-        assert_eq!(escape_md_cell("line1\r\nline2"), "line1  line2");
-        assert_eq!(escape_md_cell(r"back\slash"), r"back\\slash");
-        assert_eq!(escape_md_cell("a`b"), r"a\`b");
-        assert_eq!(escape_md_cell("clean"), "clean");
-    }
 
     #[test]
     fn fmt_scalar_buckets_by_magnitude() {

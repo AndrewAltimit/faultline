@@ -128,6 +128,15 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml \
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --migrate
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --migrate --in-place
 
+# Explain a scenario without running the engine (Epic P sub-item).
+# Pure schema view — surfaces factions, kill chains, victory
+# conditions, the [strategy_space] decision-variable surface, and any
+# author-flagged Low-confidence parameters. Markdown to stdout by
+# default; --explain-format json emits the structured ExplainReport.
+cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --explain
+cargo run -p faultline-cli -- scenarios/strategy_search_demo.toml \
+    --explain --explain-format json
+
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
 
@@ -452,6 +461,36 @@ To match CI exactly (containerized):
 ```bash
 docker compose --profile ci run --rm rust-ci cargo test
 ```
+
+## Scenario explain (Epic P sub-item)
+
+`faultline-cli --explain <scenario>` produces a structured "what does
+this scenario actually model?" summary without running the engine.
+Pure schema view — no RNG, no simulation, no I/O beyond reading the
+scenario file. Output goes to stdout (Markdown by default; pass
+`--explain-format json` for the structured form). Mutually exclusive
+with the run modes.
+
+The Markdown render emits a stable section sequence: header (name,
+author, version, schema version, tags, author confidence, prose
+description) → Scale (counts) → Factions → Kill chains → Victory
+conditions → Networks → Decision-variable surface → Low-confidence
+parameters. The decision-variable surface answers "which parameters
+does this scenario actually move under `--search` / `--coevolve` /
+`--robustness`?" — the same question R3-2 asks of the engine. The
+low-confidence section pulls together every author-flagged Low cell
+(scenario-level `confidence`, per-phase `parameter_confidence`,
+per-phase-cost `confidence`) so the analyst sees up-front which knobs
+to push on under counterfactual.
+
+The producer lives in `crates/faultline-stats/src/explain.rs`. A
+single pure function `explain(&Scenario) -> ExplainReport` produces a
+[`Serialize`/`Deserialize`] structure; `render_markdown(&report)` is
+the Markdown renderer. Both are reusable by other tooling — the
+browser, a future Epic P "Explain" button — without dragging in the
+CLI. Integration coverage in `crates/faultline-stats/tests/explain_integration.rs`
+runs explain against every bundled scenario and pins section
+ordering.
 
 ## Report module layout (R3-3)
 

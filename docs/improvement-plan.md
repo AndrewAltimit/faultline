@@ -30,10 +30,12 @@ The five highest-leverage open items, in order:
    "post-disruption residual capacity ≤ pre-disruption" are
    high-value invariants the seeded fixture tests miss. Cheap to
    start; compounds with every later epic.
-3. **Epic P — `faultline-cli explain` subset.** Cheap, decouples
+3. ~~**Epic P — `faultline-cli explain` subset.** Cheap, decouples
    from the larger Monaco editor work, and forces every scenario
    to answer "which parameters does this scenario actually move?"
-   — the same question R3-2 asks of the engine.
+   — the same question R3-2 asks of the engine.~~ **Shipped May
+   2026** — see closed-epics list. Remaining Epic P items (Monaco
+   editor, hover docs, inline validation panel) stay deferred.
 4. **R3-2 round two — finish the unread-parameter audit.** Round
    one shipped the three highest-leverage silent-no-ops; six more
    sit deferred (`upkeep`, `mobility`, `diplomacy`,
@@ -48,7 +50,12 @@ The five highest-leverage open items, in order:
    haven't justified.
 
 R3-3 (decompose `report.rs`) was on the original priority list and
-shipped before this refresh — see the closed-epics list below.
+shipped before this refresh — see the closed-epics list below. The
+Epic P explain subset shipped after the May 2026 refresh; its slot
+in the list above is struck through rather than re-numbered so the
+priority context (why this item, in this order, ahead of what)
+remains visible to a future reader who wants to see how the list
+was reasoned about.
 
 ---
 
@@ -129,16 +136,17 @@ work.
 
 ## Status snapshot
 
-**Closed (16):** A (uncertainty), B (counterfactual), C (time +
+**Closed (17):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), G (reference sanitization), H round-one
 (strategy search), H round-two (adversarial co-evolution), I
 round-one (defender-posture optimization), I round-two (robustness
 analysis), K (defender capacity / queue dynamics), L (network
-primitives), O (schema versioning), Q (manifest replay), R3-2
-round-one (unread-parameter audit, three highest-leverage
-parameters), R3-3 (decompose `report.rs`).
+primitives), O (schema versioning), P sub-item (`faultline-cli
+explain` — pure-schema "what does this scenario actually model?"
+view), Q (manifest replay), R3-2 round-one (unread-parameter audit,
+three highest-leverage parameters), R3-3 (decompose `report.rs`).
 
 **Deferred / open epics:** D round-three (4 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
@@ -288,13 +296,12 @@ needs schema-aware autocomplete, inline validation against the engine
 type system, and a structured "what does this scenario actually
 model?" explainer.
 
-- [ ] **`faultline-cli explain <scenario>`** — produces a structured
-      prose summary: factions, objectives, kill chains, victory
-      conditions, low-confidence parameters. **Highest-leverage
-      sub-item; ship independently.** Forces every scenario to answer
-      "which parameters does this scenario actually move?" — the
-      same question R3-2 asks of the engine. Cheap; decouples from
-      the larger Monaco work.
+- [x] **`faultline-cli explain <scenario>`** — produces a structured
+      summary: factions, objectives, kill chains, victory conditions,
+      decision-variable surface, low-confidence parameters. Shipped
+      May 2026 as `faultline_stats::explain` + `--explain` /
+      `--explain-format` CLI flags. Markdown to stdout by default;
+      JSON for tooling.
 - [ ] Monaco / CodeMirror editor with TOML grammar + JSON-schema-driven
       autocomplete (schema generated from the Rust types)
 - [ ] Inline validation panel: surfaces engine-side warnings (unreached
@@ -302,10 +309,14 @@ model?" explainer.
       unreachable phases) without running a sim
 - [ ] Hover documentation: field docstrings from the Rust types
       surface as hover tooltips
-- [ ] Editor "Explain" button that renders the same summary in-app
+- [ ] Editor "Explain" button that renders the same Markdown in-app
+      (the `ExplainReport` struct is the substrate — both producer and
+      renderer live in `faultline-stats` so the WASM frontend can call
+      them directly without forking)
 
-Status: explain subset on the priority list; full editor work
-deferred. Enables Epic F to move faster once landed.
+Status: explain subset shipped; remaining editor work (Monaco,
+hover docs, inline validation, browser-side Explain button) still
+deferred. Enables Epic F to move faster once the editor work lands.
 
 ---
 
