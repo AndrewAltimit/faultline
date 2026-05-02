@@ -31,6 +31,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
         tech_cost_summaries: ::std::collections::BTreeMap::new(),
+        calibration: None,
     }
 }
 
@@ -44,6 +45,7 @@ pub(crate) fn minimal_scenario() -> Scenario {
             tags: vec![],
             confidence: None,
             schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+            historical_analogue: None,
         },
         map: MapConfig {
             source: MapSource::Grid {

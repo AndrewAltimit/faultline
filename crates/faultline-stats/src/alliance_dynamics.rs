@@ -323,6 +323,7 @@ mod tests {
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
             tech_cost_summaries: ::std::collections::BTreeMap::new(),
+            calibration: None,
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

@@ -855,6 +855,7 @@ mod tests {
                 tags: vec!["unit-test".to_string()],
                 confidence: Some(ConfidenceLevel::Medium),
                 schema_version: 1,
+                historical_analogue: None,
             },
             ..Default::default()
         };

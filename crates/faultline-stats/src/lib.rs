@@ -7,6 +7,7 @@
 
 pub mod alliance_dynamics;
 pub mod analysis;
+pub mod calibration;
 pub mod civilian_activations;
 pub mod coevolve;
 pub mod counterfactual;
@@ -144,6 +145,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             supply_pressure_summaries: BTreeMap::new(),
             civilian_activation_summaries: BTreeMap::new(),
             tech_cost_summaries: BTreeMap::new(),
+            calibration: None,
         };
     }
 
@@ -330,6 +332,15 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // mechanic — the report section elides on that signal.
     let tech_cost_summaries = compute_tech_cost_summaries(runs);
 
+    // Calibration against `meta.historical_analogue`. Pure
+    // post-processing of `(scenario, runs, win_rates)`; `None` when the
+    // scenario declares no analogue ("purely synthetic"). Computed last
+    // because it consumes the win-rate denominators above — keeping
+    // calibration-as-pure-derivation means an analyst can re-compute it
+    // offline from a stored `MonteCarloSummary` without rerunning the
+    // engine.
+    let calibration = calibration::compute_calibration(scenario, runs, &win_rates);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -349,6 +360,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         supply_pressure_summaries,
         civilian_activation_summaries,
         tech_cost_summaries,
+        calibration,
     }
 }
 
@@ -1205,6 +1217,7 @@ mod tests {
                 tags: vec![],
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+                historical_analogue: None,
             },
             map: MapConfig {
                 source: MapSource::Grid {

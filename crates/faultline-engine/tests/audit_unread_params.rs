@@ -116,6 +116,7 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
             tags: vec![],
             confidence: None,
             schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+            historical_analogue: None,
         },
         map: MapConfig {
             source: MapSource::Grid {

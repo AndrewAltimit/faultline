@@ -32,6 +32,7 @@ use faultline_types::scenario::Scenario;
 /// lands with an explicit test update and a reviewer sees it.
 const BUNDLED_SCENARIOS: &[&str] = &[
     "alert_fatigue_soc.toml",
+    "calibration_demo.toml",
     "capabilities_demo.toml",
     "coalition_fracture_demo.toml",
     "coevolution_demo.toml",

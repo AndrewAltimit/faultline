@@ -2235,14 +2235,19 @@ fn write_markdown_report(
 ) -> Result<()> {
     // Only emit the report if there's something analytical to show:
     // a Phase-6 kill-chain table, Phase-6 feasibility matrix, a
-    // network rollup, or an alliance-fracture rollup. Otherwise
-    // the report is just the win-rate header and that's already
-    // in summary.json.
+    // network rollup, an alliance-fracture rollup, a civilian-segment
+    // activation rollup, or a `meta.historical_analogue` declaration
+    // (Epic N — calibration scaffold). The analogue case opts even
+    // a basic two-faction scenario into the report so the calibration
+    // verdict is visible; otherwise the verdict would only ever
+    // surface on scenarios that already had one of the other
+    // analytical surfaces.
     if result.summary.campaign_summaries.is_empty()
         && result.summary.feasibility_matrix.is_empty()
         && result.summary.network_summaries.is_empty()
         && result.summary.alliance_dynamics.is_none()
         && result.summary.civilian_activation_summaries.is_empty()
+        && scenario.meta.historical_analogue.is_none()
     {
         return Ok(());
     }

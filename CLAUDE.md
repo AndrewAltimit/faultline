@@ -57,6 +57,14 @@ cargo run -p faultline-cli -- scenarios/network_resilience_demo.toml -n 16
 # every attrition tick.
 cargo run -p faultline-cli -- scenarios/supply_interdiction_demo.toml -n 16
 
+# Calibration scaffold demo (Epic N — calibration discipline). The
+# scenario declares a `[meta.historical_analogue]` block with three
+# observations (Winner, WinRate, DurationTicks); the report's
+# `## Calibration` section computes a per-observation verdict
+# (Pass/Marginal/Fail) plus a roll-up. Scenarios without a declared
+# analogue render a "purely synthetic" disclaimer in the same section.
+cargo run -p faultline-cli -- scenarios/calibration_demo.toml -n 100
+
 # Counterfactual override + delta report (Epic B)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --counterfactual "faction.alpha.initial_morale=0.3"
@@ -531,6 +539,104 @@ new event variants; just a new phase that consumes the existing
   (d) full severance → income gap matches `resource_rate × ticks`,
   (e) determinism across same-seed runs, plus the three validation
   rejections.
+
+**Calibration scaffold (Epic N — round one).** Closes the foundational
+piece of Epic N: every Monte Carlo report now carries a `## Calibration`
+section that either back-tests against an authored historical analogue
+(verdict ladder of Pass / Marginal / Fail per observation, plus a
+roll-up) or surfaces a "purely synthetic" disclaimer for scenarios that
+make no calibration claim. The scope is the framework, not the
+reference scenario set — filling in cleanly-sourced single-event
+analogues for the rest of the bundled scenarios is an explicit Epic N
+follow-up.
+
+- New optional `[meta.historical_analogue]` block on `ScenarioMeta`
+  declares the precedent: `name`, `description`, `period` (free-form
+  date label), `sources` (open-source citations — required non-empty),
+  `confidence` (author confidence in analogue *fit*), and one or more
+  `observations`. `#[serde(default, skip_serializing_if = ...)]` so
+  scenarios without an analogue stay byte-identical on the wire.
+- Three `HistoricalMetric` variants:
+  - `Winner { faction }` — historical victor was a specific faction.
+  - `WinRate { faction, low, high }` — across a reference set, the
+    named faction won at this rate.
+  - `DurationTicks { low, high }` — conflict resolved within this tick
+    interval (inclusive on both ends).
+- Calibration computation: pure function in
+  `crates/faultline-stats/src/calibration.rs`. Per-observation:
+  - `Winner`: Pass when MC modal *and* mass ≥ 50%; Marginal when
+    modal-but-below-majority *or* non-modal-but-≥ 25%; Fail otherwise.
+  - `WinRate`: Pass when MC point estimate ∈ `[low, high]`; Marginal
+    when Wilson 95% CI overlaps the interval; Fail otherwise.
+  - `DurationTicks`: Pass when ≥ 50% of MC `final_tick` values fall in
+    the interval; Marginal when ≥ 25%; Fail otherwise.
+  Overall verdict = worst per-observation verdict. Calibration claims
+  compose as ANDs, not ORs.
+- Wired into `compute_summary` after win-rate computation (so the win-
+  rate denominator is shared, not recomputed). Output lives on
+  `MonteCarloSummary.calibration: Option<CalibrationReport>` —
+  serialization-skipped when `None` so legacy-scenario manifest hashes
+  for synthetic scenarios are unaffected by the addition.
+- New `## Calibration` report section
+  (`crates/faultline-stats/src/report/calibration.rs`). One of three
+  always-emit sections (alongside `Header` and `Methodology`):
+  - Scenario has `historical_analogue` + summary has `CalibrationReport`:
+    renders the analogue header (name, period, description, sources)
+    plus the per-observation table and roll-up.
+  - Scenario has `historical_analogue` but summary lacks a
+    `CalibrationReport` (the empty-runs early return path): renders the
+    analogue header plus a "no MC runs available" disclaimer.
+  - Scenario has no analogue: renders a synthetic-scenario disclaimer
+    explaining what the absence means for result interpretation. The
+    reasoning: a report without a calibration statement leaves the
+    reader to assume the numbers are externally anchored, which is
+    exactly the trust gap Epic N exists to close.
+- The CLI's `report.md` emission gate
+  (`faultline-cli/src/main.rs::write_markdown_report`) was extended so
+  scenarios that *only* have a `historical_analogue` (no kill chains,
+  no networks, no civilian segments) get a `report.md` written. The
+  calibration verdict would otherwise only surface on scenarios that
+  already had one of the other analytical surfaces.
+- Validation rejects four silent-no-op shapes at scenario load:
+  empty `sources`, empty `observations`, `Winner` / `WinRate` against
+  unknown faction (typos would silently produce 0% MC mass and a
+  near-guaranteed `Fail`, which reads as a model failure when the real
+  issue is the typo), and inverted / out-of-range / NaN bounds on
+  `WinRate` and `DurationTicks`. Mirrors the load-time-fail-loud
+  pattern from every prior round.
+- Determinism: every helper is a pure function of state — no RNG, no
+  `HashMap`, no engine re-runs. Adding a `historical_analogue` *will*
+  change the affected scenario's manifest content hash because the
+  calibration report is serialized into `MonteCarloSummary`; that's
+  intended, since the analogue is part of the scenario's analytical
+  claim. Scenarios without an analogue see no change.
+- Backward-compat: scenarios without `[meta.historical_analogue]` see
+  no behavior change. All 18 bundled scenarios still
+  `verify-bundled` deterministically; `output_hash` for the 17
+  pre-existing scenarios shifts to reflect the new always-emit
+  Calibration section's synthetic-disclaimer text. The new
+  `scenarios/calibration_demo.toml` demonstrates the full mechanism
+  end-to-end (3 Fail + 1 Pass observations under the engine's current
+  basic-attrition behavior — illustrating the diagnostic value).
+- Coverage:
+  - `crates/faultline-stats/src/calibration.rs::tests` (12 tests):
+    Pass / Marginal / Fail for each metric variant, the overall-is-
+    worst roll-up, no-analogue → None, and same-input-same-output
+    determinism (compares JSON form to catch future field additions).
+  - `crates/faultline-stats/src/report/calibration.rs::tests` (4
+    tests): synthetic disclaimer on no analogue, full table + rollup
+    with analogue + summary, header + disclaimer when summary missing,
+    always-emit invariant.
+  - `crates/faultline-engine/src/lib.rs::tests` (8 tests): each
+    validation rejection is pinned, plus a positive case for a
+    well-formed analogue with two observations.
+- Scope caveat: the "reference scenario set" item from Epic N (5–10
+  cleanly-sourced single-event analogues with constrained parameters)
+  is explicitly deferred. The framework is foundational; filling it in
+  is opportunistic per-scenario work. The bundled
+  `calibration_demo.toml` uses a *stylized aggregate* analogue
+  (statistical patterns from a reference set) rather than a single
+  named historical event.
 
 **Unread-parameter audit (R3-2 round one).** Three previously-silent
 fields now affect simulation outcomes; each was authored in dozens of
