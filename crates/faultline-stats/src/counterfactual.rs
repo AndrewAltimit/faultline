@@ -356,6 +356,7 @@ mod tests {
             network_summaries: std::collections::BTreeMap::new(),
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
+            civilian_activation_summaries: ::std::collections::BTreeMap::new(),
         };
         let mut variant = base.clone();
 

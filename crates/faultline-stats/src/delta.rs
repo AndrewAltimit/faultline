@@ -38,6 +38,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         network_reports: run.network_reports.clone(),
         fracture_events: run.fracture_events.clone(),
         supply_pressure_reports: run.supply_pressure_reports.clone(),
+        civilian_activations: run.civilian_activations.clone(),
     }
 }
 
@@ -68,6 +69,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         network_reports: encoded.network_reports.clone(),
         fracture_events: encoded.fracture_events.clone(),
         supply_pressure_reports: encoded.supply_pressure_reports.clone(),
+        civilian_activations: encoded.civilian_activations.clone(),
     }
 }
 
@@ -263,6 +265,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -324,6 +327,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -381,6 +385,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -409,6 +414,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -455,6 +461,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -542,6 +549,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

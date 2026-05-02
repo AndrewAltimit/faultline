@@ -610,13 +610,90 @@ modifiers and visibility keep their per-region variation, which the
 combat suite still depends on).
 
 Round-two items still deferred: `Faction.diplomacy` (closed by Epic
-D round-three item 1), population-segment activation, tech-card
-costs, `Region.centroid` / `Faction.color` (visualization metadata),
+D round-three item 1), tech-card costs, `Region.centroid` /
+`Faction.color` (visualization metadata),
 `ForceUnit.force_projection`. See `docs/improvement-plan.md` R3-2
 for the priority order. `ForceUnit.upkeep` was already wired in an
 earlier change (sums per-tick over `fs.forces` and deducts from
 `resources` in `tick::attrition_phase`); the round-two plan entry
-listing it as silent is now corrected.
+listing it as silent is now corrected. Population-segment activation
+now closed — see the next section.
+
+**Unread-parameter audit (R3-2 round two — population-segment
+activation).** Closes the round-one and round-two "half-built" caveat
+on `[political_climate.population_segments]`. Three previously-silent
+`MediaLandscape` fields — `fragmentation`, `social_media_penetration`,
+and `internet_availability` — are now load-bearing on the political /
+information phases, and every civilian-segment activation is now
+tracked, aggregated across runs, and surfaced in the post-run report.
+
+- `faultline_politics::update_civilian_segments` reads all three new
+  media fields. Per (segment, sympathy) pair it computes
+  `noise_amp = 1.0 + 0.5 * fragmentation + 0.5 * effective_social_media`
+  and `tension_scale = 1.0 - fragmentation`, then updates
+  `sympathy = clamp(sympathy + noise * noise_amp + tension_pull * tension_scale)`.
+  `effective_social_media = social_media_penetration × internet_availability`
+  — the multiplication is the "lights out" guard: if internet is
+  offline, social-media penetration alone has no effect. Determinism
+  is preserved: exactly one RNG draw per (segment, sympathy) per
+  tick, same as before. The new fields scale the draw, they don't
+  add or remove draws.
+- `tick::information_phase` reads the same three fields plus the
+  legacy `disinformation_susceptibility` and `state_control`. High
+  fragmentation × high effective social media amplify the
+  disinfo→tension delta by up to 2× when both are at 1.0; legacy
+  authoring (`fragmentation = 0`, `social_media_penetration = 0`) is
+  reproduced exactly.
+- `SimulationState.civilian_activations` (new) logs every activation
+  in emission order; `RunResult.civilian_activations` (new) surfaces
+  it post-run; `MonteCarloSummary.civilian_activation_summaries`
+  (new, in `crates/faultline-stats/src/civilian_activations.rs`)
+  rolls per-segment statistics across runs (activation rate, mean
+  activation tick, per-action firing counts, modal favored faction
+  with `BTreeMap`-order tie-break).
+- `CivilianActivationEvent` carries the action discriminants as
+  `Vec<String>` (rather than the typed enum) so cross-run
+  aggregation can count action firings without dragging the typed
+  payload into the manifest schema. `tick::civilian_action_kind`
+  is the canonical mapping; the function is exhaustive on
+  `CivilianAction` so adding a new variant fails compilation here,
+  forcing a deliberate decision about how to surface it.
+- New `## Civilian Activations` report section in
+  `crates/faultline-stats/src/report/civilian_activations.rs`. Elides
+  when `summary.civilian_activation_summaries` is empty (i.e. no
+  scenario declared `population_segments`). A scenario that declared
+  segments but produced zero activations across the run set still
+  emits — the analyst sees "segment X declared, never tripped"
+  rather than an unexplained absence. The report-render gate in
+  `faultline-cli/src/main.rs` was extended so scenarios that *only*
+  have civilian segments (no kill chains, no networks) get a
+  `report.md` written.
+- Validation rejects four silent-no-op shapes at scenario load:
+  out-of-range or non-finite `MediaLandscape.*` fields (legacy
+  `disinformation_susceptibility` / `state_control` are now
+  validated alongside the three new ones); duplicate segment ids;
+  segments concentrated in unknown regions; `volatility` /
+  `activation_threshold` / `fraction` / sympathy values out of
+  range or non-finite. Mirrors the load-time-fail-loud pattern from
+  every prior R3-2 round.
+- Backward-compat: scenarios with default-zero `MediaLandscape`
+  values reproduce legacy noise / tension behavior exactly. The
+  three bundled scenarios with non-trivial population segments
+  (`tutorial_asymmetric.toml`, `drone_swarm_destabilization.toml`,
+  `us_institutional_fracture.toml`) now reflect the new wiring in
+  their `report.md`. All 17 bundled scenarios still
+  `verify-bundled` deterministically.
+- Coverage: `crates/faultline-engine/tests/audit_unread_params.rs`
+  gains 7 tests pinning (a) end-to-end activation event capture
+  with action-kind ordering, (b) fragmentation amplifies drift,
+  (c) internet=0 zeroes social-media amplification (the lights-out
+  guard), (d) determinism across same-seed runs, plus the four
+  validation rejections. The cross-run aggregator and the report
+  section have their own unit tests in their respective modules.
+
+Round-two items still deferred after this round: tech-card costs,
+visualization metadata (`Region.centroid` / `Faction.color`),
+`ForceUnit.force_projection`.
 
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> verify-robustness -> js-tests**.
 

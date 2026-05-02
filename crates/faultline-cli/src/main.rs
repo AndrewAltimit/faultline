@@ -2242,6 +2242,7 @@ fn write_markdown_report(
         && result.summary.feasibility_matrix.is_empty()
         && result.summary.network_summaries.is_empty()
         && result.summary.alliance_dynamics.is_none()
+        && result.summary.civilian_activation_summaries.is_empty()
     {
         return Ok(());
     }

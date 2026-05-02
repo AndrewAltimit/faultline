@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::faction::Diplomacy;
 use crate::ids::{
     DefenderRoleId, EdgeId, EventId, FactionId, InfraId, KillChainId, NetworkId, NodeId, PhaseId,
-    RegionId,
+    RegionId, SegmentId,
 };
 use crate::strategy::FactionState;
 
@@ -81,6 +81,38 @@ pub struct RunResult {
     /// Keyed by `FactionId` for deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub supply_pressure_reports: BTreeMap<FactionId, SupplyPressureReport>,
+    /// Log of every civilian-segment activation in this run (R3-2
+    /// round-two — population-segment activation), in tick order.
+    /// Each entry records the tick, the segment that activated, the
+    /// faction whose sympathy crossed the activation threshold, and
+    /// the action variants attached to the segment. Empty when the
+    /// scenario declares no `population_segments` or none crossed
+    /// their threshold during the run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub civilian_activations: Vec<CivilianActivationEvent>,
+}
+
+/// One civilian-segment activation firing (R3-2 round-two —
+/// population-segment activation).
+///
+/// Captured at the tick when the segment's top sympathy crossed
+/// `activation_threshold`. `action_kinds` lists the discriminant
+/// names of the [`crate::politics::CivilianAction`] variants the
+/// segment carries — stored as plain strings rather than the typed
+/// enum so cross-run aggregation can count action firings without
+/// dragging the full payload (and so the manifest schema stays
+/// stable as new variants are added).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CivilianActivationEvent {
+    pub tick: u32,
+    pub segment: SegmentId,
+    pub favored_faction: FactionId,
+    /// One entry per element of the segment's `activation_actions`.
+    /// Order matches the scenario-authored order — the activation
+    /// processor iterates the same vector, so this gives a faithful
+    /// "what fired in what order" trace.
+    #[serde(default)]
+    pub action_kinds: Vec<String>,
 }
 
 /// Per-faction supply-pressure summary for one run (Epic D round
@@ -323,6 +355,62 @@ pub struct MonteCarloSummary {
     /// case. Keyed by `FactionId` for deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub supply_pressure_summaries: BTreeMap<FactionId, SupplyPressureSummary>,
+    /// Per-segment civilian-activation aggregate across runs (R3-2
+    /// round-two). Empty when the scenario declares no
+    /// `population_segments` or none ever activated — the report
+    /// section elides in that case. Keyed by `SegmentId` for
+    /// deterministic rendering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub civilian_activation_summaries: BTreeMap<SegmentId, SegmentActivationSummary>,
+}
+
+/// Cross-run civilian-activation analytics for one population segment
+/// (R3-2 round-two).
+///
+/// Aggregates [`CivilianActivationEvent`] rows across the Monte Carlo
+/// batch. `activation_count` is the number of runs in which the
+/// segment ever activated (capped at `n_runs` because activation is
+/// one-shot per run by the engine's latch on `PopulationSegment.activated`).
+/// `mean_activation_tick` is `None` when the segment never activated
+/// in any run — the rate-style fields stay defined (`activation_count`
+/// is `0`, `activation_rate` is `0.0`) so the report row can render
+/// without a special case for "no fires."
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SegmentActivationSummary {
+    pub segment: SegmentId,
+    /// Free-text label copied from `PopulationSegment.name`. Empty
+    /// only if the author left the field blank.
+    #[serde(default)]
+    pub name: String,
+    /// Author-supplied faction the segment is most strongly aligned
+    /// with — recorded once at the first activation observed in the
+    /// run set so the report can show "who benefits when this
+    /// segment mobilizes". Subsequent activations in different runs
+    /// may have a different favored faction (sympathy drift); when
+    /// that happens this field reflects the *modal* favored faction
+    /// across the run set, with ties broken by `BTreeMap` order
+    /// (deterministic).
+    pub favored_faction: FactionId,
+    /// Total runs in the batch.
+    pub n_runs: u32,
+    /// Number of runs in which this segment activated at any tick.
+    /// Bounded by `n_runs` since the engine's `activated` latch makes
+    /// activation one-shot per run.
+    pub activation_count: u32,
+    /// `activation_count / n_runs`, in `[0, 1]`.
+    pub activation_rate: f64,
+    /// Mean tick of activation across runs that activated. `None`
+    /// when `activation_count == 0` (any value would be misleading
+    /// — empty support).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_activation_tick: Option<f64>,
+    /// Per-action-variant firing counts across all activations in the
+    /// batch. Keyed by the [`crate::politics::CivilianAction`]
+    /// discriminant name. Sums to `activation_count *
+    /// activation_actions.len()` modulo any duplicates the author
+    /// wrote into the same segment.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub action_kind_counts: BTreeMap<String, u32>,
 }
 
 /// Cross-run supply-pressure analytics for one faction (Epic D round
@@ -910,4 +998,9 @@ pub struct DeltaEncodedRun {
     /// when the scenario declares no `kind = "supply"` networks.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub supply_pressure_reports: BTreeMap<FactionId, SupplyPressureReport>,
+    /// Civilian-segment activation log — preserved verbatim. Empty
+    /// when the scenario declares no `population_segments` or none
+    /// activated.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub civilian_activations: Vec<CivilianActivationEvent>,
 }

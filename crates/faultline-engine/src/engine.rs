@@ -217,6 +217,7 @@ impl Engine {
                     network_reports: collect_network_reports(&self.state, &self.scenario),
                     fracture_events: self.state.fracture_events.clone(),
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
+                    civilian_activations: self.state.civilian_activations.clone(),
                 });
             }
 
@@ -240,6 +241,7 @@ impl Engine {
                     network_reports: collect_network_reports(&self.state, &self.scenario),
                     fracture_events: self.state.fracture_events.clone(),
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
+                    civilian_activations: self.state.civilian_activations.clone(),
                 });
             }
         }
@@ -383,6 +385,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         fired_fractures: BTreeSet::new(),
         initial_faction_strengths,
         fracture_events: Vec::new(),
+        civilian_activations: Vec::new(),
     })
 }
 

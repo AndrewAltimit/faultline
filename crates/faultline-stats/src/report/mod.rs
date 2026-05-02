@@ -23,6 +23,7 @@ use faultline_types::stats::MonteCarloSummary;
 mod util;
 
 mod alliance_dynamics;
+mod civilian_activations;
 mod continuous_metrics;
 mod correlation;
 mod countermeasure;
@@ -83,7 +84,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 20] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 21] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -104,6 +105,7 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 20] {
         &environment_schedule::EnvironmentSchedule,
         &leadership_disruption::LeadershipDisruption,
         &alliance_dynamics::AllianceDynamics,
+        &civilian_activations::CivilianActivations,
         &methodology::Methodology,
     ]
 }
@@ -230,7 +232,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 20);
+        assert_eq!(monte_carlo_sections().len(), 21);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -320,8 +322,8 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 19 = Methodology (last entry).
-        let unconditional_indices = [0usize, 19];
+        // 0 = Header, 20 = Methodology (last entry).
+        let unconditional_indices = [0usize, 20];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

@@ -145,6 +145,7 @@ fn make_ai_test_state() -> SimulationState {
         fired_fractures: std::collections::BTreeSet::new(),
         initial_faction_strengths: BTreeMap::new(),
         fracture_events: vec![],
+        civilian_activations: vec![],
     }
 }
 

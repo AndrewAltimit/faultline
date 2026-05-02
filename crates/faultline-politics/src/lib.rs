@@ -88,7 +88,25 @@ pub struct ActivationResult {
 /// Stochastically update civilian population segment sympathies.
 ///
 /// Each segment's faction sympathies drift slightly based on the
-/// segment's volatility and the current global tension.
+/// segment's volatility, the current global tension, and the media
+/// landscape (R3-2 round-two — `MediaLandscape.fragmentation`,
+/// `social_media_penetration`, and `internet_availability` were silent
+/// before; this phase now reads all three):
+/// - **Fragmentation** amplifies idiosyncratic per-segment noise (each
+///   segment responds to a different narrative bubble) and dampens the
+///   unified pull toward the global tension level (no single dominant
+///   narrative reaches everyone).
+/// - **Social media penetration** and **internet availability**
+///   compose multiplicatively into an `effective_social_media`
+///   accelerant on noise (faster, more volatile drift when online
+///   discourse reaches a wide audience). When the internet is offline,
+///   penetration alone has no effect — this is the "lights out"
+///   guard that makes both fields necessary.
+///
+/// Determinism: exactly one RNG draw per (segment, sympathy) pair, as
+/// before. The new fields scale that draw — they do not add or remove
+/// draws — so the seeded-RNG contract is preserved across the wiring
+/// change.
 ///
 /// Returns a list of segments that were newly activated this tick.
 pub fn update_civilian_segments(
@@ -97,13 +115,33 @@ pub fn update_civilian_segments(
     rng: &mut impl rand::Rng,
 ) -> Vec<ActivationResult> {
     let global_tension = climate.tension;
+    // Read media-landscape fields once and clamp defensively. Validation
+    // rejects out-of-range values at scenario load, but a numerically
+    // corrupt `PoliticalClimate` mutated mid-run via `EventEffect` (no
+    // such effect exists today, but the engine reserves the option) is
+    // safer to clamp than to UB-amplify into the noise term.
+    let media = &climate.media_landscape;
+    let fragmentation = media.fragmentation.clamp(0.0, 1.0);
+    let social_media = media.social_media_penetration.clamp(0.0, 1.0);
+    let internet = media.internet_availability.clamp(0.0, 1.0);
+    let effective_social_media = social_media * internet;
+
+    // Composition: `noise_amp` >= 1.0 always (fragmentation and
+    // effective social media both add). `tension_scale` <= 1.0 always
+    // (fragmentation subtracts). The author-knob ranges were chosen so
+    // a max-fragmentation max-online scenario amplifies noise by ~2×
+    // and zeros the unified tension pull — extreme but bounded.
+    let noise_amp = 1.0 + 0.5 * fragmentation + 0.5 * effective_social_media;
+    let tension_scale = 1.0 - fragmentation;
+
     let mut activations = Vec::new();
 
     for segment in &mut climate.population_segments {
         for sympathy in &mut segment.sympathies {
-            // Small random drift scaled by volatility and tension.
-            let noise: f64 = (rng.r#gen::<f64>() - 0.5) * segment.volatility * 0.1;
-            let tension_pull = (global_tension - 0.5) * 0.02;
+            // Small random drift scaled by volatility, tension, and the
+            // media-landscape multipliers above.
+            let noise: f64 = (rng.r#gen::<f64>() - 0.5) * segment.volatility * 0.1 * noise_amp;
+            let tension_pull = (global_tension - 0.5) * 0.02 * tension_scale;
             sympathy.sympathy = (sympathy.sympathy + noise + tension_pull).clamp(-1.0, 1.0);
         }
 
