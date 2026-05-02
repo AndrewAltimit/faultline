@@ -16,6 +16,7 @@ pub mod error;
 pub mod fracture;
 pub mod network;
 pub mod state;
+pub mod supply;
 pub mod tick;
 
 #[cfg(test)]
@@ -592,6 +593,19 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
             && !scenario.factions.contains_key(owner)
         {
             return Err(ScenarioError::UnknownFaction(owner.clone()));
+        }
+        // Supply-network owner contract (Epic D round three, item 2).
+        // The supply phase only applies pressure to the network's
+        // declared owner; a `kind = "supply"` network with no owner
+        // is silently a no-op at runtime, which is precisely the
+        // scenario-design trap validation should catch up front.
+        if net.kind.eq_ignore_ascii_case("supply") && net.owner.is_none() {
+            return Err(ScenarioError::Custom(format!(
+                "network `{nid}` declares `kind = \"supply\"` without an `owner`; \
+                 the supply-pressure phase has no faction to apply pressure to. \
+                 Either set `owner = \"<faction>\"` to receive supply attenuation, \
+                 or change `kind` to a non-supply label (e.g. `\"comms\"`, `\"finance\"`)."
+            )));
         }
     }
 

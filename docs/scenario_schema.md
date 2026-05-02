@@ -715,6 +715,8 @@ trust = 0.9                    # [0, 1]
 
 **Report.** [`MonteCarloSummary::network_summaries`] aggregates per-run samples into mean / max disrupted-node and component counts, the cross-run fragmentation rate, and a top-N critical-node ranking by Brandes betweenness centrality on the static topology (treating the graph as undirected for centrality purposes). Bundled archetype: `scenarios/network_resilience_demo.toml`.
 
+**Supply networks (Epic D round three, item 2).** Networks declaring `kind = "supply"` (case-insensitive) act as resource pipelines for their `owner`: each tick the engine multiplies the owner's `resource_rate` by `pressure = (residual_capacity / baseline_capacity).clamp(0, 1)` for that network. Owners with multiple `kind = "supply"` networks see the per-network ratios composed multiplicatively — cutting any one network cuts overall supply, and cutting two is multiplicative. Validation **rejects** `kind = "supply"` without an `owner` (the supply phase has no faction to attenuate; the silent-no-op shape is caught at scenario load). Upkeep is *not* attenuated, so cut supply lines starve the faction's resource pool over time. Per-faction analytics surface in [`MonteCarloSummary::supply_pressure_summaries`] and the report's `## Supply Pressure` section. Bundled archetype: `scenarios/supply_interdiction_demo.toml`.
+
 ---
 
 ## `[kill_chains.<id>]` — multi-phase campaigns

@@ -62,6 +62,9 @@ fn star_network() -> Network {
         id: NetworkId::from("supply"),
         name: "Supply".into(),
         kind: "supply".into(),
+        // Supply networks must declare an owner per the Epic D round-three
+        // item-2 contract. Validation rejects `kind = "supply"` without one.
+        owner: Some(FactionId::from("blue")),
         nodes,
         edges,
         ..Default::default()

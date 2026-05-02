@@ -1,0 +1,367 @@
+# Supply Interdiction — Resource-Pressure Wargame
+#
+# Demonstrates Epic D round-three item 2: the engine's supply-network
+# interdiction phase. A defender (`blue`) operates a four-edge logistics
+# graph feeding two forward bases. A scripted attacker chains three
+# events that progressively cut Blue's supply capacity — the report's
+# `## Supply Pressure` section quantifies the resulting income drag
+# directly, separate from the resilience-curve analysis the Epic L
+# `## Network Resilience` section already provides.
+#
+# The contract this scenario exercises:
+# - `kind = "supply"` networks with a declared `owner` propagate
+#   capacity loss into per-tick income attenuation. Pressure is
+#   `residual / baseline` capacity, clamped to `[0, 1]`, multiplied
+#   into the owner's `resource_rate` each tick.
+# - Multiple owned supply networks compose multiplicatively.
+# - Upkeep is *not* attenuated, so cut supply lines starve the
+#   faction's resource pool over time.
+#
+# The analytical purpose is to make supply-line vulnerability
+# observable as a falling resource curve rather than only as a graph-
+# fragmentation artifact. Authors with logistics-resilience questions
+# can substitute their own topology.
+#
+# Parameters are aggregate statistical descriptors derivable from open
+# sources (DoD logistics studies, CRS reports on theatre logistics).
+# No specific operational tooling or infrastructure is modeled.
+
+attacker_budget = 5_000_000.0
+defender_budget = 50_000_000.0
+
+[meta]
+schema_version = 1
+name = "Supply Interdiction — Resource-Pressure Wargame"
+description = "Two-network defender (primary + secondary supply chain) under scripted interdiction. Demonstrates the Epic D round-three supply phase: per-tick income attenuation in proportion to remaining supply-network capacity. Pairs with Epic L's network primitives — observe both the resilience curve (Network Resilience section) and the resulting income drag (Supply Pressure section)."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["networks", "supply", "interdiction", "epic-d", "epic-l", "resource-pressure"]
+confidence = "Medium"
+
+# ============================================================================
+# Map
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 1
+
+[map.regions.theatre_north]
+id = "theatre_north"
+name = "Theatre North"
+population = 400_000
+urbanization = 0.6
+initial_control = "blue"
+strategic_value = 7.0
+borders = ["theatre_south"]
+
+[map.regions.theatre_south]
+id = "theatre_south"
+name = "Theatre South"
+population = 400_000
+urbanization = 0.6
+initial_control = "blue"
+strategic_value = 7.0
+borders = ["theatre_north"]
+
+[map.infrastructure]
+
+[technology]
+
+[[map.terrain]]
+region = "theatre_north"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "theatre_south"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.blue]
+id = "blue"
+name = "Blue (Defender)"
+description = "Owns both supply networks. High initial reserves but slim income margin — sustained interdiction depletes the resource pool over the run."
+color = "#1f6feb"
+initial_morale = 0.75
+logistics_capacity = 200.0
+initial_resources = 60_000.0
+resource_rate = 800.0
+command_resilience = 0.85
+intelligence = 0.65
+diplomacy = []
+tech_access = []
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue.forces.fwd_brigade]
+id = "fwd_brigade"
+name = "Forward Brigade"
+unit_type = "Mechanized"
+region = "theatre_north"
+strength = 1200.0
+mobility = 0.6
+upkeep = 350.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue.forces.rear_brigade]
+id = "rear_brigade"
+name = "Rear Brigade"
+unit_type = "Infantry"
+region = "theatre_south"
+strength = 900.0
+mobility = 0.5
+upkeep = 250.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red]
+id = "red"
+name = "Red (Attacker)"
+description = "Scripted adversary. Severs primary supply on tick 4, cuts secondary supply on tick 8, full interdiction on tick 12."
+color = "#d32f2f"
+initial_morale = 0.7
+logistics_capacity = 100.0
+initial_resources = 20_000.0
+resource_rate = 200.0
+command_resilience = 0.7
+intelligence = 0.6
+diplomacy = []
+tech_access = []
+
+[factions.red.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.red.forces.recon_det]
+id = "recon_det"
+name = "Recon Detachment"
+unit_type = "SpecialOperations"
+region = "theatre_south"
+strength = 100.0
+mobility = 1.0
+upkeep = 20.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Political climate
+# ============================================================================
+
+[political_climate]
+tension = 0.5
+institutional_trust = 0.7
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.3
+disinformation_susceptibility = 0.3
+state_control = 0.3
+social_media_penetration = 0.7
+internet_availability = 0.85
+
+# ============================================================================
+# Networks (Epic L topology + Epic D round-three supply contract)
+# ============================================================================
+
+# Blue's primary supply chain: depot → junction → forward base.
+# Three edges (sum baseline = 240). Severing the d_jct edge cuts
+# residual to 80 (~33% of baseline).
+[networks.primary_supply]
+id = "primary_supply"
+name = "Blue Primary Supply Chain"
+description = "Main rail-and-road logistics corridor. Total baseline capacity 240/tick."
+kind = "supply"
+owner = "blue"
+
+[networks.primary_supply.nodes.depot_n]
+id = "depot_n"
+name = "Northern Depot"
+region = "theatre_north"
+criticality = 1.0
+
+[networks.primary_supply.nodes.junction_n]
+id = "junction_n"
+name = "Northern Junction"
+region = "theatre_north"
+criticality = 0.85
+
+[networks.primary_supply.nodes.fwd_n]
+id = "fwd_n"
+name = "Forward Base North"
+region = "theatre_north"
+criticality = 0.9
+
+[networks.primary_supply.edges.depot_to_jct]
+id = "depot_to_jct"
+from = "depot_n"
+to = "junction_n"
+capacity = 100.0
+latency = 1.0
+bandwidth = 100.0
+trust = 0.9
+
+[networks.primary_supply.edges.jct_to_fwd]
+id = "jct_to_fwd"
+from = "junction_n"
+to = "fwd_n"
+capacity = 80.0
+latency = 1.0
+bandwidth = 80.0
+trust = 0.9
+
+[networks.primary_supply.edges.depot_to_fwd]
+id = "depot_to_fwd"
+from = "depot_n"
+to = "fwd_n"
+capacity = 60.0
+latency = 2.0
+bandwidth = 60.0
+trust = 0.85
+
+# Blue's secondary supply chain: smaller, single-edge backup. Baseline
+# 80; severing this is the second hit of the campaign.
+[networks.backup_supply]
+id = "backup_supply"
+name = "Blue Backup Supply Chain"
+description = "Redundant air-bridge route. Baseline 80/tick — meant to compensate when primary is interdicted."
+kind = "supply"
+owner = "blue"
+
+[networks.backup_supply.nodes.depot_s]
+id = "depot_s"
+name = "Southern Depot"
+region = "theatre_south"
+criticality = 1.0
+
+[networks.backup_supply.nodes.fwd_s]
+id = "fwd_s"
+name = "Forward Base South"
+region = "theatre_south"
+criticality = 0.9
+
+[networks.backup_supply.edges.air_bridge]
+id = "air_bridge"
+from = "depot_s"
+to = "fwd_s"
+capacity = 80.0
+latency = 1.0
+bandwidth = 80.0
+trust = 0.85
+
+# ============================================================================
+# Events (scripted interdiction sequence)
+# ============================================================================
+
+# Tick 4: primary supply junction-to-fwd edge knocked to 0.25× capacity.
+# Drops residual on primary_supply from 240 → 100 + 20 + 60 = 180,
+# pressure ratio ≈ 0.75. Backup still intact (1.0). Blue pressure = 0.75.
+[events.cut_primary]
+id = "cut_primary"
+name = "Primary Supply Interdiction"
+description = "Adversary partisan / drone strike degrades the junction-to-forward route on the primary supply chain."
+earliest_tick = 4
+latest_tick = 4
+probability = 1.0
+repeatable = false
+
+[[events.cut_primary.conditions]]
+condition = "TickAtLeast"
+tick = 4
+
+[[events.cut_primary.effects]]
+effect = "NetworkEdgeCapacity"
+network = "primary_supply"
+edge = "jct_to_fwd"
+factor = 0.25
+
+# Tick 8: backup supply air bridge cut to 0.4× capacity. Residual on
+# backup_supply drops from 80 → 32, ratio = 0.4. Pressure = 0.75 × 0.4
+# = 0.30. Blue's income falls to 30% of baseline.
+[events.cut_backup]
+id = "cut_backup"
+name = "Backup Supply Disruption"
+description = "Adversary deploys SAM coverage that constrains the air bridge to 40% of pre-strike throughput."
+earliest_tick = 8
+latest_tick = 8
+probability = 1.0
+repeatable = false
+
+[[events.cut_backup.conditions]]
+condition = "TickAtLeast"
+tick = 8
+
+[[events.cut_backup.effects]]
+effect = "NetworkEdgeCapacity"
+network = "backup_supply"
+edge = "air_bridge"
+factor = 0.4
+
+# Tick 12: depot_n disrupted entirely. Severs every primary_supply
+# edge incident to it (depot_to_jct + depot_to_fwd → 0). Residual on
+# primary_supply = 0 + 80 + 0 = 80, pressure ratio = 80 / 240 ≈ 0.333
+# (already attenuated jct_to_fwd at 0.25 means 80 * 0.25 = 20, so
+# really pressure = 20 / 240 ≈ 0.083). Combined with backup at 0.4 →
+# Blue pressure ≈ 0.033. Income near zero — units degrade.
+[events.disrupt_depot]
+id = "disrupt_depot"
+name = "Northern Depot Disruption"
+description = "Adversary kinetic strike disables Blue's northern depot for the remainder of the run."
+earliest_tick = 12
+latest_tick = 12
+probability = 1.0
+repeatable = false
+
+[[events.disrupt_depot.conditions]]
+condition = "TickAtLeast"
+tick = 12
+
+[[events.disrupt_depot.effects]]
+effect = "NetworkNodeDisrupt"
+network = "primary_supply"
+node = "depot_n"
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 18
+monte_carlo_runs = 16
+seed = 0x5071FCAB
+fog_of_war = false
+snapshot_interval = 0
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+LanchesterLinear = {}
+
+# ============================================================================
+# Victory conditions
+# ============================================================================
+
+[victory_conditions.blue_hold]
+id = "blue_hold"
+name = "Blue Holds Both Theatres for Sixteen Ticks"
+faction = "blue"
+
+[victory_conditions.blue_hold.condition]
+type = "HoldRegions"
+regions = ["theatre_north", "theatre_south"]
+duration = 16

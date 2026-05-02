@@ -39,6 +39,7 @@ mod phase_breakdown;
 mod policy_implications;
 mod regional_control;
 mod seam_analysis;
+mod supply_pressure;
 mod time_dynamics;
 mod win_rates;
 
@@ -82,7 +83,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 19] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 20] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -94,6 +95,7 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 19] {
         &correlation::CorrelationMatrix,
         &defender_capacity::DefenderCapacity,
         &network_resilience::NetworkResilience,
+        &supply_pressure::SupplyPressure,
         &seam_analysis::SeamAnalysis,
         &regional_control::RegionalControl,
         &low_confidence::LowConfidence,
@@ -228,7 +230,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 19);
+        assert_eq!(monte_carlo_sections().len(), 20);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -318,8 +320,8 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 18 = Methodology.
-        let unconditional_indices = [0usize, 18];
+        // 0 = Header, 19 = Methodology (last entry).
+        let unconditional_indices = [0usize, 19];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

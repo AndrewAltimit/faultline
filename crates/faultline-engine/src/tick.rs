@@ -618,6 +618,36 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
     let faction_ids: Vec<FactionId> = state.faction_states.keys().cloned().collect();
 
     for fid in &faction_ids {
+        // Supply pressure (Epic D round three, item 2). Computed
+        // before reading `resource_rate` so income is attenuated by
+        // the latest network state. Pure function — no RNG, no
+        // allocation, returns 1.0 for any faction without an owned
+        // supply network so legacy scenarios are untouched. Captured
+        // onto `current_supply_pressure` and rolled into per-faction
+        // sum / min / pressured-tick counters for the post-run
+        // report. We sample only when the faction owns at least one
+        // active supply network so legacy factions don't pollute the
+        // mean denominator.
+        let pressure = crate::supply::supply_pressure_for_faction(scenario, state, fid);
+        let owns_supply = scenario
+            .networks
+            .values()
+            .any(|n| crate::supply::is_active_supply_network(n) && n.owner.as_ref() == Some(fid));
+        if let Some(fs) = state.faction_states.get_mut(fid) {
+            fs.current_supply_pressure = pressure;
+            if owns_supply {
+                fs.supply_pressure_sum += pressure;
+                fs.supply_pressure_samples = fs.supply_pressure_samples.saturating_add(1);
+                if pressure < fs.supply_pressure_min {
+                    fs.supply_pressure_min = pressure;
+                }
+                if pressure < crate::supply::PRESSURE_REPORTING_THRESHOLD {
+                    fs.supply_pressure_pressured_ticks =
+                        fs.supply_pressure_pressured_ticks.saturating_add(1);
+                }
+            }
+        }
+
         let (resource_rate, recruitment_cfg, upkeep) = {
             let faction_def = match scenario.factions.get(fid) {
                 Some(f) => f,
@@ -636,8 +666,14 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
         };
 
         if let Some(fs) = state.faction_states.get_mut(fid) {
-            // Income.
-            fs.resources += resource_rate;
+            // Income, attenuated by supply pressure. `pressure` is in
+            // `[0, 1]` so a fully-cut supply line zeroes income but
+            // never inverts it; an intact supply line (pressure = 1.0,
+            // the legacy default) leaves income unchanged. Upkeep is
+            // *not* attenuated — units still consume regardless of
+            // whether resupply is reaching them, which is exactly why
+            // cut supply lines hurt in the first place.
+            fs.resources += resource_rate * fs.current_supply_pressure;
 
             // Upkeep.
             fs.resources = (fs.resources - upkeep).max(0.0);
