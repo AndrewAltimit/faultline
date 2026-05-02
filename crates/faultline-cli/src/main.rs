@@ -423,6 +423,48 @@ struct Cli {
     /// Verbose logging.
     #[arg(short = 'v', long = "verbose")]
     verbose: bool,
+
+    /// Emit a structured "what does this scenario actually model?"
+    /// summary (Epic P sub-item).
+    ///
+    /// Surfaces factions, kill chains, victory conditions, the
+    /// `[strategy_space]` decision-variable surface, and any
+    /// author-flagged Low-confidence parameters. Pure schema operation
+    /// — no engine invocation, no RNG. Prints to stdout (Markdown by
+    /// default; pass `--explain-format json` for the structured form
+    /// suitable for tooling). Redirect to a file via shell if you want
+    /// a saved artifact.
+    ///
+    /// Mutually exclusive with the run modes (`--single-run`,
+    /// `--sensitivity`, `--counterfactual`, `--compare`, `--search`,
+    /// `--coevolve`, `--robustness`, `--verify`, `--migrate`).
+    #[arg(
+        long = "explain",
+        conflicts_with_all = [
+            "single_run", "sensitivity", "counterfactual",
+            "compare", "search", "coevolve", "robustness",
+            "verify", "migrate"
+        ]
+    )]
+    explain: bool,
+
+    /// Output format for `--explain`. `markdown` (default) emits
+    /// human-readable Markdown; `json` emits the structured
+    /// [`ExplainReport`] for tooling.
+    #[arg(
+        long = "explain-format",
+        value_name = "FORMAT",
+        default_value = "markdown",
+        requires = "explain"
+    )]
+    explain_format: ExplainFormat,
+}
+
+/// Output format for `--explain`.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ExplainFormat {
+    Markdown,
+    Json,
 }
 
 /// Supported output formats.
@@ -526,6 +568,10 @@ fn main() -> Result<()> {
     if cli.validate {
         info!("scenario is valid");
         return Ok(());
+    }
+
+    if cli.explain {
+        return run_explain(&cli, &scenario);
     }
 
     // Ensure output directory exists.
@@ -1517,6 +1563,31 @@ fn load_robustness_postures(
 /// scenarios where formatting matters, run `--migrate` to a temp
 /// file, diff against the source, and apply the changes by hand
 /// instead of `--in-place`.
+// ---------------------------------------------------------------------------
+// Explain (Epic P sub-item)
+// ---------------------------------------------------------------------------
+//
+// Pure schema view: build the explain report and print it to stdout.
+// Mirrors `--migrate`'s stdout-by-default contract — `print!` (not
+// `info!`) so a redirect (`> explain.md`) captures only the report
+// bytes. Selecting `--explain-format json` swaps the renderer; both
+// shapes share the same producer.
+fn run_explain(cli: &Cli, scenario: &Scenario) -> Result<()> {
+    let report = faultline_stats::explain::explain(scenario);
+    match cli.explain_format {
+        ExplainFormat::Markdown => {
+            let md = faultline_stats::explain::render_markdown(&report);
+            print!("{md}");
+        },
+        ExplainFormat::Json => {
+            let json = serde_json::to_string_pretty(&report)
+                .with_context(|| "failed to serialize explain report as JSON")?;
+            println!("{json}");
+        },
+    }
+    Ok(())
+}
+
 fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
     let value: toml::Value = toml::from_str(toml_str)
         .with_context(|| format!("failed to parse {}", cli.scenario.display()))?;
@@ -2487,5 +2558,41 @@ mod cli_tests {
             .expect("parse with default method");
         let resolved: faultline_stats::search::SearchMethod = cli.coevolve_method.into();
         assert_eq!(resolved, faultline_stats::search::SearchMethod::Grid);
+    }
+
+    #[test]
+    fn explain_is_mutually_exclusive_with_run_modes() {
+        // `--explain` is a pure schema view; mixing it with a run mode
+        // is almost certainly an authoring mistake. Pin one
+        // representative conflict per run mode so a future refactor of
+        // the conflicts_with_all list does not silently widen the
+        // shape that's accepted.
+        for run_mode in [
+            "--single-run",
+            "--sensitivity",
+            "--search",
+            "--coevolve",
+            "--robustness",
+            "--migrate",
+        ] {
+            let res = Cli::try_parse_from(["faultline", "scenario.toml", "--explain", run_mode]);
+            let err = res.expect_err(&format!(
+                "--explain + {run_mode} must conflict but parsed successfully"
+            ));
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "wrong error kind for --explain + {run_mode}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn explain_format_requires_explain() {
+        // `--explain-format json` without `--explain` would be
+        // ambiguous. Reject up-front.
+        let res = Cli::try_parse_from(["faultline", "scenario.toml", "--explain-format", "json"]);
+        let err = res.expect_err("--explain-format without --explain must reject");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 }

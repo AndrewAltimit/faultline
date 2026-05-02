@@ -10,6 +10,7 @@ pub mod analysis;
 pub mod coevolve;
 pub mod counterfactual;
 pub mod delta;
+pub mod explain;
 pub mod manifest;
 pub mod morris;
 pub mod network_metrics;
