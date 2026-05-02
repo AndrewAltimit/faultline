@@ -1,4 +1,4 @@
-//! Per-tick network resilience capture (Epic L).
+//! Per-tick network resilience capture.
 //!
 //! The engine emits one [`NetworkSample`] per tick per declared
 //! network, recorded *after* the event phase fired so a same-tick

@@ -1,4 +1,4 @@
-//! Comparison-mode report (Epic B `--counterfactual` / `--compare`):
+//! Comparison-mode report (`--counterfactual` / `--compare`):
 //! prepends a per-variant deltas block in front of the standard
 //! per-scenario report so readers see the deltas first.
 

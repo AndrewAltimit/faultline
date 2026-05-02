@@ -1,5 +1,5 @@
-//! Integration tests for Epic H — round two adversarial co-evolution
-//! against the bundled `coevolution_demo` scenario.
+//! Integration tests for adversarial co-evolution against the bundled
+//! `coevolution_demo` scenario.
 //!
 //! Each round runs `trials * inner_runs` engine passes plus one final
 //! joint-evaluation Monte Carlo batch, so the per-test budget scales as
@@ -58,8 +58,8 @@ fn small_coevolve_config() -> CoevolveConfig {
 fn coevolve_emits_stable_output_hash_under_fixed_seeds() {
     // The manifest-replay precondition for `--coevolve --verify`: two
     // consecutive runs against identical inputs must produce identical
-    // CoevolveResult hashes. Without this, the round-two manifest mode
-    // would silently drift across replays.
+    // CoevolveResult hashes. Without this, the co-evolution manifest
+    // mode would silently drift across replays.
     let scenario = load_demo();
     let config = small_coevolve_config();
 

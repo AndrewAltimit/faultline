@@ -2,10 +2,10 @@
 //! how Monte Carlo outcomes change.
 //!
 //! The `set_param` / `get_param` path layer is also used by
-//! `--counterfactual <path>=<value>` in the CLI: Epic B's counterfactual
-//! mode patches the same dotted paths documented here, runs a Monte
-//! Carlo batch against the patched scenario, and compares the result
-//! to the baseline.
+//! `--counterfactual <path>=<value>` in the CLI: counterfactual mode
+//! patches the same dotted paths documented here, runs a Monte Carlo
+//! batch against the patched scenario, and compares the result to the
+//! baseline.
 
 use tracing::info;
 
@@ -761,7 +761,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Epic B kill-chain path tests
+    // Kill-chain path tests
     //
     // The same `set_param` / `get_param` paths are used by
     // `--counterfactual` overrides; these tests pin the expanded path
@@ -929,7 +929,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Epic I force-unit path tests
+    // Force-unit path tests
     //
     // The defender-posture optimization workflow needs a way to declare
     // force strength as a decision variable, so the path layer is

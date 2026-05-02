@@ -1,6 +1,6 @@
-//! Co-evolution Markdown report (Epic H — round two): convergence
-//! callout, round trajectory, final joint state, equilibrium objective
-//! values, reproducibility footer.
+//! Co-evolution Markdown report: convergence callout, round trajectory,
+//! final joint state, equilibrium objective values, reproducibility
+//! footer.
 
 use std::fmt::Write;
 

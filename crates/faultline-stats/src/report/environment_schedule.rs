@@ -1,4 +1,4 @@
-//! Environment Schedule section (Epic D): per-window weather /
+//! Environment Schedule section: per-window weather /
 //! time-of-day modifiers with per-terrain factors and the global
 //! detection factor.
 //!

@@ -1,4 +1,4 @@
-//! Time & attribution dynamics post-processing (Epic C).
+//! Time & attribution dynamics post-processing.
 //!
 //! All functions here operate on already-collected
 //! [`RunResult`](faultline_types::stats::RunResult) data — they never
@@ -652,6 +652,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: std::collections::BTreeMap::new(),
         }
     }
 

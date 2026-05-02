@@ -1,6 +1,6 @@
-//! Network Resilience section (Epic L): per-network mean / max
-//! disrupted-node and component counts, fragmentation rate, and the
-//! Brandes critical-node ranking on the static topology.
+//! Network Resilience section: per-network mean / max disrupted-node
+//! and component counts, fragmentation rate, and the Brandes
+//! critical-node ranking on the static topology.
 //!
 //! Elided when the scenario declares no networks.
 

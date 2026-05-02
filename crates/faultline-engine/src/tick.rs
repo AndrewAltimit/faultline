@@ -9,7 +9,7 @@ use faultline_geo::{GameMap, adjacent_regions};
 use faultline_politics::{self, TensionDelta};
 use faultline_types::events::EventEffect;
 use faultline_types::faction::ForceUnit;
-use faultline_types::ids::{FactionId, ForceId, RegionId};
+use faultline_types::ids::{FactionId, ForceId, RegionId, TechCardId};
 use faultline_types::map::{EnvironmentSchedule, EnvironmentWindow, TerrainType};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::Outcome;
@@ -265,8 +265,8 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
                 faction_b,
                 new_stance,
             } => {
-                // Wired by Epic D round two (coalition fracture).
-                // We mutate the runtime override map rather than the
+                // Wired by the coalition-fracture phase. We mutate the
+                // runtime override map rather than the
                 // scenario-authored Faction.diplomacy table so the
                 // baseline stays inspectable. The override is
                 // direction-aware: `(faction_a, faction_b) -> stance`
@@ -336,9 +336,9 @@ pub fn decision_phase(
 
 /// Resolve queued movement actions. Units move to adjacent regions
 /// if the move is valid and their movement accumulator has reached
-/// the unit threshold (R3-2 round-two — wires `ForceUnit.mobility`,
+/// the unit threshold. Wires `ForceUnit.mobility`,
 /// `TerrainModifier.movement_modifier`, and active environment
-/// windows' `movement_factor` into a single per-tick rate gate).
+/// windows' `movement_factor` into a single per-tick rate gate.
 pub fn movement_phase(
     state: &mut SimulationState,
     scenario: &Scenario,
@@ -420,6 +420,17 @@ fn move_unit(
 
 /// Resolve combat in regions where opposing factions have forces.
 pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut impl Rng) -> u32 {
+    // Reset per-tick tech coverage counters before we resolve any
+    // combat. The counters are scoped to the combat phase: each
+    // contribution to a (region, opponent) pair bumps the counter
+    // for the techs that were applied; once a card hits its
+    // `coverage_limit`, further applications in the same tick are
+    // skipped. Pure read-then-clear — no allocations beyond resetting
+    // the BTreeMaps that already exist on each faction.
+    for fs in state.faction_states.values_mut() {
+        fs.tech_coverage_used.clear();
+    }
+
     // Find regions with forces from multiple factions.
     let contested = find_contested_regions(state);
     let mut combats = 0;
@@ -434,17 +445,17 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
         let base_terrain_defense = terrain_info.map_or(1.0, |t| t.defense_modifier);
         let terrain_type = terrain_info.map_or(TerrainType::Rural, |t| t.terrain_type.clone());
 
-        // Apply environmental defense modifier (Epic D — weather /
-        // time-of-day). Multiplies the base terrain defense; resolves
-        // to 1.0 when no windows are declared or none are active.
+        // Apply environmental defense modifier (weather / time-of-day).
+        // Multiplies the base terrain defense; resolves to 1.0 when no
+        // windows are declared or none are active.
         let env_defense_factor = environment_defense_factor(scenario, &terrain_type, state.tick);
         let terrain_defense = base_terrain_defense * env_defense_factor;
 
         // Pairwise combat: all faction pairs engage each other,
-        // except mutually-Allied pairs (Epic D round-three item 1 —
-        // diplomacy behavioral coupling). Cooperative pairs still
-        // fight if their forces collide; only `Diplomacy::Allied`
-        // (in both directions) blocks combat.
+        // except mutually-Allied pairs (diplomacy behavioral
+        // coupling). Cooperative pairs still fight if their forces
+        // collide; only `Diplomacy::Allied` (in both directions)
+        // blocks combat.
         let factions: Vec<&FactionId> = faction_forces.keys().collect();
 
         for i in 0..factions.len() {
@@ -475,10 +486,27 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
                     .get(fid_b)
                     .is_some_and(|fs| fs.has_guerrilla_units());
 
-                let tech_modifier_a =
+                let (tech_modifier_a, applied_a) =
                     compute_tech_combat_modifier(fid_a, fid_b, state, scenario, &terrain_type);
-                let tech_modifier_b =
+                let (tech_modifier_b, applied_b) =
                     compute_tech_combat_modifier(fid_b, fid_a, state, scenario, &terrain_type);
+                // Bump per-tick coverage counters for techs that were
+                // actually applied (the helper already enforced the
+                // cap when deciding what to apply). Done in a separate
+                // mutation pass so the helper itself can take a `&`
+                // reference to `state` — combats touch many factions
+                // per pair, and threading `&mut` through the helper
+                // would conflict with the surrounding loop's reads.
+                if let Some(fs) = state.faction_states.get_mut(fid_a) {
+                    for tid in applied_a {
+                        *fs.tech_coverage_used.entry(tid).or_insert(0) += 1;
+                    }
+                }
+                if let Some(fs) = state.faction_states.get_mut(fid_b) {
+                    for tid in applied_b {
+                        *fs.tech_coverage_used.entry(tid).or_insert(0) += 1;
+                    }
+                }
 
                 let params = CombatParams {
                     strength_a: str_a,
@@ -528,17 +556,27 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
 /// Iterates the faction's deployed tech cards, resolves terrain effects,
 /// extracts `CombatModifier` effects, and multiplies their effectiveness.
 /// Cards countered by the opponent's active techs are skipped.
+///
+/// Returns `(modifier, applied_techs)`. The caller bumps each applied
+/// card's per-tick coverage counter — kept out of this function so the
+/// helper can stay `&` over `state`. Coverage gating itself happens
+/// here by reading the current counter value: a card whose
+/// `coverage_limit` has already been reached this tick is skipped
+/// (contributes nothing to `modifier`, omitted from `applied_techs`).
+/// Cards without a `coverage_limit` (the legacy default) bypass the
+/// gate entirely.
 fn compute_tech_combat_modifier(
     faction_id: &FactionId,
     opponent_id: &FactionId,
     state: &SimulationState,
     scenario: &Scenario,
     terrain: &TerrainType,
-) -> f64 {
-    let tech_deployed = match state.faction_states.get(faction_id) {
-        Some(fs) => &fs.tech_deployed,
-        None => return 1.0,
+) -> (f64, Vec<TechCardId>) {
+    let faction_state = match state.faction_states.get(faction_id) {
+        Some(fs) => fs,
+        None => return (1.0, Vec::new()),
     };
+    let tech_deployed = &faction_state.tech_deployed;
 
     let empty_techs = Vec::new();
     let opponent_techs = state
@@ -547,6 +585,7 @@ fn compute_tech_combat_modifier(
         .map_or(&empty_techs, |fs| &fs.tech_deployed);
 
     let mut modifier = 1.0;
+    let mut applied: Vec<TechCardId> = Vec::new();
 
     for tech_id in tech_deployed {
         let card = match scenario.technology.get(tech_id) {
@@ -558,15 +597,37 @@ fn compute_tech_combat_modifier(
             continue;
         }
 
+        // Coverage gate. Only enforced for cards with an authored
+        // `coverage_limit`; uncapped cards bypass
+        // the gate entirely (and stay out of the per-tick counter
+        // map, so legacy scenarios pay zero bookkeeping overhead).
+        // The counter is updated by the caller after this function
+        // returns, so reading it here gives the count from prior
+        // (region, opponent) pairs in this tick.
+        let has_limit = card.coverage_limit.is_some();
+        if let Some(limit) = card.coverage_limit {
+            let used = faction_state
+                .tech_coverage_used
+                .get(tech_id)
+                .copied()
+                .unwrap_or(0);
+            if used >= limit {
+                continue;
+            }
+        }
+
         let resolved = faultline_tech::apply_tech_effects(card, terrain);
         for re in &resolved {
             if let TechEffect::CombatModifier { factor } = &re.effect {
                 modifier *= factor * re.effectiveness;
             }
         }
+        if has_limit {
+            applied.push(tech_id.clone());
+        }
     }
 
-    modifier.clamp(0.25, 3.0)
+    (modifier.clamp(0.25, 3.0), applied)
 }
 
 /// Find regions where multiple factions have forces.
@@ -653,8 +714,8 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
     let faction_ids: Vec<FactionId> = state.faction_states.keys().cloned().collect();
 
     for fid in &faction_ids {
-        // Supply pressure (Epic D round three, item 2). Computed
-        // before reading `resource_rate` so income is attenuated by
+        // Supply pressure. Computed before reading `resource_rate` so
+        // income is attenuated by
         // the latest network state. Pure function — no RNG, no
         // allocation, returns (1.0, false) for any faction without
         // an owned non-degenerate supply network so legacy scenarios
@@ -682,6 +743,7 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
             }
         }
 
+        let tick = state.tick;
         let (resource_rate, recruitment_cfg, upkeep) = {
             let faction_def = match scenario.factions.get(fid) {
                 Some(f) => f,
@@ -715,6 +777,46 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
 
             // Upkeep.
             fs.resources = (fs.resources - upkeep).max(0.0);
+
+            // Tech maintenance. Walk `tech_deployed` in declaration
+            // order; for each
+            // card, deduct `cost_per_tick` if affordable, otherwise
+            // decommission the card (remove from `tech_deployed` and
+            // record the loss). Decommissioning is final — the card
+            // does not re-deploy if resources later recover, mirroring
+            // the real-world "you can't conjure a deployed sensor mast
+            // back into existence with a wire transfer" intuition.
+            // Income, upkeep, and tech maintenance are all charged
+            // *before* recruitment so the new-unit upkeep the next
+            // tick is properly funded before we even consider
+            // spawning replacements.
+            //
+            // Cards referenced in `tech_deployed` but absent from
+            // `scenario.technology` are kept (consistent with init —
+            // missing tech is a silent no-op, not a runtime error).
+            // A separate audit could promote that to a load-time
+            // error.
+            let mut kept: Vec<TechCardId> = Vec::with_capacity(fs.tech_deployed.len());
+            let mut decommissioned_now: Vec<TechCardId> = Vec::new();
+            for tech_id in &fs.tech_deployed {
+                let cost = scenario
+                    .technology
+                    .get(tech_id)
+                    .map_or(0.0, |c| c.cost_per_tick);
+                if cost > fs.resources {
+                    decommissioned_now.push(tech_id.clone());
+                } else {
+                    fs.resources -= cost;
+                    fs.tech_maintenance_spend += cost;
+                    kept.push(tech_id.clone());
+                }
+            }
+            if !decommissioned_now.is_empty() {
+                for tech_id in decommissioned_now {
+                    fs.tech_decommissioned.push((tick, tech_id));
+                }
+                fs.tech_deployed = kept;
+            }
 
             // Recruitment: spawn new units if affordable.
             if let Some(ref recruit) = recruitment_cfg
@@ -1016,8 +1118,7 @@ fn process_civilian_activation(
 
 /// Process information warfare effects.
 ///
-/// Reads four media-landscape fields (R3-2 round-two — three of these
-/// were silent before this round):
+/// Reads four media-landscape fields:
 /// - `disinformation_susceptibility` (existing): high values raise
 ///   tension above the 0.5 baseline.
 /// - `state_control` (existing): high values dampen tension above the
@@ -1213,7 +1314,7 @@ pub fn update_region_control(state: &mut SimulationState, _scenario: &Scenario) 
 }
 
 // -----------------------------------------------------------------------
-// Environment helpers (Epic D — weather, time-of-day)
+// Environment helpers (weather, time-of-day)
 // -----------------------------------------------------------------------
 
 /// Whether `window` applies to a region of the given terrain.
@@ -1225,7 +1326,7 @@ fn window_covers(window: &EnvironmentWindow, terrain: &TerrainType) -> bool {
 /// that covers `terrain` at `tick`. Empty schedule resolves to 1.0,
 /// so legacy scenarios are unchanged. Read by the movement phase
 /// when computing a unit's effective mobility for the accumulator
-/// gate (R3-2 round-two).
+/// gate.
 pub fn environment_movement_factor(scenario: &Scenario, terrain: &TerrainType, tick: u32) -> f64 {
     multiplicative_factor(&scenario.environment, tick, |w| {
         if window_covers(w, terrain) {
@@ -1274,7 +1375,7 @@ fn multiplicative_factor(
 }
 
 // -----------------------------------------------------------------------
-// Leadership caps (Epic D — decapitation + succession)
+// Leadership caps (decapitation + succession)
 // -----------------------------------------------------------------------
 
 /// Compute the effective leadership multiplier for `faction_id` at

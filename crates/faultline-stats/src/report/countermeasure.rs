@@ -1,5 +1,5 @@
-//! Countermeasure Analysis section (Epic B): per-phase warning
-//! indicators (IWI / IOC entries).
+//! Countermeasure Analysis section: per-phase warning indicators
+//! (IWI / IOC entries).
 //!
 //! Declarative in this iteration: detection probability in the engine
 //! is still driven by `CampaignPhase.detection_probability_per_tick`.

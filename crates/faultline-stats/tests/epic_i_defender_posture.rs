@@ -1,4 +1,4 @@
-//! Integration tests for Epic I — defender-posture optimization.
+//! Integration tests for defender-posture optimization.
 //!
 //! Exercises the full pipeline against the bundled
 //! `defender_posture_optimization` scenario: search-mode determinism
@@ -185,6 +185,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
         alliance_dynamics: None,
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+        tech_cost_summaries: ::std::collections::BTreeMap::new(),
     };
     summary.win_rates.insert(FactionId::from("blue"), 0.5);
 
@@ -324,15 +325,16 @@ fn counter_recommendation_wilson_ci_panel_renders_for_win_rate() {
 
 #[test]
 fn manifest_search_mode_backward_compat_default_compute_baseline() {
-    // Old manifests (Epic H shape) lacked the `compute_baseline`
+    // Older manifests predating the baseline-trial feature lacked
+    // the `compute_baseline`
     // field. `#[serde(default)]` on the new field must let those
     // manifests deserialize cleanly with `compute_baseline = false`,
     // matching the SearchResult shape they were originally hashed
     // under (no baseline trial).
     use faultline_stats::manifest::ManifestMode;
 
-    // Hand-craft the JSON that an Epic H manifest would have produced
-    // — note the absence of `compute_baseline`.
+    // Hand-craft the JSON that an older manifest would have
+    // produced — note the absence of `compute_baseline`.
     let legacy_json = r#"{
         "kind": "search",
         "method": "grid",

@@ -1,8 +1,8 @@
-//! Supply-network interdiction phase (Epic D — round three, item 2).
+//! Supply-network interdiction phase.
 //!
 //! Translates per-network capacity loss into per-faction *supply
 //! pressure*: a multiplier in `[0, 1]` that scales the owner's
-//! per-tick resource income. Builds on the Epic L network primitives —
+//! per-tick resource income. Builds on the typed-network primitives —
 //! the static topology, runtime edge factors, and disrupted-node set
 //! all live on `state.network_states`; this module only consumes them.
 //!
@@ -64,7 +64,7 @@ const SUPPLY_KIND: &str = "supply";
 /// thresholded version).
 pub const PRESSURE_REPORTING_THRESHOLD: f64 = 0.9;
 
-/// Whether `net` is a supply network in the round-three contract sense.
+/// Whether `net` is a supply network in the interdiction-phase contract sense.
 ///
 /// Returns `true` iff `kind` matches `"supply"` (case-insensitive)
 /// **and** `owner` is `Some(_)`. The owner check is what makes the

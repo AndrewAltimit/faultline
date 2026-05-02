@@ -126,7 +126,7 @@ pub struct GeoPoint {
 }
 
 // ---------------------------------------------------------------------------
-// Environmental schedule (Epic D — weather, time-of-day)
+// Environmental schedule (weather, time-of-day)
 // ---------------------------------------------------------------------------
 
 /// A timeline of environmental windows that modify per-region terrain

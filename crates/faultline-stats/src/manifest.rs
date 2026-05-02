@@ -1,4 +1,4 @@
-//! Run manifests and replay determinism (Epic Q).
+//! Run manifests and replay determinism.
 //!
 //! A [`RunManifest`] is the smallest object that pins down "this exact
 //! Faultline output came from this exact input under this exact engine."
@@ -74,7 +74,7 @@ pub enum ManifestMode {
         steps: u32,
         runs_per_step: u32,
     },
-    /// `--search` — strategy-search batch (Epic H). The search-only
+    /// `--search` — strategy-search batch. The search-only
     /// seed is recorded separately from `mc_config.base_seed`: search
     /// uses an independent RNG so that re-running with the same
     /// `search_seed` reproduces the trial assignments while the inner
@@ -87,19 +87,20 @@ pub enum ManifestMode {
         search_seed: u64,
         objectives: Vec<String>,
         /// Whether the search emitted a "do nothing" baseline trial
-        /// alongside its sampled trials (Epic I). Recorded so the
+        /// alongside its sampled trials. Recorded so the
         /// verify path reproduces the same SearchResult shape — the
         /// output_hash includes the baseline when present, so a
         /// mismatched setting would fail replay.
         ///
         /// `#[serde(default)]` so older manifests without this field
-        /// (Epic H round-one shape) replay with `false`, matching the
+        /// (older shape predating the baseline trial) replay with
+        /// `false`, matching the
         /// SearchResult shape they were hashed under.
         #[serde(default)]
         compute_baseline: bool,
     },
-    /// `--robustness` — defender-posture robustness sweep (Epic I
-    /// round two). Records the postures evaluated, the source the CLI
+    /// `--robustness` — defender-posture robustness sweep. Records
+    /// the postures evaluated, the source the CLI
     /// pulled them from, and the objective labels so a verify replay
     /// rebuilds an identical `RobustnessConfig`.
     ///
@@ -124,7 +125,7 @@ pub enum ManifestMode {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from_search_hash: Option<String>,
     },
-    /// `--coevolve` — adversarial co-evolution (Epic H round two).
+    /// `--coevolve` — adversarial co-evolution.
     /// Stores the side configs as labels + faction IDs + per-side
     /// trials/method so the verify path can rebuild a `CoevolveConfig`
     /// without reaching into the scenario for anything that would

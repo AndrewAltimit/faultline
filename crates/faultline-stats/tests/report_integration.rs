@@ -708,7 +708,7 @@ fn continuous_metrics_partial_ci_suppresses_bounds_in_cells() {
 }
 
 // ============================================================================
-// Epic B — Policy Implications, Countermeasure Analysis, comparison report
+// Policy Implications, Countermeasure Analysis, comparison report
 //
 // These tests are deliberately driven through the public `render_markdown`
 // surface and the public `run_counterfactual` / `run_compare` entry points
@@ -718,8 +718,8 @@ fn continuous_metrics_partial_ci_suppresses_bounds_in_cells() {
 
 /// Augment the existing flagged-chain scenario with one IWI-tagged
 /// phase, one defender_options-bearing event, and an escalation_rules
-/// block on the attacker. Produces a scenario where every Epic B
-/// section has *some* content.
+/// block on the attacker. Produces a scenario where every
+/// counterfactual / comparison report section has *some* content.
 fn epic_b_populated_scenario() -> Scenario {
     let mut scenario = flagged_chain_scenario();
 
@@ -1132,7 +1132,7 @@ fn comparison_omits_optional_subsections_when_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// Epic Q — Manifest determinism integration tests
+// Manifest determinism integration tests
 // ---------------------------------------------------------------------------
 
 /// The manifest hash is the citation-grade identity for a Faultline

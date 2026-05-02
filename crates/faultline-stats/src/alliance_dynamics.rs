@@ -1,4 +1,4 @@
-//! Cross-run alliance-fracture rollup (Epic D round two).
+//! Cross-run alliance-fracture rollup.
 //!
 //! Pure post-processing of `RunResult.fracture_events` and
 //! `Faction.alliance_fracture` declarations. No engine re-runs, no
@@ -173,6 +173,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: std::collections::BTreeMap::new(),
         }
     }
 
@@ -321,6 +322,7 @@ mod tests {
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+            tech_cost_summaries: ::std::collections::BTreeMap::new(),
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

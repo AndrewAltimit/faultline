@@ -1,4 +1,4 @@
-//! Property tests for `faultline_stats::uncertainty` (R3-5).
+//! Property tests for `faultline_stats::uncertainty`.
 //!
 //! Existing unit tests in `uncertainty.rs` pin specific reference values
 //! (Agresti & Coull table) and a handful of hand-picked `(successes, n)`

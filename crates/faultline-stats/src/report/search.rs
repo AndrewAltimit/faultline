@@ -1,6 +1,6 @@
-//! Strategy-search Markdown report (Epic H + Epic I): setup block,
-//! best-by-objective table, Pareto-frontier table, the Epic I
-//! Counter-Recommendation block, then per-trial detail.
+//! Strategy-search Markdown report: setup block, best-by-objective
+//! table, Pareto-frontier table, the Counter-Recommendation block,
+//! then per-trial detail.
 
 use std::fmt::Write;
 
@@ -126,7 +126,7 @@ fn render_search_pareto(out: &mut String, result: &SearchResult) {
 }
 
 // ---------------------------------------------------------------------------
-// Counter-Recommendation (Epic I)
+// Counter-Recommendation
 // ---------------------------------------------------------------------------
 
 /// Sub-epsilon deltas (floating-point noise from re-running the same
@@ -274,7 +274,7 @@ fn render_counter_recommendation(out: &mut String, result: &SearchResult, scenar
         // sample size carried on `MonteCarloSummary.total_runs`. Other
         // objectives (sums, maxes, durations) are continuous metrics
         // that need bootstrap CIs; deferred to a follow-up so the
-        // first round-one slice ships clean.
+        // first slice ships clean.
         let mut wilson_lines: Vec<String> = Vec::new();
         for obj in &result.objectives {
             if let SearchObjective::MaximizeWinRate { faction } = obj {

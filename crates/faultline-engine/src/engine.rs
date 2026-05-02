@@ -8,11 +8,11 @@ use rand_chacha::ChaCha8Rng;
 use faultline_events::EventEvaluator;
 use faultline_geo::{self, GameMap};
 use faultline_types::campaign::BranchCondition;
-use faultline_types::ids::{EventId, FactionId, KillChainId};
+use faultline_types::ids::{EventId, FactionId, KillChainId, TechCardId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
     DefenderQueueReport, EventRecord, NetworkReport, Outcome, RunResult, StateSnapshot,
-    SupplyPressureReport,
+    SupplyPressureReport, TechCostReport, TechDecommissionEvent,
 };
 use faultline_types::strategy::FactionState;
 
@@ -139,22 +139,22 @@ impl Engine {
             );
         }
 
-        // Phase 7c: Leadership caps (Epic D — decapitation recovery
-        // ramp). Applied after the campaign phase so a decapitation
+        // Phase 7c: Leadership caps (decapitation recovery ramp).
+        // Applied after the campaign phase so a decapitation
         // landed *this tick* takes effect on the morale read by the
         // next tick's combat. No-op for scenarios without any faction
         // declaring a `leadership` cadre.
         tick::apply_leadership_caps(&mut self.state, &self.scenario);
 
-        // Phase 7d: Alliance-fracture evaluation (Epic D round two).
-        // Reads the post-campaign attribution / morale / tension /
+        // Phase 7d: Alliance-fracture evaluation. Reads the post-
+        // campaign attribution / morale / tension /
         // strength state plus the cumulative `events_fired` log and
         // mutates `diplomacy_overrides` when a rule's condition is
         // satisfied. No-op for scenarios with no `alliance_fracture`
         // declarations.
         fracture_phase::fracture_phase(&mut self.state, &self.scenario, &self.campaigns);
 
-        // Phase 7e: Network resilience capture (Epic L). Records one
+        // Phase 7e: Network resilience capture. Records one
         // [`NetworkSample`] per declared network at end-of-tick so
         // any same-tick interdiction event is reflected in the sample.
         // No-op for scenarios with no `[networks.*]` declarations.
@@ -218,6 +218,7 @@ impl Engine {
                     fracture_events: self.state.fracture_events.clone(),
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                     civilian_activations: self.state.civilian_activations.clone(),
+                    tech_costs: collect_tech_cost_reports(&self.state),
                 });
             }
 
@@ -242,6 +243,7 @@ impl Engine {
                     fracture_events: self.state.fracture_events.clone(),
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                     civilian_activations: self.state.civilian_activations.clone(),
+                    tech_costs: collect_tech_cost_reports(&self.state),
                 });
             }
         }
@@ -302,18 +304,50 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
 
         let total_strength: f64 = faction.forces.values().map(|f| f.strength).sum();
 
+        // Tech deployment. Iterate `tech_access` in declaration order,
+        // charging `deployment_cost` against the running resource pool.
+        // Cards
+        // whose cost exceeds what's left are recorded as denied and
+        // **not** added to `tech_deployed` — they contribute nothing
+        // to combat / detection / supply for the rest of the run.
+        // Iteration continues past a denial so a later, cheaper card
+        // can still fit (e.g. the author may have listed an aspirational
+        // big-ticket tech first followed by a fallback). Cards
+        // referenced in `tech_access` but absent from
+        // `scenario.technology` are deployed at zero cost — that
+        // preserves the legacy "missing tech is a silent no-op at
+        // combat time" contract; promoting it to a load-time error
+        // belongs in a separate audit.
+        let mut resources = faction.initial_resources;
+        let mut tech_deployed: Vec<TechCardId> = Vec::with_capacity(faction.tech_access.len());
+        let mut tech_denied: Vec<TechCardId> = Vec::new();
+        let mut deployment_spend: f64 = 0.0;
+        for tech_id in &faction.tech_access {
+            let cost = scenario
+                .technology
+                .get(tech_id)
+                .map_or(0.0, |c| c.deployment_cost);
+            if cost > resources {
+                tech_denied.push(tech_id.clone());
+                continue;
+            }
+            resources -= cost;
+            deployment_spend += cost;
+            tech_deployed.push(tech_id.clone());
+        }
+
         faction_states.insert(
             fid.clone(),
             RuntimeFactionState {
                 faction_id: fid.clone(),
                 total_strength,
                 morale: faction.initial_morale,
-                resources: faction.initial_resources,
+                resources,
                 resource_rate: faction.resource_rate,
                 logistics_capacity: faction.logistics_capacity,
                 controlled_regions,
                 forces: faction.forces.clone(),
-                tech_deployed: faction.tech_access.clone(),
+                tech_deployed,
                 region_hold_ticks: BTreeMap::new(),
                 eliminated: false,
                 current_leadership_rank: 0,
@@ -324,6 +358,11 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
                 supply_pressure_samples: 0,
                 supply_pressure_min: 1.0,
                 supply_pressure_pressured_ticks: 0,
+                tech_denied_at_deployment: tech_denied,
+                tech_decommissioned: Vec::new(),
+                tech_deployment_spend: deployment_spend,
+                tech_maintenance_spend: 0.0,
+                tech_coverage_used: BTreeMap::new(),
             },
         );
     }
@@ -462,9 +501,9 @@ fn max_escalation_window(scenario: &Scenario) -> usize {
 
 /// Walks `cond` (recursively through `OrAny`) accumulating the
 /// largest `sustained_ticks` across every `EscalationThreshold`
-/// reached. `OrAny` was added with Epic D — without recursion here,
-/// an escalation branch nested inside an OR would silently see an
-/// empty metric history and never fire.
+/// reached. Without recursion through `OrAny`, an escalation branch
+/// nested inside an OR would silently see an empty metric history
+/// and never fire.
 fn walk_escalation(cond: &BranchCondition, max_window: &mut u32, found_any: &mut bool) {
     match cond {
         BranchCondition::EscalationThreshold {
@@ -523,7 +562,7 @@ fn collect_queue_reports(state: &SimulationState) -> Vec<DefenderQueueReport> {
 }
 
 /// Convert per-faction supply-pressure counters into the post-run
-/// [`SupplyPressureReport`] map (Epic D round three, item 2). Only
+/// [`SupplyPressureReport`] map. Only
 /// emits a row for factions that actually owned a supply network
 /// during the run (`supply_pressure_samples > 0`); legacy factions
 /// produce no entry so the outer map elides entirely on scenarios
@@ -552,8 +591,50 @@ fn collect_supply_pressure_reports(
     out
 }
 
+/// Convert per-faction tech-cost counters into the post-run
+/// [`TechCostReport`] map. Only emits a row for factions that
+/// exercised the tech-cost path —
+/// either by spending on deployment, by being denied a deployment,
+/// by losing a card mid-run, or by having paid maintenance. Legacy
+/// factions whose tech roster was zero-cost across the board produce
+/// no entry, so the outer map elides entirely on scenarios that
+/// don't engage the new mechanic. Iteration is `BTreeMap`-ordered for
+/// deterministic rendering.
+fn collect_tech_cost_reports(state: &SimulationState) -> BTreeMap<FactionId, TechCostReport> {
+    let mut out = BTreeMap::new();
+    for (fid, fs) in &state.faction_states {
+        let any_activity = fs.tech_deployment_spend > 0.0
+            || fs.tech_maintenance_spend > 0.0
+            || !fs.tech_denied_at_deployment.is_empty()
+            || !fs.tech_decommissioned.is_empty();
+        if !any_activity {
+            continue;
+        }
+        let decommissioned: Vec<TechDecommissionEvent> = fs
+            .tech_decommissioned
+            .iter()
+            .map(|(tick, tech)| TechDecommissionEvent {
+                tick: *tick,
+                tech: tech.clone(),
+            })
+            .collect();
+        out.insert(
+            fid.clone(),
+            TechCostReport {
+                faction: fid.clone(),
+                deployed_techs: fs.tech_deployed.clone(),
+                denied_at_deployment: fs.tech_denied_at_deployment.clone(),
+                decommissioned,
+                total_deployment_spend: fs.tech_deployment_spend,
+                total_maintenance_spend: fs.tech_maintenance_spend,
+            },
+        );
+    }
+    out
+}
+
 /// Convert per-network runtime state into the post-run
-/// [`NetworkReport`] map (Epic L). Empty outer map when the scenario
+/// [`NetworkReport`] map. Empty outer map when the scenario
 /// declared no networks. Iteration is `BTreeMap`-ordered so the
 /// manifest hash stays stable.
 fn collect_network_reports(

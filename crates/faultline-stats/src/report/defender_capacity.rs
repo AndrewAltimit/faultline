@@ -1,4 +1,4 @@
-//! Defender Capacity section (Epic K): per-role investigative-queue
+//! Defender Capacity section: per-role investigative-queue
 //! analytics — utilization, dropped alerts, shadow detections, time-
 //! to-saturation distribution.
 //!

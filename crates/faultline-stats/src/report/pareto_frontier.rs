@@ -1,4 +1,4 @@
-//! Pareto Frontier section (Epic C): non-dominated runs across attacker
+//! Pareto Frontier section: non-dominated runs across attacker
 //! cost / success / stealth.
 //!
 //! Elided when no frontier was computed or the frontier is empty.

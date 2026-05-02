@@ -1,4 +1,4 @@
-//! Integration tests for the Epic L network primitive.
+//! Integration tests for the typed network primitive.
 //!
 //! Pin the high-leverage observable behaviors:
 //! - the network rollup actually appears in `MonteCarloSummary` when
@@ -62,8 +62,9 @@ fn star_network() -> Network {
         id: NetworkId::from("supply"),
         name: "Supply".into(),
         kind: "supply".into(),
-        // Supply networks must declare an owner per the Epic D round-three
-        // item-2 contract. Validation rejects `kind = "supply"` without one.
+        // Supply networks must declare an owner per the supply-
+        // interdiction contract. Validation rejects `kind = "supply"`
+        // without one.
         owner: Some(FactionId::from("blue")),
         nodes,
         edges,
@@ -121,7 +122,7 @@ fn minimal_two_region_scenario() -> Scenario {
 
     Scenario {
         meta: ScenarioMeta {
-            name: "Epic L Test".into(),
+            name: "Network Primitive Test".into(),
             ..Default::default()
         },
         map: MapConfig {

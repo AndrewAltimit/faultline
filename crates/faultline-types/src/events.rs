@@ -168,7 +168,7 @@ pub enum EventEffect {
         text: String,
     },
     /// Reduce an edge's effective capacity by multiplying its
-    /// `runtime_capacity_factor` by `factor` (Epic L). `factor < 1.0`
+    /// `runtime_capacity_factor` by `factor`. `factor < 1.0`
     /// models interdiction; `factor == 0.0` severs the edge.
     /// `factor > 1.0` is permitted (hardening / surge capacity) but
     /// the runtime factor is clamped to `[0, 4]` to prevent runaway
@@ -179,7 +179,7 @@ pub enum EventEffect {
         edge: EdgeId,
         factor: f64,
     },
-    /// Mark a network node as disrupted (Epic L) — every edge
+    /// Mark a network node as disrupted — every edge
     /// incident to it is treated as severed (capacity factor 0) for
     /// metrics and resilience curves. The static schema is unchanged;
     /// the disruption is per-run runtime state. Repeated disruption
@@ -189,7 +189,7 @@ pub enum EventEffect {
         node: NodeId,
     },
     /// Add `faction` to the set of factions with attacker-style
-    /// visibility into a network node (Epic L). Surfaced in the
+    /// visibility into a network node. Surfaced in the
     /// report as an information loss; does not change capacity. The
     /// effect is cumulative — a second infiltration by a different
     /// faction adds that faction to the visibility set.

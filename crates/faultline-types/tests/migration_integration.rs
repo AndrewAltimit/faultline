@@ -180,7 +180,7 @@ fn migrate_is_deterministic() {
     // The migration framework must be a pure function of (input,
     // CURRENT_SCHEMA_VERSION, MIGRATIONS). Running migrate twice on
     // the same input must yield byte-identical TOML. This is the
-    // foundation that lets Epic Q manifest hashes mean anything —
+    // foundation that lets manifest hashes mean anything —
     // a non-deterministic migrator would make scenario_hash unstable
     // even at fixed source.
     let a = migrate_scenario_str(TUTORIAL_TOML).expect("first migrate");

@@ -179,9 +179,9 @@ fn base_scenario() -> Scenario {
             regions,
             infrastructure: BTreeMap::new(),
             // Note: `movement_modifier` is uniform 1.0 across regions
-            // so the integration suite is insensitive to the R3-2
-            // round-two move-accumulator gate — these tests pin
-            // tech / combat / event behavior, not movement rate.
+            // so the integration suite is insensitive to the move-
+            // accumulator gate — these tests pin tech / combat / event
+            // behavior, not movement rate.
             // `defense_modifier` and `visibility` keep their per-
             // region variation since several tests in this file
             // depend on those values.

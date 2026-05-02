@@ -689,8 +689,8 @@ fn defender_budget_overrun_reduces_post_overrun_detection_rate() {
 //          EnvironmentWindow.movement_factor gate per-tick movement
 // ---------------------------------------------------------------------------
 //
-// All three fields were silent no-ops before R3-2 round-two. They now
-// compose multiplicatively into a per-tick "effective mobility" that
+// All three fields were previously silent no-ops. They now compose
+// multiplicatively into a per-tick "effective mobility" that
 // drives a `move_progress` accumulator on the unit; a queued
 // `MoveUnit` action only fires when the accumulator reaches `1.0`.
 // The tests below pin the rate-gating semantics by counting how many
@@ -960,7 +960,7 @@ fn validate_rejects_authored_move_progress() {
 }
 
 // ---------------------------------------------------------------------------
-// R3-2 round-two: population-segment activation + media-landscape wiring
+// Population-segment activation + media-landscape wiring
 // ---------------------------------------------------------------------------
 
 /// Build a scenario with one population segment whose top sympathy is
@@ -1396,4 +1396,432 @@ fn segment_activation_determinism_pinned_by_seed() {
         ra.civilian_activations, rb.civilian_activations,
         "civilian_activations must be deterministic across same-seed runs"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: TechCard cost wiring (deployment_cost / cost_per_tick / coverage_limit)
+// ---------------------------------------------------------------------------
+//
+// Three previously-silent fields:
+// - `deployment_cost`: deducted at engine init from each faction's
+//   `initial_resources` for every card the faction can afford.
+//   Cards the faction can't afford are *denied* (skipped), recorded
+//   for the post-run report.
+// - `cost_per_tick`: deducted in the attrition phase per-tech.
+//   Cards whose maintenance can't be paid are *decommissioned*
+//   (removed from `tech_deployed`), permanent for the rest of the
+//   run.
+// - `coverage_limit`: caps the per-tick number of (region, opponent)
+//   pairs the card touches. Once saturated this tick, additional
+//   applications are skipped.
+//
+// Each test holds the rest of the scenario constant and varies only
+// the field under test so any divergence in outcome is attributable
+// to the wired field alone.
+
+mod tech_costs {
+    use super::*;
+
+    use faultline_types::ids::TechCardId;
+    use faultline_types::tech::{TechCard, TechCategory, TechEffect};
+
+    fn make_tech(
+        id: &str,
+        deployment_cost: f64,
+        cost_per_tick: f64,
+        coverage_limit: Option<u32>,
+        combat_factor: f64,
+    ) -> TechCard {
+        TechCard {
+            id: TechCardId::from(id),
+            name: id.into(),
+            description: String::new(),
+            category: TechCategory::Custom("test".into()),
+            effects: vec![TechEffect::CombatModifier {
+                factor: combat_factor,
+            }],
+            cost_per_tick,
+            deployment_cost,
+            countered_by: vec![],
+            terrain_modifiers: vec![],
+            coverage_limit,
+        }
+    }
+
+    /// Two-faction scenario that gives `alpha` the tech roster `cards`
+    /// in declaration order, with `initial_resources` and
+    /// `resource_rate`. A passive `bravo` faction sits in r2 so the
+    /// "last faction standing" victory check doesn't terminate the run
+    /// at tick 1. Forces never overlap regions so there is no combat
+    /// — the only mutators of alpha's `resources` are upkeep, income,
+    /// and tech costs.
+    fn scenario_with_techs(
+        cards: Vec<TechCard>,
+        initial_resources: f64,
+        resource_rate: f64,
+        max_ticks: u32,
+    ) -> Scenario {
+        let mut sc = empty_scenario(7, max_ticks);
+        let r1 = RegionId::from("r1");
+        let r2 = RegionId::from("r2");
+
+        let mut alpha_forces = BTreeMap::new();
+        let mut alpha_force = make_force("u", &r1, 50.0, 0.0);
+        alpha_force.upkeep = 0.0;
+        alpha_forces.insert(ForceId::from("u"), alpha_force);
+        let mut alpha = make_faction("alpha", alpha_forces, 0.0, None);
+        alpha.initial_resources = initial_resources;
+        alpha.resource_rate = resource_rate;
+        alpha.tech_access = cards.iter().map(|c| c.id.clone()).collect();
+        sc.factions.insert(FactionId::from("alpha"), alpha);
+
+        // Passive opponent in r2 so "last faction standing" doesn't
+        // fire on tick 1. Zero upkeep so its survival costs don't
+        // matter; we never read its resources.
+        let mut bravo_forces = BTreeMap::new();
+        let mut bravo_force = make_force("v", &r2, 50.0, 0.0);
+        bravo_force.upkeep = 0.0;
+        bravo_forces.insert(ForceId::from("v"), bravo_force);
+        let bravo = make_faction("bravo", bravo_forces, 0.0, None);
+        sc.factions.insert(FactionId::from("bravo"), bravo);
+
+        for card in cards {
+            sc.technology.insert(card.id.clone(), card);
+        }
+        sc
+    }
+
+    /// Drive a single combat phase against a scenario and return the
+    /// post-combat state. Skips movement / decision / political /
+    /// campaign phases so unit positions can't be perturbed by the AI
+    /// between init and the combat snapshot — the coverage tests
+    /// depend on a known set of contested regions, and the AI is
+    /// allowed (under default doctrine) to move units mid-tick before
+    /// combat resolves.
+    fn run_combat_only(sc: Scenario) -> faultline_engine::SimulationState {
+        use rand::SeedableRng;
+        let engine = Engine::with_seed(sc.clone(), 1).expect("engine init");
+        let mut state = engine.state().clone();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1);
+        tick::combat_phase(&mut state, &sc, &mut rng);
+        state
+    }
+
+    // Deployment-cost tests --------------------------------------------------
+
+    #[test]
+    fn deployment_cost_deducted_from_initial_resources_at_init() {
+        let card = make_tech("alpha_drone", 25.0, 0.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 1);
+        let engine = Engine::with_seed(sc, 1).expect("engine init");
+        let fs = engine
+            .state()
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        // 100 initial - 25 deployment = 75 left.
+        assert!(
+            (fs.resources - 75.0).abs() < 1e-9,
+            "expected 75.0 after deployment, got {}",
+            fs.resources
+        );
+        assert_eq!(fs.tech_deployment_spend, 25.0);
+        assert_eq!(fs.tech_deployed.len(), 1, "card deployed");
+        assert!(fs.tech_denied_at_deployment.is_empty());
+    }
+
+    #[test]
+    fn deployment_skipped_when_unaffordable_and_recorded_as_denied() {
+        // Initial 30; card costs 50 -> denied. Resources untouched.
+        let card = make_tech("expensive", 50.0, 0.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 30.0, 0.0, 1);
+        let engine = Engine::with_seed(sc, 1).expect("engine init");
+        let fs = engine
+            .state()
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        assert!(
+            (fs.resources - 30.0).abs() < 1e-9,
+            "denial preserves resources, got {}",
+            fs.resources
+        );
+        assert!(fs.tech_deployed.is_empty(), "denied card not deployed");
+        assert_eq!(fs.tech_denied_at_deployment.len(), 1);
+        assert_eq!(fs.tech_denied_at_deployment[0].0, "expensive");
+        assert_eq!(fs.tech_deployment_spend, 0.0);
+    }
+
+    #[test]
+    fn deployment_iteration_continues_past_denial() {
+        // 40 budget. First card 30 (fits), second 50 (denied), third
+        // 5 (fits in remaining 10). Iteration must not short-circuit
+        // on the denial — the third card is the test.
+        let cards = vec![
+            make_tech("first", 30.0, 0.0, None, 1.0),
+            make_tech("second", 50.0, 0.0, None, 1.0),
+            make_tech("third", 5.0, 0.0, None, 1.0),
+        ];
+        let sc = scenario_with_techs(cards, 40.0, 0.0, 1);
+        let engine = Engine::with_seed(sc, 1).expect("engine init");
+        let fs = engine
+            .state()
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        let deployed_ids: Vec<&str> = fs.tech_deployed.iter().map(|t| t.0.as_str()).collect();
+        assert_eq!(deployed_ids, vec!["first", "third"]);
+        assert_eq!(fs.tech_denied_at_deployment.len(), 1);
+        assert_eq!(fs.tech_denied_at_deployment[0].0, "second");
+        // Deployment spend = 30 + 5 = 35; resources = 40 - 35 = 5.
+        assert!((fs.resources - 5.0).abs() < 1e-9);
+        assert!((fs.tech_deployment_spend - 35.0).abs() < 1e-9);
+    }
+
+    // cost_per_tick tests ----------------------------------------------------
+
+    #[test]
+    fn cost_per_tick_deducted_in_attrition_phase() {
+        // 100 budget, 0 deployment, 5/tick maintenance, 0 income.
+        // After 3 ticks: 100 - 3*5 = 85.
+        let card = make_tech("steady", 0.0, 5.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 3);
+        let mut engine = Engine::with_seed(sc, 1).expect("engine init");
+        engine.run().expect("run");
+        let fs = engine
+            .state()
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        assert!(
+            (fs.resources - 85.0).abs() < 1e-9,
+            "expected 85.0 after 3 maintenance ticks, got {}",
+            fs.resources
+        );
+        assert!((fs.tech_maintenance_spend - 15.0).abs() < 1e-9);
+        assert!(fs.tech_decommissioned.is_empty(), "no decommission");
+    }
+
+    #[test]
+    fn unaffordable_maintenance_decommissions_card_immediately() {
+        // 10 budget, 0 deployment, 8/tick maintenance, 0 income.
+        // Tick 1: pay 8, leaves 2. Tick 2: 8 > 2, decommission.
+        // Tick 3: card gone, no further charges.
+        let card = make_tech("burns_out", 0.0, 8.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 10.0, 0.0, 3);
+        let mut engine = Engine::with_seed(sc, 1).expect("engine init");
+        engine.run().expect("run");
+        let fs = engine
+            .state()
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        assert!(
+            (fs.resources - 2.0).abs() < 1e-9,
+            "expected 2.0 leftover, got {}",
+            fs.resources
+        );
+        assert!(
+            fs.tech_deployed.is_empty(),
+            "card decommissioned, got {:?}",
+            fs.tech_deployed
+        );
+        assert_eq!(fs.tech_decommissioned.len(), 1);
+        assert_eq!(fs.tech_decommissioned[0].1.0, "burns_out");
+        // Decommission tick is 2 (the tick the unaffordable check
+        // fired).
+        assert_eq!(fs.tech_decommissioned[0].0, 2);
+        // Maintenance only paid once (tick 1).
+        assert!((fs.tech_maintenance_spend - 8.0).abs() < 1e-9);
+    }
+
+    // coverage_limit tests ---------------------------------------------------
+
+    /// Build a 2-faction scenario where alpha has a tech card with
+    /// `coverage_limit = limit`. Both factions have units in two
+    /// regions, producing two contested regions per tick → two
+    /// (region, opponent) pairs that the alpha tech could touch each
+    /// tick. Returns the engine after one combat tick so callers can
+    /// inspect `tech_coverage_used`.
+    fn coverage_scenario(limit: Option<u32>) -> Scenario {
+        let mut sc = empty_scenario(7, 1);
+        let r1 = RegionId::from("r1");
+        let r2 = RegionId::from("r2");
+
+        // Alpha forces in r1 and r2.
+        let mut alpha_forces = BTreeMap::new();
+        let mut a1 = make_force("a1", &r1, 50.0, 0.0);
+        a1.upkeep = 0.0;
+        let mut a2 = make_force("a2", &r2, 50.0, 0.0);
+        a2.upkeep = 0.0;
+        alpha_forces.insert(ForceId::from("a1"), a1);
+        alpha_forces.insert(ForceId::from("a2"), a2);
+        let mut alpha = make_faction("alpha", alpha_forces, 0.0, None);
+        alpha.initial_resources = 1000.0;
+        alpha.resource_rate = 100.0;
+        let card = make_tech("coverage_test", 0.0, 0.0, limit, 1.5);
+        alpha.tech_access = vec![card.id.clone()];
+        sc.factions.insert(FactionId::from("alpha"), alpha);
+        sc.technology.insert(card.id.clone(), card);
+
+        // Bravo forces in r1 and r2 (so both regions become contested).
+        let mut bravo_forces = BTreeMap::new();
+        let mut b1 = make_force("b1", &r1, 50.0, 0.0);
+        b1.upkeep = 0.0;
+        let mut b2 = make_force("b2", &r2, 50.0, 0.0);
+        b2.upkeep = 0.0;
+        bravo_forces.insert(ForceId::from("b1"), b1);
+        bravo_forces.insert(ForceId::from("b2"), b2);
+        let bravo = make_faction("bravo", bravo_forces, 0.0, None);
+        sc.factions.insert(FactionId::from("bravo"), bravo);
+
+        sc
+    }
+
+    #[test]
+    fn coverage_uncapped_default_applies_in_every_region() {
+        let sc = coverage_scenario(None);
+        let state = run_combat_only(sc);
+        let fs = state
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        // Without a cap, the coverage counter is not even tracked
+        // (we skip the gate entirely). The map should be empty.
+        assert!(
+            fs.tech_coverage_used.is_empty(),
+            "no cap → no coverage tracking, got {:?}",
+            fs.tech_coverage_used
+        );
+    }
+
+    #[test]
+    fn coverage_limit_one_caps_per_tick_applications() {
+        let sc = coverage_scenario(Some(1));
+        let state = run_combat_only(sc);
+        let fs = state
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        // Two contested regions (r1, r2) → two (region, opponent)
+        // pairs alpha is involved in. With limit = 1, only one of
+        // those pairs gets the tech contribution; the second is
+        // skipped. Counter ends at exactly 1.
+        let used = fs
+            .tech_coverage_used
+            .get(&TechCardId::from("coverage_test"))
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(used, 1, "coverage_limit=1 caps at one application");
+    }
+
+    #[test]
+    fn coverage_limit_above_demand_still_tracks_actual_usage() {
+        // limit = 10 but only 2 (region, opponent) pairs are
+        // available → counter ends at 2 (the actual demand).
+        let sc = coverage_scenario(Some(10));
+        let state = run_combat_only(sc);
+        let fs = state
+            .faction_states
+            .get(&FactionId::from("alpha"))
+            .expect("alpha");
+        let used = fs
+            .tech_coverage_used
+            .get(&TechCardId::from("coverage_test"))
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(used, 2, "two contested regions = two applications");
+    }
+
+    // Determinism + report-emission ------------------------------------------
+
+    #[test]
+    fn tech_cost_pipeline_is_deterministic_across_same_seed_runs() {
+        let cards = vec![
+            make_tech("a", 10.0, 1.0, Some(2), 1.2),
+            make_tech("b", 5.0, 0.5, None, 0.9),
+        ];
+        let sc = scenario_with_techs(cards, 100.0, 5.0, 5);
+        let mut a = Engine::with_seed(sc.clone(), 99).expect("engine a");
+        let mut b = Engine::with_seed(sc, 99).expect("engine b");
+        let ra = a.run().expect("run a");
+        let rb = b.run().expect("run b");
+        assert_eq!(
+            ra.tech_costs, rb.tech_costs,
+            "tech_costs must be deterministic across same-seed runs"
+        );
+    }
+
+    #[test]
+    fn run_result_emits_tech_cost_report_when_cost_is_nonzero() {
+        let card = make_tech("paying", 5.0, 1.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 2);
+        let mut engine = Engine::with_seed(sc, 1).expect("engine");
+        let run = engine.run().expect("run");
+        let report = run
+            .tech_costs
+            .get(&FactionId::from("alpha"))
+            .expect("tech_costs entry present");
+        assert!((report.total_deployment_spend - 5.0).abs() < 1e-9);
+        assert!((report.total_maintenance_spend - 2.0).abs() < 1e-9);
+        assert_eq!(report.deployed_techs.len(), 1);
+        assert!(report.denied_at_deployment.is_empty());
+        assert!(report.decommissioned.is_empty());
+    }
+
+    #[test]
+    fn run_result_omits_tech_cost_entry_for_zero_cost_roster() {
+        // Card with all-zero costs and no coverage limit triggers
+        // none of the cost-mechanic codepaths → no report row.
+        let card = make_tech("free_lunch", 0.0, 0.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 2);
+        let mut engine = Engine::with_seed(sc, 1).expect("engine");
+        let run = engine.run().expect("run");
+        assert!(
+            !run.tech_costs.contains_key(&FactionId::from("alpha")),
+            "zero-cost roster should not emit a tech_costs entry, got {:?}",
+            run.tech_costs
+        );
+    }
+
+    // Validation tests -------------------------------------------------------
+
+    #[test]
+    fn validate_rejects_negative_deployment_cost() {
+        let card = make_tech("bad", -1.0, 0.0, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 1);
+        let err = validate_scenario(&sc).expect_err("should reject negative deployment_cost");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("deployment_cost"),
+            "diagnostic should name the field, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_nan_cost_per_tick() {
+        let card = make_tech("bad", 0.0, f64::NAN, None, 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 1);
+        let err = validate_scenario(&sc).expect_err("should reject NaN cost_per_tick");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cost_per_tick"),
+            "diagnostic should name the field, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_zero_coverage_limit() {
+        // Some(0) is the silent-no-op shape — every application
+        // would be skipped because `used >= limit` is true at first
+        // attempt. Almost always an authoring error.
+        let card = make_tech("bad", 0.0, 0.0, Some(0), 1.0);
+        let sc = scenario_with_techs(vec![card], 100.0, 0.0, 1);
+        let err = validate_scenario(&sc).expect_err("should reject coverage_limit = 0");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("coverage_limit") && msg.contains("silent no-op"),
+            "diagnostic should name the field and explain the no-op, got: {msg}"
+        );
+    }
 }

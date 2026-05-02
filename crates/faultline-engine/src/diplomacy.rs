@@ -1,8 +1,7 @@
 //! Behavioral coupling for `Diplomacy` stance.
 //!
-//! Epic D round-three item 1 (also closes R3-2 round-two item 2):
-//! the engine now consumes runtime diplomatic stance for combat
-//! targeting and AI decision-making. Before this module landed,
+//! The engine consumes runtime diplomatic stance for combat targeting
+//! and AI decision-making. Before this module landed,
 //! `Faction.diplomacy` was authored in scenarios but unread —
 //! `tick::find_contested_regions` treated every co-located faction
 //! as a combatant regardless of stance, and the AI's
@@ -38,9 +37,9 @@
 //! `Allied` is the strongest pacifist tier in the `Diplomacy` enum
 //! (`War < Hostile < Neutral < Cooperative < Allied`); only it
 //! fully blocks combat. The asymmetry between combat (Allied-only)
-//! and AI (Allied + Cooperative-derated) follows the round-three
-//! item-1 spec verbatim: "combat targeting respects
-//! `Diplomacy::Allied`, AI de-prioritizes Cooperative neighbors."
+//! and AI (Allied + Cooperative-derated) is deliberate: combat
+//! targeting respects `Diplomacy::Allied`; AI de-prioritizes
+//! Cooperative neighbors.
 
 use faultline_types::faction::Diplomacy;
 use faultline_types::ids::FactionId;
@@ -54,8 +53,8 @@ use crate::state::SimulationState;
 /// 0.3 is a deliberate de-prioritization (Cooperative neighbors are
 /// scored at 30% of their raw threat) without zeroing them out —
 /// "less likely target, but still on the list" — matching the
-/// round-three spec's distinction between "respect Allied" (combat
-/// blocking) and "de-prioritize Cooperative" (soft AI penalty).
+/// distinction between "respect Allied" (combat blocking) and
+/// "de-prioritize Cooperative" (soft AI penalty).
 pub const COOPERATIVE_AI_FACTOR: f64 = 0.3;
 
 /// True iff combat between `a` and `b` should be skipped this tick.

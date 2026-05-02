@@ -1,4 +1,4 @@
-//! Output Correlation Matrix section (Epic C): Pearson correlations
+//! Output Correlation Matrix section: Pearson correlations
 //! across the per-run scalars in the batch.
 //!
 //! Elided when no matrix was computed, when the matrix is empty, or

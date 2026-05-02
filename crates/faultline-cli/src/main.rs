@@ -122,7 +122,7 @@ struct Cli {
     #[arg(long = "compare", value_name = "OTHER_SCENARIO")]
     compare: Option<PathBuf>,
 
-    /// Run strategy search (Epic H).
+    /// Run strategy search.
     ///
     /// Reads the scenario's `[strategy_space]` declaration, samples
     /// trial assignments according to `--search-method`, evaluates each
@@ -188,7 +188,7 @@ struct Cli {
     )]
     search_objective: Vec<String>,
 
-    /// Run adversarial co-evolution (Epic H — round two).
+    /// Run adversarial co-evolution.
     ///
     /// Alternates best-response moves between an attacker faction and
     /// a defender faction over the scenario's `[strategy_space]` until
@@ -292,7 +292,7 @@ struct Cli {
     )]
     coevolve_initial_mover: CliCoevolveSide,
 
-    /// Run defender-posture robustness analysis (Epic I — round two).
+    /// Run defender-posture robustness analysis.
     ///
     /// Evaluates each defender posture against every attacker profile
     /// declared in `[strategy_space.attacker_profiles]` and surfaces
@@ -425,7 +425,7 @@ struct Cli {
     verbose: bool,
 
     /// Emit a structured "what does this scenario actually model?"
-    /// summary (Epic P sub-item).
+    /// summary.
     ///
     /// Surfaces factions, kill chains, victory conditions, the
     /// `[strategy_space]` decision-variable surface, and any
@@ -781,7 +781,7 @@ fn execute_monte_carlo(
 }
 
 // ---------------------------------------------------------------------------
-// Counterfactual & comparison (Epic B)
+// Counterfactual & comparison
 // ---------------------------------------------------------------------------
 
 fn run_counterfactual_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
@@ -1084,7 +1084,7 @@ fn write_sensitivity_output(
 }
 
 // ---------------------------------------------------------------------------
-// Strategy search (Epic H)
+// Strategy search
 // ---------------------------------------------------------------------------
 
 fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
@@ -1124,7 +1124,7 @@ fn run_search_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
         mc_config,
         objectives: objectives.clone(),
         // Always compute the baseline for CLI search runs — the
-        // Counter-Recommendation report section (Epic I) needs it as
+        // Counter-Recommendation report section needs it as
         // the comparison anchor. The cost is one extra MC batch per
         // search, which is negligible compared to the trial budget.
         compute_baseline: true,
@@ -1193,7 +1193,7 @@ fn write_search_outputs(cli: &Cli, result: &SearchResult) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Co-evolution (Epic H — round two)
+// Co-evolution
 // ---------------------------------------------------------------------------
 
 fn run_coevolve_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
@@ -1350,7 +1350,7 @@ fn write_coevolve_outputs(
 }
 
 // ---------------------------------------------------------------------------
-// Robustness (Epic I — round two)
+// Robustness
 // ---------------------------------------------------------------------------
 
 fn run_robustness_analysis(cli: &Cli, scenario: &Scenario) -> Result<()> {
@@ -1540,7 +1540,7 @@ fn load_robustness_postures(
 }
 
 // ---------------------------------------------------------------------------
-// Schema migration (Epic O)
+// Schema migration
 // ---------------------------------------------------------------------------
 
 /// `--migrate` mode: advance a scenario's `meta.schema_version` to
@@ -1564,7 +1564,7 @@ fn load_robustness_postures(
 /// file, diff against the source, and apply the changes by hand
 /// instead of `--in-place`.
 // ---------------------------------------------------------------------------
-// Explain (Epic P sub-item)
+// Explain
 // ---------------------------------------------------------------------------
 //
 // Pure schema view: build the explain report and print it to stdout.
@@ -1664,7 +1664,7 @@ fn run_migrate(cli: &Cli, toml_str: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Manifest emission + verify (Epic Q)
+// Manifest emission + verify
 // ---------------------------------------------------------------------------
 
 /// Build a [`RunManifest`] from the run inputs without writing it to
@@ -2234,10 +2234,10 @@ fn write_markdown_report(
     manifest_obj: Option<&RunManifest>,
 ) -> Result<()> {
     // Only emit the report if there's something analytical to show:
-    // a Phase-6 kill-chain table, Phase-6 feasibility matrix, an
-    // Epic-L network rollup, or an Epic-D-round-two alliance-fracture
-    // rollup. Otherwise the report is just the win-rate header and
-    // that's already in summary.json.
+    // a Phase-6 kill-chain table, Phase-6 feasibility matrix, a
+    // network rollup, or an alliance-fracture rollup. Otherwise
+    // the report is just the win-rate header and that's already
+    // in summary.json.
     if result.summary.campaign_summaries.is_empty()
         && result.summary.feasibility_matrix.is_empty()
         && result.summary.network_summaries.is_empty()
@@ -2483,7 +2483,7 @@ mod cli_tests {
         assert_eq!(cli.search_objective.len(), 2);
     }
 
-    // -- --coevolve flag tests (Epic H — round two) -----------------
+    // -- --coevolve flag tests -----------------
 
     #[test]
     fn coevolve_and_search_are_mutually_exclusive() {
@@ -2552,9 +2552,9 @@ mod cli_tests {
 
     #[test]
     fn coevolve_method_default_is_grid() {
-        // Grid is the round-two CLI default because the bundled demo's
-        // small spaces enumerate exhaustively, making the per-round
-        // best response deterministic without trial-budget tuning.
+        // Grid is the CLI default because the bundled demo's small
+        // spaces enumerate exhaustively, making the per-round best
+        // response deterministic without trial-budget tuning.
         let cli = Cli::try_parse_from(["faultline", "scenario.toml", "--coevolve"])
             .expect("parse with default method");
         let resolved: faultline_stats::search::SearchMethod = cli.coevolve_method.into();

@@ -1,13 +1,13 @@
 //! Structured "what does this scenario actually model?" summary.
 //!
-//! Epic P sub-item: a pure function over [`Scenario`] producing a
-//! purposeful subset — factions, victory conditions, kill chains,
-//! decision-variable surface, low-confidence parameters — rendered as
-//! human-readable Markdown or as JSON for downstream tooling.
+//! A pure function over [`Scenario`] producing a purposeful subset —
+//! factions, victory conditions, kill chains, decision-variable
+//! surface, low-confidence parameters — rendered as human-readable
+//! Markdown or as JSON for downstream tooling.
 //!
-//! The intent is to force every scenario to answer the same question
-//! R3-2 asks of the engine: *which parameters does this scenario
-//! actually move?* The strategy-space variables, the kill-chain
+//! The intent is to force every scenario to answer one question:
+//! *which parameters does this scenario actually move?* The
+//! strategy-space variables, the kill-chain
 //! attribution / detection / cost knobs, and the author-flagged
 //! low-confidence cells are surfaced together so an analyst can see
 //! at a glance which assumptions a counterfactual would have to push

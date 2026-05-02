@@ -1,7 +1,6 @@
-//! Adversarial co-evolution loop (Epic H — round two).
+//! Adversarial co-evolution loop.
 //!
-//! Closes the deferred adversarial-co-evolution item from Epic H by
-//! layering an alternating best-response loop on top of [`run_search`].
+//! Layers an alternating best-response loop on top of [`run_search`].
 //! Each round, one side ("mover") re-optimizes its decision variables
 //! against the opponent's currently-frozen assignment via a sub-search;
 //! the loop terminates when both sides' best responses stabilize
@@ -1303,6 +1302,7 @@ mod tests {
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+            tech_cost_summaries: ::std::collections::BTreeMap::new(),
         }
     }
 

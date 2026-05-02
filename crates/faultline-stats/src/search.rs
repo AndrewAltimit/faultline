@@ -1,4 +1,4 @@
-//! Strategy-search runner (Epic H — round one).
+//! Strategy-search runner.
 //!
 //! Given a [`StrategySpace`](faultline_types::strategy_space::StrategySpace)
 //! declaration on a scenario plus a [`SearchConfig`], evaluate `trials`
@@ -19,13 +19,13 @@
 //! - `mc_config.seed` — drives the inner Monte Carlo evaluation of each
 //!   trial. The inner seed is **identical across trials**, so trial-to-
 //!   trial deltas are pure parameter-change effects and not sampling
-//!   noise. This mirrors the Epic B counterfactual contract (same seed,
+//!   noise. This mirrors the counterfactual contract (same seed,
 //!   different parameters → reproducible delta).
 //!
 //! Search-then-evaluate is bit-identical: the `search_then_evaluate_is_deterministic`
 //! test below pins this behaviour.
 //!
-//! ## Round-one scope
+//! ## Scope
 //!
 //! - Random and grid sampling of continuous and discrete domains.
 //! - Single-side optimization (one space against fixed opponents). The
@@ -33,9 +33,9 @@
 //!   runner does not enforce a single-owner constraint, so an analyst
 //!   can also use this layer to evaluate joint-optimal postures by
 //!   listing both sides' decision variables.
-//! - Adversarial co-evolution (alternating best-response loop) and a
-//!   first-class "defender posture" specialization (Epic I) are
-//!   deferred to follow-up rounds.
+//! - Adversarial co-evolution (alternating best-response loop) lives in
+//!   `crate::coevolve`; the defender-posture specialization layers extra
+//!   objectives and a baseline trial on top of this runner.
 
 use std::collections::BTreeMap;
 
@@ -96,7 +96,7 @@ pub struct SearchConfig {
     pub objectives: Vec<SearchObjective>,
     /// Compute a "do nothing" baseline trial (no decision-variable
     /// assignments applied) alongside the search trials. Used by the
-    /// Counter-Recommendation report (Epic I) to anchor deltas.
+    /// Counter-Recommendation report to anchor deltas.
     /// Defaults to `true` for caller convenience; flip to `false` when
     /// the extra MC batch is unwanted.
     pub compute_baseline: bool,
@@ -163,7 +163,7 @@ pub struct SearchResult {
     /// the report renderer iterate without redeclaring the order.
     pub objectives: Vec<SearchObjective>,
     /// "Do nothing" reference run — the scenario evaluated with no
-    /// decision-variable assignment applied (Epic I).
+    /// decision-variable assignment applied.
     ///
     /// The Counter-Recommendation report section uses this as the
     /// comparison anchor: every Pareto-frontier trial is reported with
@@ -529,8 +529,8 @@ fn enumerate_levels(domain: &Domain) -> Vec<f64> {
 // Objective evaluation
 // ---------------------------------------------------------------------------
 
-/// Public projection of the internal objective evaluator. Round-two
-/// callers (Epic H co-evolution) need to score a hand-built
+/// Public projection of the internal objective evaluator. Co-evolution
+/// callers need to score a hand-built
 /// [`MonteCarloSummary`] against an arbitrary [`SearchObjective`]
 /// without re-running [`run_search`]. The internal `evaluate_objective`
 /// stays private so its signature can churn freely; this thin wrapper
@@ -1040,6 +1040,7 @@ mod tests {
                 alliance_dynamics: None,
                 supply_pressure_summaries: ::std::collections::BTreeMap::new(),
                 civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+                tech_cost_summaries: ::std::collections::BTreeMap::new(),
             },
         };
         // Trial 0 dominates trial 1 (better win, equal detection).
@@ -1091,6 +1092,7 @@ mod tests {
                 alliance_dynamics: None,
                 supply_pressure_summaries: ::std::collections::BTreeMap::new(),
                 civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+                tech_cost_summaries: ::std::collections::BTreeMap::new(),
             },
         };
         let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
@@ -1139,6 +1141,7 @@ mod tests {
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+            tech_cost_summaries: ::std::collections::BTreeMap::new(),
         }
     }
 
@@ -1409,7 +1412,7 @@ mod tests {
     #[test]
     fn evaluate_defender_objectives_empty_chains_return_zero() {
         // Mirror of the attacker-aligned empty-chains tests above for
-        // the four Epic I defender objectives. All four sum / fold over
+        // the four defender-aligned objectives. All four sum / fold over
         // `summary.campaign_summaries`; an empty map must produce a
         // sane 0.0 rather than a NaN, NEG_INFINITY, or panic. Pinning
         // this behaviour means a future renderer can read the value
@@ -1475,6 +1478,7 @@ mod tests {
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+            tech_cost_summaries: ::std::collections::BTreeMap::new(),
         };
 
         // Cost-style objectives sum across chains.

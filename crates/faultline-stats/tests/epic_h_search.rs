@@ -1,12 +1,11 @@
-//! Integration tests for Epic H — strategy-search manifest replay and
-//! end-to-end determinism through the bundled `strategy_search_demo`
-//! scenario.
+//! Integration tests for strategy-search manifest replay and end-to-end
+//! determinism through the bundled `strategy_search_demo` scenario.
 //!
-//! Round-one search runs a `MonteCarloRunner::run` per trial, so the
-//! per-test compute budget is dominated by `trials * inner_runs *
-//! engine_passes`. Inner counts are kept tiny (4 trials × 10 runs)
-//! because the determinism contract being tested is a property of the
-//! seeding, not the convergence of the underlying simulator.
+//! Search runs a `MonteCarloRunner::run` per trial, so the per-test
+//! compute budget is dominated by `trials * inner_runs * engine_passes`.
+//! Inner counts are kept tiny (4 trials × 10 runs) because the
+//! determinism contract being tested is a property of the seeding, not
+//! the convergence of the underlying simulator.
 
 use faultline_stats::manifest;
 use faultline_stats::search::{SearchConfig, SearchMethod, run_search};

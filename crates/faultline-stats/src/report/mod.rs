@@ -41,6 +41,7 @@ mod policy_implications;
 mod regional_control;
 mod seam_analysis;
 mod supply_pressure;
+mod tech_costs;
 mod time_dynamics;
 mod win_rates;
 
@@ -84,7 +85,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 21] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 22] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -97,6 +98,7 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 21] {
         &defender_capacity::DefenderCapacity,
         &network_resilience::NetworkResilience,
         &supply_pressure::SupplyPressure,
+        &tech_costs::TechCosts,
         &seam_analysis::SeamAnalysis,
         &regional_control::RegionalControl,
         &low_confidence::LowConfidence,
@@ -232,7 +234,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 21);
+        assert_eq!(monte_carlo_sections().len(), 22);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -271,10 +273,10 @@ mod tests {
         }
     }
 
-    /// Trait-object dispatch contract. Future epics may want to
-    /// build a custom section list (e.g. Epic M's "comparison vs.
-    /// baseline" report variant). Verify the trait can be used as
-    /// a `&dyn` object outside the local composer.
+    /// Trait-object dispatch contract. Future report variants may
+    /// want to build a custom section list (e.g. a "comparison vs.
+    /// baseline" variant). Verify the trait can be used as a `&dyn`
+    /// object outside the local composer.
     #[test]
     fn report_section_dispatches_via_dyn_object() {
         let scenario = minimal_scenario();
@@ -322,8 +324,8 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 20 = Methodology (last entry).
-        let unconditional_indices = [0usize, 20];
+        // 0 = Header, 21 = Methodology (last entry).
+        let unconditional_indices = [0usize, 21];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

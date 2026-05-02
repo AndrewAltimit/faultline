@@ -81,6 +81,11 @@ fn make_ai_test_state() -> SimulationState {
             supply_pressure_samples: 0,
             supply_pressure_min: 1.0,
             supply_pressure_pressured_ticks: 0,
+            tech_denied_at_deployment: Vec::new(),
+            tech_decommissioned: Vec::new(),
+            tech_deployment_spend: 0.0,
+            tech_maintenance_spend: 0.0,
+            tech_coverage_used: BTreeMap::new(),
         },
     );
     faction_states.insert(
@@ -105,6 +110,11 @@ fn make_ai_test_state() -> SimulationState {
             supply_pressure_samples: 0,
             supply_pressure_min: 1.0,
             supply_pressure_pressured_ticks: 0,
+            tech_denied_at_deployment: Vec::new(),
+            tech_decommissioned: Vec::new(),
+            tech_deployment_spend: 0.0,
+            tech_maintenance_spend: 0.0,
+            tech_coverage_used: BTreeMap::new(),
         },
     );
 
