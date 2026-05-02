@@ -26,10 +26,12 @@ use faultline_types::stats::{RunResult, SegmentActivationSummary};
 ///
 /// `favored_faction` is the **modal** favored faction observed across
 /// the run set — when sympathy drift drives different runs to different
-/// favored factions, the most-common one wins, with ties broken by
-/// `BTreeMap` order (deterministic). This matches the report contract
-/// of "show one representative faction per row" without losing the
-/// signal that drift produced.
+/// favored factions, the most-common one wins, with ties resolved to
+/// the lexicographically largest `FactionId` (deterministic consequence
+/// of `Iterator::max_by_key` keeping the last maximum on a
+/// `BTreeMap`-ordered iteration). This matches the report contract of
+/// "show one representative faction per row" without losing the signal
+/// that drift produced.
 pub fn compute_civilian_activation_summaries(
     runs: &[RunResult],
     scenario: &Scenario,
@@ -79,14 +81,17 @@ pub fn compute_civilian_activation_summaries(
             Some(sum as f64 / f64::from(activation_count))
         };
 
-        // Modal favored faction. Ties resolved by `BTreeMap` order
-        // (lexicographic on `FactionId`) — deterministic. When no
-        // run activated the segment we fall back to the highest-
-        // sympathy faction declared in the scenario. That's the one
-        // closest to crossing the activation threshold; reporting it
-        // as the prospective beneficiary is more informative than
-        // reporting the first declared faction (which might be the
-        // segment's *opponent* under the scenario's authoring).
+        // Modal favored faction. Ties resolve to the lexicographically
+        // largest `FactionId` — `max_by_key` on a `BTreeMap`-ordered
+        // iteration keeps the *last* maximum, which after ascending-
+        // key iteration is the largest key. Deterministic either way;
+        // the direction is documented for future readers. When no run
+        // activated the segment we fall back to the highest-sympathy
+        // faction declared in the scenario. That's the one closest to
+        // crossing the activation threshold; reporting it as the
+        // prospective beneficiary is more informative than reporting
+        // the first declared faction (which might be the segment's
+        // *opponent* under the scenario's authoring).
         let favored_faction = faction_counts
             .iter()
             .max_by_key(|(_, count)| **count)

@@ -385,8 +385,10 @@ pub struct SegmentActivationSummary {
     /// Author-supplied faction the segment is most strongly aligned
     /// with at activation time. Sympathy drift can drive different
     /// runs to different favored factions; this field reflects the
-    /// *modal* favored faction across the run set, with ties broken
-    /// by `BTreeMap` order (deterministic). When no run activated the
+    /// *modal* favored faction across the run set, with ties resolved
+    /// to the lexicographically largest `FactionId` (deterministic
+    /// consequence of `Iterator::max_by_key` keeping the last maximum
+    /// on a `BTreeMap`-ordered iteration). When no run activated the
     /// segment, falls back to the highest-sympathy faction declared
     /// on the segment so the report row still names a representative
     /// beneficiary.
