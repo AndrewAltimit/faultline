@@ -569,6 +569,8 @@ fn compute_defender_capacity_summary(
             .map(|r| f64::from(r.shadow_detections))
             .sum::<f64>()
             / n;
+        let mean_spillover_in = reports.iter().map(|r| r.spillover_in as f64).sum::<f64>() / n;
+        let mean_spillover_out = reports.iter().map(|r| r.spillover_out as f64).sum::<f64>() / n;
 
         let mut sat_samples: Vec<u32> = reports
             .iter()
@@ -602,6 +604,8 @@ fn compute_defender_capacity_summary(
             mean_dropped,
             mean_shadow_detections,
             time_to_saturation,
+            mean_spillover_in,
+            mean_spillover_out,
         });
     }
     out

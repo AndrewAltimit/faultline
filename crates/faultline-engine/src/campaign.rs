@@ -816,34 +816,154 @@ fn enqueue_phase_noise(
         if count == 0 {
             continue;
         }
-        let policy = scenario
-            .factions
-            .get(&noise.defender)
-            .and_then(|f| f.defender_capacities.get(&noise.role))
-            .map(|cap| cap.overflow)
-            .unwrap_or(OverflowPolicy::DropNew);
-        if let Some(q) = queue_mut(state, &noise.defender, &noise.role) {
-            enqueue_with_policy(q, count, policy);
-        }
+        enqueue_with_overflow(state, scenario, &noise.defender, &noise.role, count, false);
     }
 }
 
-/// Apply `count` enqueues to `q` under `policy`. Updates lifetime
-/// counters for both successful enqueues and dropped items.
-fn enqueue_with_policy(
+/// Hard cap on overflow-chain depth.
+///
+/// Validation rejects authored cycles at scenario load, so this is
+/// defense in depth against (a) hand-built `SimulationState` fixtures
+/// that bypass the loader, and (b) any future schema mutation that
+/// might let a chain grow past a sane operational depth. A real SOC
+/// escalation ladder is at most 3–4 deep; 32 is a generous safety
+/// margin without any meaningful runtime cost.
+const MAX_OVERFLOW_CHAIN_DEPTH: u32 = 32;
+
+/// Enqueue `count` items into `(faction, role)` with optional
+/// cross-role spillover.
+///
+/// Per-role behavior:
+/// - Resolve the role's `DefenderCapacity` from the scenario.
+/// - If the role declares `overflow_to`, split `count` into
+///   `(direct, spillover)` where `direct` is whatever fits below
+///   `overflow_threshold * queue_depth` (default `1.0` = full
+///   capacity), and `spillover` is the rest. The split is computed
+///   *before* applying the overflow policy — overflow takes
+///   precedence over `OverflowPolicy::DropNew` because the analyst
+///   intent of declaring `overflow_to` is "escalate, don't drop".
+/// - Apply the existing `OverflowPolicy` to `direct` only — items
+///   in the direct portion that still don't fit (e.g. a Backlog
+///   queue whose depth is already past the threshold) accumulate
+///   per the policy.
+/// - Recursively enqueue `spillover` to the named overflow target.
+///
+/// Roles without `overflow_to` reproduce the legacy Epic K behavior
+/// exactly: every item is "direct", no spillover, no recursion.
+///
+/// `is_spillover` flags whether *this* enqueue arrived via escalation
+/// from another role (so we can break out the
+/// `spillover_in` counter). The initial call from
+/// `enqueue_phase_noise` always passes `false`; recursive calls pass
+/// `true`.
+///
+/// Determinism: every step is a pure function of the scenario, the
+/// state, and `count`. No RNG; the Poisson draw happened once at the
+/// top of the phase-noise loop.
+pub(crate) fn enqueue_with_overflow(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    faction: &FactionId,
+    role: &DefenderRoleId,
+    count: u32,
+    is_spillover: bool,
+) {
+    enqueue_with_overflow_inner(state, scenario, faction, role, count, is_spillover, 0);
+}
+
+fn enqueue_with_overflow_inner(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    faction: &FactionId,
+    role: &DefenderRoleId,
+    count: u32,
+    is_spillover: bool,
+    chain_depth: u32,
+) {
+    if count == 0 || chain_depth >= MAX_OVERFLOW_CHAIN_DEPTH {
+        return;
+    }
+
+    let Some(cap) = scenario
+        .factions
+        .get(faction)
+        .and_then(|f| f.defender_capacities.get(role))
+    else {
+        return;
+    };
+    let policy = cap.overflow;
+    let queue_depth_cap = cap.queue_depth;
+    let overflow_target = cap.overflow_to.clone();
+    let threshold = cap.overflow_threshold.unwrap_or(1.0).clamp(0.0, 1.0);
+
+    let spillover = {
+        let Some(q) = queue_mut(state, faction, role) else {
+            return;
+        };
+        q.total_enqueued += u64::from(count);
+        if is_spillover {
+            q.spillover_in += u64::from(count);
+        }
+
+        let (direct, spillover) = if overflow_target.is_some() {
+            // Threshold rounding: use ceil so a fractional threshold of
+            // e.g. 0.5 against capacity 3 yields a threshold of 2 (not
+            // 1) — round-up reads more naturally as "spill once you've
+            // crossed half-capacity" than the floor rounding which
+            // would spill *at* half. The clamp ensures we never read
+            // below the current depth (saturation is sticky once
+            // reached, even if the queue has drained to under the
+            // threshold this same tick).
+            let threshold_depth =
+                ((f64::from(queue_depth_cap) * threshold).ceil() as u32).min(queue_depth_cap);
+            let headroom = threshold_depth.saturating_sub(q.depth);
+            let direct = count.min(headroom);
+            (direct, count - direct)
+        } else {
+            (count, 0)
+        };
+
+        if direct > 0 {
+            apply_policy_to_direct(q, direct, queue_depth_cap, policy);
+        }
+        if spillover > 0 {
+            q.spillover_out += u64::from(spillover);
+        }
+        spillover
+    };
+
+    if spillover > 0
+        && let Some(target) = overflow_target
+    {
+        enqueue_with_overflow_inner(
+            state,
+            scenario,
+            faction,
+            &target,
+            spillover,
+            true,
+            chain_depth + 1,
+        );
+    }
+}
+
+/// Apply `count` items to `q` under `policy`, updating depth and
+/// drop counters. Caller is responsible for incrementing
+/// `total_enqueued`.
+fn apply_policy_to_direct(
     q: &mut crate::state::DefenderQueueState,
     count: u32,
+    queue_depth_cap: u32,
     policy: OverflowPolicy,
 ) {
-    q.total_enqueued += u64::from(count);
-    if q.capacity == 0 {
+    if queue_depth_cap == 0 {
         // Degenerate: a role with capacity 0 drops everything regardless.
         q.total_dropped += u64::from(count);
         return;
     }
     match policy {
         OverflowPolicy::DropNew => {
-            let headroom = q.capacity.saturating_sub(q.depth);
+            let headroom = queue_depth_cap.saturating_sub(q.depth);
             let accepted = count.min(headroom);
             let dropped = count - accepted;
             q.depth += accepted;
@@ -854,7 +974,7 @@ fn enqueue_with_policy(
             // identity) collapses to: accept up to capacity, count
             // the rest as effective drops of older items. Net depth
             // never exceeds capacity.
-            let new_depth = q.capacity.min(q.depth.saturating_add(count));
+            let new_depth = queue_depth_cap.min(q.depth.saturating_add(count));
             let dropped_count = q.depth.saturating_add(count).saturating_sub(new_depth);
             q.total_dropped += u64::from(dropped_count);
             q.depth = new_depth;
@@ -1041,15 +1161,25 @@ mod capacity_tests {
         DefenderQueueState::new(capacity, service_rate)
     }
 
+    /// Bump `total_enqueued` then defer to `apply_policy_to_direct` —
+    /// the public `enqueue_with_overflow` path always increments
+    /// `total_enqueued` for any arrival before applying the policy,
+    /// so the legacy single-queue policy tests below preserve that
+    /// invariant.
+    fn legacy_enqueue(s: &mut DefenderQueueState, count: u32, policy: OverflowPolicy) {
+        s.total_enqueued += u64::from(count);
+        apply_policy_to_direct(s, count, s.capacity, policy);
+    }
+
     #[test]
     fn enqueue_drop_new_caps_at_depth_and_counts_dropped() {
         // DropNew: queue saturates at capacity, excess counted as dropped.
         let mut s = q(10, 1.0);
-        enqueue_with_policy(&mut s, 7, OverflowPolicy::DropNew);
+        legacy_enqueue(&mut s, 7, OverflowPolicy::DropNew);
         assert_eq!(s.depth, 7);
         assert_eq!(s.total_dropped, 0);
         // Pushing 5 more — only 3 fit, 2 are dropped.
-        enqueue_with_policy(&mut s, 5, OverflowPolicy::DropNew);
+        legacy_enqueue(&mut s, 5, OverflowPolicy::DropNew);
         assert_eq!(s.depth, 10);
         assert_eq!(s.total_dropped, 2);
         assert_eq!(s.total_enqueued, 12);
@@ -1059,7 +1189,7 @@ mod capacity_tests {
     fn enqueue_backlog_grows_unbounded_no_drops() {
         // Backlog: depth grows past capacity, total_dropped stays 0.
         let mut s = q(10, 1.0);
-        enqueue_with_policy(&mut s, 50, OverflowPolicy::Backlog);
+        legacy_enqueue(&mut s, 50, OverflowPolicy::Backlog);
         assert_eq!(s.depth, 50);
         assert_eq!(s.total_dropped, 0);
         assert!(
@@ -1074,10 +1204,10 @@ mod capacity_tests {
         // any enqueues past capacity count as evictions of older
         // items.
         let mut s = q(10, 1.0);
-        enqueue_with_policy(&mut s, 8, OverflowPolicy::DropOldest);
+        legacy_enqueue(&mut s, 8, OverflowPolicy::DropOldest);
         assert_eq!(s.depth, 8);
         // Push 5 more — depth caps at 10, 3 evicted.
-        enqueue_with_policy(&mut s, 5, OverflowPolicy::DropOldest);
+        legacy_enqueue(&mut s, 5, OverflowPolicy::DropOldest);
         assert_eq!(s.depth, 10);
         assert_eq!(s.total_dropped, 3);
     }

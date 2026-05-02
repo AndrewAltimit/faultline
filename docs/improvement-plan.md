@@ -166,17 +166,21 @@ work.
 
 ## Status snapshot
 
-**Closed (24):** A (uncertainty), B (counterfactual), C (time +
+**Closed (25):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
 coupling for combat + AI), D round-three item 2 (supply-network
-interdiction phase), G (reference sanitization), H round-one
-(strategy search), H round-two (adversarial co-evolution), I
-round-one (defender-posture optimization), I round-two (robustness
-analysis), K (defender capacity / queue dynamics), L (network
-primitives), N round-one (calibration scaffold —
-`[meta.historical_analogue]` schema, per-observation Pass / Marginal
+interdiction phase), D round-three item 3 (multi-front resource
+contention — `DefenderCapacity.overflow_to` /
+`overflow_threshold` extends the Epic K single-queue silo into a
+declarative cross-role escalation chain with conservation
+guarantees on the spillover counters), G (reference sanitization),
+H round-one (strategy search), H round-two (adversarial
+co-evolution), I round-one (defender-posture optimization), I
+round-two (robustness analysis), K (defender capacity / queue
+dynamics), L (network primitives), N round-one (calibration scaffold
+— `[meta.historical_analogue]` schema, per-observation Pass / Marginal
 / Fail verdict computation, `## Calibration` report section gating
 on synthetic-vs-calibrated, one bundled archetype), O (schema
 versioning), P sub-item (`faultline-cli explain` — pure-schema "what
@@ -197,11 +201,12 @@ per-faction tech-cost report added), R3-3 (decompose `report.rs`),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
-**Deferred / open epics:** D round-three (2 remaining items), E (UI
-polish), F (scenario library + tech rebalance), J (adaptive AI), M
-(belief asymmetry), N (reference scenario set + per-scenario
-calibration confidence — round-two; framework round-one shipped),
-P (authoring depth).
+**Deferred / open epics:** D round-three (1 remaining item — info-op
+narrative competition + refugee flows; lower priority, lean game-
+design rather than analytical), E (UI polish), F (scenario library +
+tech rebalance), J (adaptive AI), M (belief asymmetry), N (reference
+scenario set + per-scenario calibration confidence — round-two;
+framework round-one shipped), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
 round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
@@ -243,8 +248,24 @@ coupling for combat and AI; three items remain.
       mean / min / pressured-tick stats across runs. Bundled
       archetype: `scenarios/supply_interdiction_demo.toml`. See the
       "Supply-network interdiction" section in `CLAUDE.md`.
-- [ ] Multi-front resource contention: campaigns compete for defender
-      attention beyond the single-queue Epic K already models.
+- [x] **Multi-front resource contention.** Shipped May 2026. Two
+      optional fields on `DefenderCapacity` — `overflow_to` (sibling
+      role on the same faction) and `overflow_threshold` (queue-depth
+      fraction at which spillover engages, default 1.0) — turn the
+      Epic K single-queue silo into a declarative cross-role
+      escalation chain. When `overflow_to` is set, arrivals that
+      would push the queue past the threshold are recursively
+      escalated to the named target, with conservation: `A.spillover_out`
+      equals `B.spillover_in` along any valid chain. Validation
+      rejects six silent-no-op shapes (unknown / self / cyclic
+      target, out-of-range / NaN threshold, threshold-without-target).
+      New `## Defender Capacity → Cross-role escalation` report
+      sub-section gates on any non-zero spillover so legacy single-
+      queue scenarios (`alert_fatigue_soc.toml`) are unchanged.
+      Bundled archetype: `scenarios/multifront_soc_escalation.toml`
+      (3-tier SOC: tier-1 triage → tier-2 IR → tier-3 forensics).
+      See the "Multi-front resource contention" section in
+      `CLAUDE.md`.
 - [ ] Info-op narrative competition so `MediaEvent` isn't
       fire-and-forget; refugee / displacement flows with cross-regional
       propagation. Lower priority — both lean game-design rather than

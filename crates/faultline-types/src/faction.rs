@@ -156,6 +156,35 @@ pub struct DefenderCapacity {
     /// queue saturation.
     #[serde(default = "default_saturated_factor")]
     pub saturated_detection_factor: f64,
+    /// Optional escalation target for cross-role spillover (Epic D
+    /// round-three item 3 — multi-front resource contention). When set,
+    /// arrivals that would push this queue past
+    /// `overflow_threshold * queue_depth` are redirected to the named
+    /// role's queue instead of being enqueued (and dropped under
+    /// [`OverflowPolicy::DropNew`] / [`OverflowPolicy::DropOldest`])
+    /// here. Models the standard SOC escalation pattern: when tier-1
+    /// alert triage saturates, new alerts get pushed up to tier-2
+    /// incident response — which has its own (smaller) capacity and
+    /// its own (slower) service rate, and may itself escalate further.
+    ///
+    /// `None` (default) preserves the Epic K single-queue silo
+    /// behavior. References must resolve to another `DefenderCapacity`
+    /// declared on the *same faction*; cross-faction overflow and
+    /// cycles in the overflow chain are rejected at scenario load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_to: Option<DefenderRoleId>,
+    /// Queue-depth fraction (in `[0, 1]`) at which spillover engages.
+    /// `None` defaults to `1.0` in the engine — overflow only fires
+    /// at full saturation, matching the SOC pattern of "escalate when
+    /// the queue is full". Lower values model proactive escalation
+    /// (e.g. `0.8` = "escalate when the queue passes 80% capacity"),
+    /// which lets analysts compare reactive vs. proactive load-shed
+    /// policies without changing capacities.
+    ///
+    /// Ignored when `overflow_to` is `None`. Validation rejects values
+    /// outside `[0, 1]` and NaN.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_threshold: Option<f64>,
 }
 
 /// What the queue does when an enqueue would overflow `queue_depth`.

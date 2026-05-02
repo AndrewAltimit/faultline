@@ -555,6 +555,8 @@ fn collect_queue_reports(state: &SimulationState) -> Vec<DefenderQueueReport> {
                 total_dropped: q.total_dropped,
                 time_to_saturation: q.first_saturated_at,
                 shadow_detections: q.shadow_detections,
+                spillover_in: q.spillover_in,
+                spillover_out: q.spillover_out,
             });
         }
     }

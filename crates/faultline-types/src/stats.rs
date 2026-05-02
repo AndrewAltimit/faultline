@@ -329,6 +329,23 @@ pub struct DefenderQueueReport {
     /// The "shadow" name is field-standard in queueing-theory writing
     /// for missed-event rates under load.
     pub shadow_detections: u32,
+    /// Items that arrived on this queue via cross-role escalation
+    /// (Epic D round-three item 3 — multi-front resource contention).
+    /// Subset of `total_enqueued`; surfaces how much of the queue's
+    /// load came from another saturated queue's spillover rather
+    /// than direct phase noise. Always `0` for scenarios that do
+    /// not declare `overflow_to` anywhere on the faction.
+    #[serde(default)]
+    pub spillover_in: u64,
+    /// Items this queue redirected to its `overflow_to` target
+    /// rather than enqueueing (Epic D round-three item 3). Not
+    /// counted in `total_enqueued`. A non-zero value here paired
+    /// with a zero on the target's `spillover_in` would indicate a
+    /// chain that lost work past its hard recursion-depth guard —
+    /// the report renders both columns side-by-side so the analyst
+    /// can audit chain-conservation by inspection.
+    #[serde(default)]
+    pub spillover_out: u64,
 }
 
 /// End-of-run snapshot of a single kill chain's resolution.
@@ -735,6 +752,19 @@ pub struct DefenderCapacitySummary {
     pub mean_shadow_detections: f64,
     /// Time-to-saturation distribution across runs (right-censored).
     pub time_to_saturation: TimeToSaturation,
+    /// Mean of `DefenderQueueReport.spillover_in` across runs (Epic D
+    /// round-three item 3 — multi-front resource contention). Captures
+    /// the average per-run inbound escalation pressure on this role.
+    /// `0.0` for roles in scenarios that do not declare any
+    /// cross-role `overflow_to`.
+    #[serde(default)]
+    pub mean_spillover_in: f64,
+    /// Mean of `DefenderQueueReport.spillover_out` across runs.
+    /// Captures how much escalation pressure this role passed on to
+    /// its overflow target on average. `0.0` for roles without
+    /// `overflow_to`.
+    #[serde(default)]
+    pub mean_spillover_out: f64,
 }
 
 /// Time-to-saturation distribution for one defender role.
