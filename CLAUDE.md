@@ -48,6 +48,15 @@ cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000
 # Brandes critical-node ranking on the static topology.
 cargo run -p faultline-cli -- scenarios/network_resilience_demo.toml -n 16
 
+# Supply-network interdiction archetype (Epic D round-three item 2).
+# A Blue defender owns two `kind = "supply"` networks. A scripted
+# attacker chains three interdiction events that progressively cut
+# Blue's residual supply capacity. The report's "Supply Pressure"
+# section quantifies the resulting per-tick income attenuation —
+# pressure = residual / baseline, multiplied into resource_rate
+# every attrition tick.
+cargo run -p faultline-cli -- scenarios/supply_interdiction_demo.toml -n 16
+
 # Counterfactual override + delta report (Epic B)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --counterfactual "faction.alpha.initial_morale=0.3"
@@ -445,6 +454,83 @@ two integration points:
   fights, (c) Cooperative still fights but AI de-rates, (d)
   one-sided alliance does not block, (e) `DiplomacyChange` event
   flips behavior live, plus the three validation rejections.
+
+**Supply-network interdiction (Epic D round three, item 2).** Closes
+the round-one and round-two graph-shipped-but-passive caveat for
+`kind = "supply"` networks: the per-tick attrition phase now reads
+each owned supply network's residual capacity and multiplies the
+owner's `resource_rate` by the resulting pressure ratio. Builds
+directly on Epic L network primitives — no new schema fields, no
+new event variants; just a new phase that consumes the existing
+`NetworkRuntimeState` data.
+
+- `crates/faultline-engine/src/supply.rs` is the producer. Two
+  helpers: `is_active_supply_network(net)` (true iff
+  `kind` matches `"supply"` case-insensitively *and* `owner` is
+  `Some`), and `supply_pressure_for_faction(scenario, state, faction)`
+  returning `(pressure ∈ [0, 1], sampled: bool)`. The `sampled` bit
+  is what the attrition phase keys per-faction reporting on — it's
+  `true` iff at least one non-degenerate owned supply network
+  contributed to the product, so a faction whose only supply networks
+  have zero baseline capacity doesn't get phantom "supply intact"
+  samples. Pure functions of `(scenario, state)` — no RNG, no
+  `HashMap`, no allocation in the hot path; iteration is
+  `BTreeMap`-ordered.
+- Pressure formula: for each owned supply network,
+  `pressure_n = (residual_capacity / baseline_capacity).clamp(0, 1)`;
+  per-faction pressure is the product across all owned supply
+  networks. Residual matches `network::compute_sample`'s definition
+  exactly so the live supply-pressure value and the post-tick
+  resilience curve agree at every tick. Networks with
+  `baseline = 0` (degenerate authoring — every edge has zero
+  capacity) are skipped rather than treated as fully broken.
+- Hook point: top of `tick::attrition_phase`. The pressure value is
+  captured to `RuntimeFactionState.current_supply_pressure` and
+  rolled into per-faction running counters (`supply_pressure_sum`,
+  `supply_pressure_min`, `supply_pressure_pressured_ticks`) for
+  the post-run report. Income is then `resource_rate × pressure`;
+  upkeep is **not** attenuated — units still consume regardless of
+  whether resupply is reaching them, which is the point of cutting
+  supply lines. The capture only fires for factions that own at
+  least one active supply network so legacy factions don't pollute
+  the mean denominator.
+- Validation: `kind = "supply"` (case-insensitive) without `owner`
+  is rejected at scenario load — the engine has no faction to
+  attenuate, so this shape is a silent no-op. The check matches the
+  project pattern of failing loud at load time rather than at tick N.
+- Per-run output: `RunResult.supply_pressure_reports`
+  (`BTreeMap<FactionId, SupplyPressureReport>`) with
+  `samples` / `mean_pressure` / `min_pressure` / `pressured_ticks`
+  per owning faction. Cross-run rollup:
+  `MonteCarloSummary.supply_pressure_summaries` (mean of means,
+  mean of mins, worst min, mean pressured ticks, runs-with-any-
+  pressure count). Both fields skip serialization when empty so
+  legacy-scenario manifest hashes are unchanged.
+- New `## Supply Pressure` report section in
+  `crates/faultline-stats/src/report/supply_pressure.rs`. Elides
+  when `summary.supply_pressure_summaries` is empty.
+- `PRESSURE_REPORTING_THRESHOLD = 0.9` — pressure values strictly
+  below this count toward `pressured_ticks`. Cosmetic; not load-
+  bearing for any decision the engine makes (income scaling reads
+  the raw value, not a thresholded one).
+- Determinism: every helper is a pure function of state, the per-
+  faction pressure is computed in `BTreeMap`-ordered iteration,
+  and the running counters update deterministically. Adding a
+  `kind = "supply"` network with an owner *will* change the
+  affected faction's resource trajectory (and downstream observable
+  outcomes), but determinism for any fixed seed holds.
+- Backward-compat: scenarios without `kind = "supply"` networks
+  (or without `owner` on those networks) see no change. The two
+  bundled scenarios with supply-kind networks
+  (`network_resilience_demo.toml` and the new
+  `supply_interdiction_demo.toml`) now reflect the round-three
+  income attenuation in their reports.
+- Coverage: `crates/faultline-engine/tests/supply_interdiction.rs`
+  pins (a) legacy/no-network → no report, (b) pristine network →
+  pressure 1.0, (c) severed edge → proportional drop,
+  (d) full severance → income gap matches `resource_rate × ticks`,
+  (e) determinism across same-seed runs, plus the three validation
+  rejections.
 
 **Unread-parameter audit (R3-2 round one).** Three previously-silent
 fields now affect simulation outcomes; each was authored in dozens of

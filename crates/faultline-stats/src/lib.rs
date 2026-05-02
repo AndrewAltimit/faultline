@@ -140,6 +140,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             defender_capacity: Vec::new(),
             network_summaries: BTreeMap::new(),
             alliance_dynamics: None,
+            supply_pressure_summaries: BTreeMap::new(),
         };
     }
 
@@ -306,6 +307,12 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // signal.
     let alliance_dynamics = alliance_dynamics::compute_alliance_dynamics(runs, scenario);
 
+    // Supply-pressure rollup (Epic D round three, item 2). Pure
+    // post-processing of per-run supply-pressure reports; preserves
+    // determinism. Empty when no scenario network has
+    // `kind = "supply"` — the report section elides on that signal.
+    let supply_pressure_summaries = compute_supply_pressure_summaries(runs);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -322,7 +329,85 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         defender_capacity,
         network_summaries,
         alliance_dynamics,
+        supply_pressure_summaries,
     }
+}
+
+/// Aggregate per-faction supply-pressure analytics across runs.
+///
+/// Iterates [`RunResult::supply_pressure_reports`] across the run set
+/// and produces one [`SupplyPressureSummary`] per faction that ever
+/// appeared. Mean-of-means / mean-of-mins / mean-pressured-ticks
+/// average over runs that *included* the faction; runs without an
+/// entry for that faction (e.g. the faction lost its supply network
+/// to elimination mid-run) don't drag the mean down with phantom
+/// zeros. `worst_min` is the minimum across all per-run minima for
+/// the faction. `runs_with_any_pressure` counts runs whose
+/// `pressured_ticks > 0`.
+///
+/// Returns an empty map when no run produced any supply-pressure
+/// report — the report section gates on emptiness, so legacy
+/// scenarios with no supply networks elide the whole section.
+fn compute_supply_pressure_summaries(
+    runs: &[RunResult],
+) -> BTreeMap<FactionId, faultline_types::stats::SupplyPressureSummary> {
+    use faultline_types::stats::SupplyPressureSummary;
+
+    // Per-faction running aggregates.
+    struct Acc {
+        n_runs: u32,
+        sum_means: f64,
+        sum_mins: f64,
+        worst_min: f64,
+        sum_pressured: u64,
+        runs_with_any_pressure: u32,
+    }
+
+    let mut accs: BTreeMap<FactionId, Acc> = BTreeMap::new();
+    for run in runs {
+        for (fid, report) in &run.supply_pressure_reports {
+            let acc = accs.entry(fid.clone()).or_insert(Acc {
+                n_runs: 0,
+                sum_means: 0.0,
+                sum_mins: 0.0,
+                worst_min: f64::INFINITY,
+                sum_pressured: 0,
+                runs_with_any_pressure: 0,
+            });
+            acc.n_runs += 1;
+            acc.sum_means += report.mean_pressure;
+            acc.sum_mins += report.min_pressure;
+            if report.min_pressure < acc.worst_min {
+                acc.worst_min = report.min_pressure;
+            }
+            acc.sum_pressured += u64::from(report.pressured_ticks);
+            if report.pressured_ticks > 0 {
+                acc.runs_with_any_pressure += 1;
+            }
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    for (fid, acc) in accs {
+        let n = f64::from(acc.n_runs);
+        // `worst_min` is initialised to `f64::INFINITY` only at insertion
+        // time; the same insertion increments `n_runs` and updates
+        // `worst_min` to a finite `min_pressure ∈ [0, 1]`. Any entry that
+        // appears in `accs` therefore has a finite `worst_min` here.
+        out.insert(
+            fid.clone(),
+            SupplyPressureSummary {
+                faction: fid,
+                n_runs: acc.n_runs,
+                mean_of_means: acc.sum_means / n,
+                mean_of_mins: acc.sum_mins / n,
+                worst_min: acc.worst_min,
+                mean_pressured_ticks: acc.sum_pressured as f64 / n,
+                runs_with_any_pressure: acc.runs_with_any_pressure,
+            },
+        );
+    }
+    out
 }
 
 /// Aggregate per-(faction, role) defender queue analytics across runs.
@@ -956,6 +1041,7 @@ mod tests {
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
+            supply_pressure_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1151,6 +1237,7 @@ mod tests {
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
+            supply_pressure_reports: std::collections::BTreeMap::new(),
         }
     }
 

@@ -330,6 +330,46 @@ pub struct RuntimeFactionState {
     /// faction over the run. Surfaced by the report.
     #[serde(default)]
     pub leadership_decapitations: u32,
+    /// Most recently observed supply pressure in `[0, 1]` (Epic D
+    /// round three, item 2). Updated at the top of
+    /// [`crate::tick::attrition_phase`] for any faction that owns at
+    /// least one `kind = "supply"` network. Defaults to `1.0` for
+    /// legacy factions and the first tick before attrition has run,
+    /// so combat / morale / report code can read it unconditionally.
+    #[serde(default = "one_f64_default")]
+    pub current_supply_pressure: f64,
+    /// Cumulative sum of per-tick supply pressure samples. Divide by
+    /// `supply_pressure_samples` to recover the run mean. `0.0` until
+    /// the first attrition phase observes the faction.
+    #[serde(default)]
+    pub supply_pressure_sum: f64,
+    /// Number of attrition ticks where supply pressure was sampled.
+    /// Used as the denominator for the run-mean computation. Zero for
+    /// legacy factions with no owned supply network — the report
+    /// elides their row entirely in that case.
+    #[serde(default)]
+    pub supply_pressure_samples: u32,
+    /// Minimum per-tick supply pressure observed over the run. `1.0`
+    /// when never sampled (paired with `samples == 0` to mean "no
+    /// supply network"); strictly less than `1.0` once any
+    /// interdiction has bitten.
+    #[serde(default = "one_f64_default")]
+    pub supply_pressure_min: f64,
+    /// Number of attrition ticks where pressure was strictly below
+    /// [`crate::supply::PRESSURE_REPORTING_THRESHOLD`]. Surfaces as
+    /// "ticks under meaningful pressure" in the report; complements
+    /// the mean / min by capturing duration of stress rather than
+    /// just severity.
+    #[serde(default)]
+    pub supply_pressure_pressured_ticks: u32,
+}
+
+/// Default-value helper for `#[serde(default = "...")]` on
+/// `current_supply_pressure` / `supply_pressure_min`. Keeps the
+/// legacy / no-supply-network baseline at `1.0` so consumers can read
+/// the field unconditionally.
+fn one_f64_default() -> f64 {
+    1.0
 }
 
 impl RuntimeFactionState {
@@ -373,6 +413,11 @@ mod tests {
             current_leadership_rank: 0,
             last_decapitation_tick: None,
             leadership_decapitations: 0,
+            current_supply_pressure: 1.0,
+            supply_pressure_sum: 0.0,
+            supply_pressure_samples: 0,
+            supply_pressure_min: 1.0,
+            supply_pressure_pressured_ticks: 0,
         }
     }
 

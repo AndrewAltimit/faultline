@@ -171,6 +171,7 @@ mod tests {
             defender_queue_reports: Vec::new(),
             network_reports: BTreeMap::new(),
             fracture_events: Vec::new(),
+            supply_pressure_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -317,6 +318,7 @@ mod tests {
             defender_capacity: vec![],
             network_summaries: BTreeMap::new(),
             alliance_dynamics: None,
+            supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

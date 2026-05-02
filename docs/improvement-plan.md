@@ -142,11 +142,12 @@ work.
 
 ## Status snapshot
 
-**Closed (19):** A (uncertainty), B (counterfactual), C (time +
+**Closed (20):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
-coupling for combat + AI), G (reference sanitization), H round-one
+coupling for combat + AI), D round-three item 2 (supply-network
+interdiction phase), G (reference sanitization), H round-one
 (strategy search), H round-two (adversarial co-evolution), I
 round-one (defender-posture optimization), I round-two (robustness
 analysis), K (defender capacity / queue dynamics), L (network
@@ -157,7 +158,7 @@ three highest-leverage parameters), R3-3 (decompose `report.rs`),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
-**Deferred / open epics:** D round-three (3 remaining items), E (UI
+**Deferred / open epics:** D round-three (2 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
 (belief asymmetry), N (calibration), P (authoring depth).
 
@@ -191,9 +192,16 @@ coupling for combat and AI; three items remain.
       still ignore diplomacy. See the "Diplomatic stance behavioral
       coupling" section in `CLAUDE.md`. Also closes R3-2 round-two
       item 2 (`Faction.diplomacy` unread).
-- [ ] Supply-network interdiction phase on top of Epic L's network
-      primitives. The graph is shipped; the per-tick phase that turns
-      capacity drops into faction-level resource pressure is not.
+- [x] **Supply-network interdiction phase.** Shipped May 2026.
+      Builds on Epic L's network primitives — `kind = "supply"`
+      networks with an `owner` now drive per-tick attenuation of
+      the owner's `resource_rate` proportional to residual /
+      baseline capacity. Validation rejects `kind = "supply"`
+      without an `owner` (silent-no-op shape). New
+      `## Supply Pressure` report section aggregates per-faction
+      mean / min / pressured-tick stats across runs. Bundled
+      archetype: `scenarios/supply_interdiction_demo.toml`. See the
+      "Supply-network interdiction" section in `CLAUDE.md`.
 - [ ] Multi-front resource contention: campaigns compete for defender
       attention beyond the single-queue Epic K already models.
 - [ ] Info-op narrative competition so `MediaEvent` isn't

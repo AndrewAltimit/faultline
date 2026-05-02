@@ -12,6 +12,7 @@ use faultline_types::ids::{EventId, FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
     DefenderQueueReport, EventRecord, NetworkReport, Outcome, RunResult, StateSnapshot,
+    SupplyPressureReport,
 };
 use faultline_types::strategy::FactionState;
 
@@ -215,6 +216,7 @@ impl Engine {
                     defender_queue_reports: collect_queue_reports(&self.state),
                     network_reports: collect_network_reports(&self.state, &self.scenario),
                     fracture_events: self.state.fracture_events.clone(),
+                    supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                 });
             }
 
@@ -237,6 +239,7 @@ impl Engine {
                     defender_queue_reports: collect_queue_reports(&self.state),
                     network_reports: collect_network_reports(&self.state, &self.scenario),
                     fracture_events: self.state.fracture_events.clone(),
+                    supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                 });
             }
         }
@@ -314,6 +317,11 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
                 current_leadership_rank: 0,
                 last_decapitation_tick: None,
                 leadership_decapitations: 0,
+                current_supply_pressure: 1.0,
+                supply_pressure_sum: 0.0,
+                supply_pressure_samples: 0,
+                supply_pressure_min: 1.0,
+                supply_pressure_pressured_ticks: 0,
             },
         );
     }
@@ -507,6 +515,36 @@ fn collect_queue_reports(state: &SimulationState) -> Vec<DefenderQueueReport> {
                 shadow_detections: q.shadow_detections,
             });
         }
+    }
+    out
+}
+
+/// Convert per-faction supply-pressure counters into the post-run
+/// [`SupplyPressureReport`] map (Epic D round three, item 2). Only
+/// emits a row for factions that actually owned a supply network
+/// during the run (`supply_pressure_samples > 0`); legacy factions
+/// produce no entry so the outer map elides entirely on scenarios
+/// with no `kind = "supply"` networks. Iteration is `BTreeMap`-ordered
+/// for deterministic rendering.
+fn collect_supply_pressure_reports(
+    state: &SimulationState,
+) -> BTreeMap<FactionId, SupplyPressureReport> {
+    let mut out = BTreeMap::new();
+    for (fid, fs) in &state.faction_states {
+        if fs.supply_pressure_samples == 0 {
+            continue;
+        }
+        let mean = fs.supply_pressure_sum / f64::from(fs.supply_pressure_samples);
+        out.insert(
+            fid.clone(),
+            SupplyPressureReport {
+                faction: fid.clone(),
+                samples: fs.supply_pressure_samples,
+                mean_pressure: mean,
+                min_pressure: fs.supply_pressure_min,
+                pressured_ticks: fs.supply_pressure_pressured_ticks,
+            },
+        );
     }
     out
 }

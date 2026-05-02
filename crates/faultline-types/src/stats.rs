@@ -75,6 +75,44 @@ pub struct RunResult {
     /// conditions were satisfied during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fracture_events: Vec<FractureEvent>,
+    /// Per-faction supply-pressure summary for this run (Epic D round
+    /// three, item 2). Only populated for factions that own at least
+    /// one `kind = "supply"` network — legacy factions are elided.
+    /// Keyed by `FactionId` for deterministic rendering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub supply_pressure_reports: BTreeMap<FactionId, SupplyPressureReport>,
+}
+
+/// Per-faction supply-pressure summary for one run (Epic D round
+/// three, item 2).
+///
+/// All four scalars are derived from the per-tick samples the engine
+/// captured in [`crate::stats::SupplyPressureReport`]'s upstream state
+/// (`RuntimeFactionState.supply_pressure_*`). The report represents a
+/// faction that *owned* at least one active supply network — factions
+/// without one are not represented at all (the outer `BTreeMap` on
+/// [`RunResult::supply_pressure_reports`] elides them entirely).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SupplyPressureReport {
+    pub faction: FactionId,
+    /// Number of attrition ticks where supply pressure was sampled —
+    /// equal to the number of attrition ticks the faction was alive
+    /// for and owned a non-degenerate supply network. Always `>= 1`
+    /// because the engine only emits this report when at least one
+    /// pressure sample was recorded; factions whose owned supply
+    /// networks all have zero baseline capacity are skipped, as are
+    /// factions eliminated before the first attrition tick.
+    pub samples: u32,
+    /// Mean per-tick pressure across `samples` (in `[0, 1]`).
+    pub mean_pressure: f64,
+    /// Minimum per-tick pressure observed (in `[0, 1]`). `1.0` means
+    /// supply was never interdicted in this run.
+    pub min_pressure: f64,
+    /// Number of attrition ticks where pressure was strictly below
+    /// the engine's reporting threshold (currently 0.9). A proxy for
+    /// "ticks under meaningful supply stress" so the analyst sees
+    /// duration of pressure separately from severity.
+    pub pressured_ticks: u32,
 }
 
 /// One alliance-fracture firing (Epic D round two).
@@ -279,6 +317,39 @@ pub struct MonteCarloSummary {
     /// entirely in that case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alliance_dynamics: Option<AllianceDynamics>,
+    /// Per-faction supply-pressure aggregate across runs (Epic D
+    /// round three, item 2). Empty when the scenario declares no
+    /// active supply networks — the report section elides in that
+    /// case. Keyed by `FactionId` for deterministic rendering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub supply_pressure_summaries: BTreeMap<FactionId, SupplyPressureSummary>,
+}
+
+/// Cross-run supply-pressure analytics for one faction (Epic D round
+/// three, item 2).
+///
+/// Each scalar aggregates the corresponding per-run scalar on
+/// [`SupplyPressureReport`]:
+/// - `mean_of_means` is the mean across runs of `mean_pressure` —
+///   the typical operating supply level.
+/// - `mean_of_mins` is the mean across runs of `min_pressure` — the
+///   typical worst-case dip.
+/// - `worst_min` is the smallest `min_pressure` observed in any
+///   single run — the "how bad can it get" tail.
+/// - `mean_pressured_ticks` is the mean across runs of
+///   `pressured_ticks` — the typical duration of meaningful stress.
+/// - `runs_with_any_pressure` is the number of runs where supply
+///   ever dipped below the reporting threshold; divide by `n_runs`
+///   for the "fraction of runs under stress" rate.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SupplyPressureSummary {
+    pub faction: FactionId,
+    pub n_runs: u32,
+    pub mean_of_means: f64,
+    pub mean_of_mins: f64,
+    pub worst_min: f64,
+    pub mean_pressured_ticks: f64,
+    pub runs_with_any_pressure: u32,
 }
 
 /// Cross-run alliance-fracture analytics (Epic D round two).
@@ -835,4 +906,8 @@ pub struct DeltaEncodedRun {
     /// no scenario faction declares an `alliance_fracture` block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fracture_events: Vec<FractureEvent>,
+    /// Per-faction supply-pressure summary — preserved verbatim. Empty
+    /// when the scenario declares no `kind = "supply"` networks.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub supply_pressure_reports: BTreeMap<FactionId, SupplyPressureReport>,
 }

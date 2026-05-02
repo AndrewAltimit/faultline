@@ -74,6 +74,11 @@ fn make_ai_test_state() -> SimulationState {
             current_leadership_rank: 0,
             last_decapitation_tick: None,
             leadership_decapitations: 0,
+            current_supply_pressure: 1.0,
+            supply_pressure_sum: 0.0,
+            supply_pressure_samples: 0,
+            supply_pressure_min: 1.0,
+            supply_pressure_pressured_ticks: 0,
         },
     );
     faction_states.insert(
@@ -93,6 +98,11 @@ fn make_ai_test_state() -> SimulationState {
             current_leadership_rank: 0,
             last_decapitation_tick: None,
             leadership_decapitations: 0,
+            current_supply_pressure: 1.0,
+            supply_pressure_sum: 0.0,
+            supply_pressure_samples: 0,
+            supply_pressure_min: 1.0,
+            supply_pressure_pressured_ticks: 0,
         },
     );
 

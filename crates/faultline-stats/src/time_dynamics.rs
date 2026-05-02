@@ -650,6 +650,7 @@ mod tests {
             defender_queue_reports: Vec::new(),
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
+            supply_pressure_reports: std::collections::BTreeMap::new(),
         }
     }
 
