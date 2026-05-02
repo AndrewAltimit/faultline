@@ -89,15 +89,27 @@ narrative-first, puzzle, sports.
 **Engineering gaps for game use:**
 
 1. No streaming API. Engine runs scenarios to completion. Games need
-   `step()` / `apply_action()` / `query_state()`. Probably a week to
-   wrap the existing tick loop in a `faultline-runtime` crate.
+   `step()` / `apply_action()` / `query_state()`. The tick loop is a
+   single-pass completion model with no step-isolation boundary;
+   wrapping it requires designing a suspension/resume protocol over
+   `SimulationState` so a host can interleave external input between
+   ticks. Non-trivial — the time cost is "spike, then estimate", not
+   a week.
 2. No player-agency model. Scenarios assume both factions are
    AI-driven. Need a "player faction" abstraction that consumes
    inputs from a runtime instead of from the scripted strategy
    space.
-3. No mid-run save/load. `SimulationState` is serializable in
-   principle but not in practice — needs a stable on-disk format
-   with migration support (Epic O groundwork helps here).
+3. No mid-run save/load. `SimulationState` derives `Serialize` /
+   `Deserialize`, so a snapshot can be written today, but the format
+   is unstable: no `schema_version` field on the struct (Epic O's
+   versioning lives on `Scenario`, not runtime state), and several
+   volatile runtime maps (`network_states`, `diplomacy_overrides`,
+   `fired_fractures`, `defender_queues`, `metric_history`) were
+   added incrementally for one-shot post-run analytics, not for
+   round-tripping mid-run. A real save/load needs a stable on-disk
+   format with explicit migration support — Epic O's groundwork on
+   `Scenario` migration helps here, but the runtime-state schema is
+   a separate piece of work.
 4. Performance unknown for game budgets. Faultline runs scenarios
    in seconds; games need ms-per-frame. Need benchmarks. Monte
    Carlo is embarrassingly parallel; offline pre-computation
