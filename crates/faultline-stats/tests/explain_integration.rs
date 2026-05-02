@@ -109,9 +109,10 @@ fn every_bundled_scenario_explains_cleanly() {
 
         // Markdown must include the section anchors in stable order
         // so downstream tooling (e.g. a future `--explain-format
-        // html` renderer) can rely on parseable structure.
-        let md = render_markdown(&report);
-        for anchor in [
+        // html` renderer) can rely on parseable structure. Single
+        // source of truth for both the existence and ordering loops
+        // below — keeps them from drifting.
+        const ANCHORS: &[&str] = &[
             "## Scale",
             "## Factions",
             "## Kill chains",
@@ -119,7 +120,9 @@ fn every_bundled_scenario_explains_cleanly() {
             "## Networks",
             "## Decision-variable surface",
             "## Low-confidence parameters",
-        ] {
+        ];
+        let md = render_markdown(&report);
+        for anchor in ANCHORS {
             assert!(
                 md.contains(anchor),
                 "{name}: rendered markdown is missing section anchor {anchor:?}"
@@ -130,15 +133,7 @@ fn every_bundled_scenario_explains_cleanly() {
         // future refactor that reorders sections must update both
         // the producer and this expectation.
         let mut last = 0usize;
-        for anchor in [
-            "## Scale",
-            "## Factions",
-            "## Kill chains",
-            "## Victory conditions",
-            "## Networks",
-            "## Decision-variable surface",
-            "## Low-confidence parameters",
-        ] {
+        for anchor in ANCHORS {
             let pos = md
                 .find(anchor)
                 .unwrap_or_else(|| panic!("{name}: anchor {anchor} missing"));
