@@ -89,9 +89,8 @@ pub struct ActivationResult {
 ///
 /// Each segment's faction sympathies drift slightly based on the
 /// segment's volatility, the current global tension, and the media
-/// landscape (R3-2 round-two — `MediaLandscape.fragmentation`,
-/// `social_media_penetration`, and `internet_availability` were silent
-/// before; this phase now reads all three):
+/// landscape (`MediaLandscape.fragmentation`,
+/// `social_media_penetration`, and `internet_availability`):
 /// - **Fragmentation** amplifies idiosyncratic per-segment noise (each
 ///   segment responds to a different narrative bubble) and dampens the
 ///   unified pull toward the global tension level (no single dominant

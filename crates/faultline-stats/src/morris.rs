@@ -1,6 +1,6 @@
-//! Morris elementary-effects variance screening (Epic C).
+//! Morris elementary-effects variance screening.
 //!
-//! The Round-One sensitivity helper in [`crate::sensitivity`] is pure
+//! The OAT sensitivity helper in [`crate::sensitivity`] is pure
 //! one-at-a-time: it varies a single parameter across a fixed grid
 //! while every other parameter sits at its baseline. That's fine for
 //! quick local sweeps but it cannot rank parameters by the *variance*

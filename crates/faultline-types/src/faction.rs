@@ -56,7 +56,7 @@ pub struct Faction {
     /// behavior (faction has no decapitation surface to expose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leadership: Option<LeadershipCadre>,
-    /// Declarative alliance-fracture rules (Epic D round two). Names
+    /// Declarative alliance-fracture rules. Names
     /// conditions under which this faction's diplomatic stance toward
     /// a counterparty flips — typically `Cooperative` / `Allied` ->
     /// `Hostile` when the counterparty is publicly attributed for an
@@ -298,17 +298,17 @@ pub struct ForceUnit {
     pub upkeep: f64,
     pub morale_modifier: f64,
     pub capabilities: Vec<UnitCapability>,
-    /// Movement accumulator (R3-2 round-two). Runtime state, not
-    /// authored by users — `#[serde(default)]` keeps existing TOML
-    /// scenarios loading unchanged. Each tick a queued
-    /// `MoveUnit` action adds the unit's effective mobility (its own
-    /// `mobility` × source-region `terrain.movement_modifier` × any
-    /// active environment-window `movement_factor`) to this
-    /// accumulator and the move only fires once it reaches `1.0`,
-    /// at which point `1.0` is consumed. With the legacy default
-    /// (`mobility = 1.0`, terrain modifier `1.0`, no env windows),
-    /// the accumulator hits `1.0` on the first attempt and the unit
-    /// moves every tick — preserving pre-round-two behavior.
+    /// Movement accumulator. Runtime state, not authored by users —
+    /// `#[serde(default)]` keeps existing TOML scenarios loading
+    /// unchanged. Each tick a queued `MoveUnit` action adds the unit's
+    /// effective mobility (its own `mobility` × source-region
+    /// `terrain.movement_modifier` × any active environment-window
+    /// `movement_factor`) to this accumulator and the move only fires
+    /// once it reaches `1.0`, at which point `1.0` is consumed. With
+    /// the legacy default (`mobility = 1.0`, terrain modifier `1.0`,
+    /// no env windows), the accumulator hits `1.0` on the first
+    /// attempt and the unit moves every tick — preserving pre-rate-
+    /// gate behavior.
     #[serde(default)]
     pub move_progress: f64,
 }
@@ -413,7 +413,7 @@ pub enum Diplomacy {
     Allied,
 }
 
-/// Declarative alliance-fracture configuration (Epic D round two).
+/// Declarative alliance-fracture configuration.
 ///
 /// Authors describe coalitions as static at scenario start (via
 /// `Faction.diplomacy`) and then list the conditions under which each

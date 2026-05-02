@@ -1,4 +1,4 @@
-//! Validation tests for Epic C (time & attribution dynamics).
+//! Validation tests for time & attribution dynamics.
 //!
 //! Pinned regressions from the post-implementation review:
 //!
@@ -323,6 +323,7 @@ fn make_run(
         fracture_events: Vec::new(),
         supply_pressure_reports: ::std::collections::BTreeMap::new(),
         civilian_activations: Vec::new(),
+        tech_costs: ::std::collections::BTreeMap::new(),
     }
 }
 
@@ -360,8 +361,8 @@ fn monte_carlo_summary_roundtrips_through_json() {
     let _: MonteCarloSummary = serde_json::from_str(&json)
         .expect("deserialize back: this is the regression-pin for the NaN/Infinity-as-null bug");
 
-    // Spot-check that the new Epic C fields survive the roundtrip in
-    // shape if not in byte-exact float representation.
+    // Spot-check that the new time-dynamics fields survive the
+    // roundtrip in shape if not in byte-exact float representation.
     let restored: MonteCarloSummary = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(restored.total_runs, result.summary.total_runs);
     assert_eq!(
@@ -505,7 +506,7 @@ fn km_curve_with_zero_survival_roundtrips() {
 // ---------------------------------------------------------------------------
 
 /// Same scenario + same seed → same `summary_hash`, even after the
-/// summary shape grew the new Epic C fields. This pins the determinism
+/// summary shape grew the new time-dynamics fields. This pins the determinism
 /// contract documented in `manifest.rs`: hash inputs are fully
 /// reproducible byte-for-byte.
 #[test]
@@ -966,7 +967,7 @@ fn escalation_threshold_respects_history_not_just_latest() {
 
 // ---------------------------------------------------------------------------
 // End-to-end: real MC on a chain with detection produces signal in
-// every Epic C output
+// every time-dynamics output
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -980,7 +981,7 @@ fn full_pipeline_produces_signal_in_all_epic_c_outputs() {
     };
     let result = MonteCarloRunner::run(&config, &scenario).expect("run");
 
-    // Some chain summary should carry signal for every Epic C field.
+    // Some chain summary should carry signal for every time-dynamics field.
     let cs = result
         .summary
         .campaign_summaries

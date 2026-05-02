@@ -100,8 +100,8 @@ pub fn evaluate_actions(
     }
 
     // Determine which factions are hostile, weighted by diplomatic
-    // stance (Epic D round-three item 1). Allied factions contribute
-    // 0× to perceived threat; Cooperative neighbors contribute 0.3×.
+    // stance. Allied factions contribute 0× to perceived threat;
+    // Cooperative neighbors contribute 0.3×.
     let enemy_presence = compute_enemy_presence(faction_id, state, scenario);
 
     let weights = determine_weights(faction_id, state, scenario);
@@ -199,9 +199,9 @@ fn determine_weights(
 /// `Cooperative` neighbors are de-rated to
 /// [`crate::diplomacy::COOPERATIVE_AI_FACTOR`], everyone else
 /// contributes at full strength. This is the "AI de-prioritizes
-/// Cooperative neighbors" half of the Epic D round-three diplomacy
-/// coupling — the AI doesn't size up defenses against allies, and
-/// only modestly against partners.
+/// Cooperative neighbors" half of the diplomacy coupling — the AI
+/// doesn't size up defenses against allies, and only modestly
+/// against partners.
 fn compute_enemy_presence(
     faction_id: &FactionId,
     state: &SimulationState,
@@ -538,9 +538,9 @@ pub fn evaluate_actions_fog(
     }
 
     // Build enemy presence from detected forces only, weighted by
-    // diplomatic stance (Epic D round-three item 1). A faction's
-    // declared diplomatic posture is "self-knowledge" — the AI
-    // applies its own stance multiplier even under fog of war.
+    // diplomatic stance. A faction's declared diplomatic posture is
+    // "self-knowledge" — the AI applies its own stance multiplier
+    // even under fog of war.
     let mut enemy_presence = BTreeMap::new();
     for df in &world_view.detected_forces {
         let multiplier =

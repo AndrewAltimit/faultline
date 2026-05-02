@@ -26,13 +26,13 @@
 //! it never touches RNGs or simulation state. Its output for a given
 //! input is purely a function of the registered migration steps.
 //!
-//! Interaction with Epic Q (manifest hashes): bumping the schema
-//! version changes the canonical JSON shape of `Scenario`, which
-//! changes `scenario_hash` for every bundled scenario. That's the
-//! intended behavior — a v2 schema is not the same logical scenario
-//! as v1 even when migrate produces semantically equivalent output —
-//! but it does mean Epic Q manifests emitted before a schema bump
-//! cannot be replayed against builds that include the bump. The
+//! Interaction with manifest hashes: bumping the schema version
+//! changes the canonical JSON shape of `Scenario`, which changes
+//! `scenario_hash` for every bundled scenario. That's the intended
+//! behavior — a v2 schema is not the same logical scenario as v1
+//! even when migrate produces semantically equivalent output — but
+//! it does mean manifests emitted before a schema bump cannot be
+//! replayed against builds that include the bump. The
 //! `--verify` failure mode in that case is "scenario hash mismatch,"
 //! which is clear and intended.
 

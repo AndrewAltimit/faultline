@@ -1,4 +1,4 @@
-//! Property tests for `faultline_engine` (R3-5).
+//! Property tests for `faultline_engine`.
 //!
 //! Three invariants worth pinning per the May 2026 refresh:
 //!

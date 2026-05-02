@@ -1,4 +1,4 @@
-//! Declarative strategy search space (Epic H — round one).
+//! Declarative strategy search space.
 //!
 //! A [`StrategySpace`] is the analyst-authored declaration of *which*
 //! parameters in a scenario are decision variables and *what range of
@@ -23,7 +23,7 @@
 //! - All fields are `#[serde(default)]` or have safe defaults. An empty
 //!   `StrategySpace` (no variables) is valid and serializes/deserializes
 //!   round-trip; the report renderer elides empty spaces.
-//! - Adding a new `Domain` variant requires bumping the migrator (Epic O)
+//! - Adding a new `Domain` variant requires bumping the schema migrator
 //!   only if existing serialised forms would mis-deserialize. Today every
 //!   variant is internally tagged, so additive variants are safe.
 
@@ -48,9 +48,9 @@ pub struct StrategySpace {
     /// pre-canned space can be reused for one-off questions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objectives: Vec<SearchObjective>,
-    /// Named attacker strategies for robustness analysis (Epic I,
-    /// round-two). Each profile is a full assignment to attacker-owned
-    /// parameter paths; the robustness runner evaluates every defender
+    /// Named attacker strategies for robustness analysis. Each profile
+    /// is a full assignment to attacker-owned parameter paths; the
+    /// robustness runner evaluates every defender
     /// posture against every profile to surface where a posture is
     /// fragile ("posture P wins under profile A and C, loses under B").
     /// Empty by default so legacy scenarios load unchanged.
@@ -142,7 +142,7 @@ pub struct DecisionVariable {
 
 /// What shape of values this variable can take.
 ///
-/// `Continuous` and `Discrete` are the two shapes the round-one runner
+/// `Continuous` and `Discrete` are the two shapes the runner currently
 /// supports. Categorical strings (e.g. doctrine choice) would need a
 /// non-`f64` variant and a corresponding extension to `set_param` —
 /// deferred to a follow-up.

@@ -1,6 +1,6 @@
 //! Counterfactual and side-by-side scenario comparison.
 //!
-//! Epic B's core analyst workflow: "what if the defender had X?" and
+//! Core counterfactual analyst workflow: "what if the defender had X?" and
 //! "how does scenario A compare to scenario B?" This module produces
 //! [`ComparisonReport`] values that pair a *baseline* Monte Carlo
 //! summary against one or more *variant* summaries and summarise the
@@ -357,6 +357,7 @@ mod tests {
             alliance_dynamics: None,
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+            tech_cost_summaries: ::std::collections::BTreeMap::new(),
         };
         let mut variant = base.clone();
 

@@ -1,4 +1,4 @@
-//! Integration tests for Epic I — round two: robustness analysis.
+//! Integration tests for robustness analysis.
 //!
 //! Exercises the full pipeline against the bundled
 //! `defender_robustness_demo` scenario: cell determinism, per-posture

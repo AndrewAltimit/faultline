@@ -1,5 +1,4 @@
-//! Integration tests for the supply-network interdiction phase
-//! (Epic D round three, item 2).
+//! Integration tests for the supply-network interdiction phase.
 //!
 //! Pin the high-leverage observable behaviors:
 //! - a faction with no owned supply network sees `pressure = 1.0`
@@ -277,7 +276,7 @@ fn legacy_scenario_with_no_supply_network_sees_pressure_one() {
     // verify the per-faction supply_pressure_reports map is empty —
     // legacy scenarios must produce no entry, so the report section
     // elides cleanly. This is the zero-overhead contract for every
-    // scenario predating Epic D round three.
+    // scenario predating the supply-interdiction phase.
     let scenario = empty_scenario(7, 5);
     let mut engine = Engine::new(scenario).expect("scenario should validate");
     let result = engine.run().expect("run should succeed");

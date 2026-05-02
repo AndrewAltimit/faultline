@@ -1,4 +1,4 @@
-//! Typed network primitive (Epic L).
+//! Typed network primitive.
 //!
 //! A [`Network`] is a directed weighted multigraph attached to a
 //! [`Scenario`](crate::scenario::Scenario). It models any flow-bearing

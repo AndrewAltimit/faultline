@@ -1,7 +1,6 @@
-//! Defender-posture robustness analysis (Epic I — round two).
+//! Defender-posture robustness analysis.
 //!
-//! Closes the deferred fourth item from Epic I round-one by adding a
-//! cross-product evaluation layer: given a set of *defender postures*
+//! Cross-product evaluation layer: given a set of *defender postures*
 //! (each one a full assignment to defender-owned decision-variable
 //! paths) and a set of *attacker profiles* (named attacker-side
 //! assignments declared in `[strategy_space.attacker_profiles]`),

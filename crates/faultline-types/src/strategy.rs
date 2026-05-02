@@ -126,12 +126,12 @@ pub struct FactionState {
     /// Index into the faction's `LeadershipCadre.ranks`. `0` = top of
     /// chain. Defaults to 0 for legacy snapshots and factions without
     /// a cadre. Saturates at `ranks.len()` after the last successor
-    /// has been killed (faction is leaderless). Epic D.
+    /// has been killed (faction is leaderless).
     #[serde(default)]
     pub current_leadership_rank: u32,
     /// Cumulative count of leadership decapitations against this
     /// faction. Surfaced in the report's Leadership Disruption
-    /// section. Epic D.
+    /// section.
     #[serde(default)]
     pub leadership_decapitations: u32,
     /// Most recent decapitation tick, or `None` if never struck.

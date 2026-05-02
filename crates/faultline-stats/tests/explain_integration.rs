@@ -1,4 +1,4 @@
-//! Integration tests for the Epic P `explain` subset.
+//! Integration tests for the `explain` subset.
 //!
 //! Pure schema view — no engine invocation, no RNG. Every bundled
 //! scenario must round-trip through `explain → render_markdown` and

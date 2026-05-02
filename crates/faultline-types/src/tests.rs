@@ -1283,6 +1283,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         alliance_dynamics: None,
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+        tech_cost_summaries: ::std::collections::BTreeMap::new(),
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");
@@ -1375,7 +1376,7 @@ tags = []
 }
 
 // ============================================================================
-// Epic B — counterfactual schema
+// Counterfactual schema
 //
 // `defender_options` on events, `escalation_rules` on factions, and
 // `warning_indicators` on kill-chain phases are all `#[serde(default)]`
@@ -1565,9 +1566,9 @@ max_duration = 2
 fn existing_scenarios_still_parse_with_new_fields() {
     // The tutorial TOML embedded in this file has no defender_options,
     // no escalation_rules, and no warning_indicators. It must still
-    // parse after the Epic B schema additions.
-    let scenario: Scenario =
-        toml::from_str(TUTORIAL_TOML).expect("tutorial must still parse after Epic B additions");
+    // parse after the counterfactual schema additions.
+    let scenario: Scenario = toml::from_str(TUTORIAL_TOML)
+        .expect("tutorial must still parse after counterfactual schema additions");
     for faction in scenario.factions.values() {
         assert!(faction.escalation_rules.is_none());
     }

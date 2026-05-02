@@ -1,4 +1,4 @@
-//! Alliance Dynamics section (Epic D round two — coalition fracture).
+//! Alliance Dynamics section (coalition fracture).
 //!
 //! Surfaces per-rule fracture rates, mean fire-tick distribution, and
 //! the terminal-stance distribution across runs so analysts can see

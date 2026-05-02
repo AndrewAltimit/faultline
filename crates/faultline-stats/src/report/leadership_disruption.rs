@@ -1,4 +1,4 @@
-//! Leadership Cadres section (Epic D — decapitation + succession):
+//! Leadership Cadres section (decapitation + succession):
 //! the declarative leadership cadre table per faction.
 //!
 //! Surfaces the *structure* of every faction's leadership cadre

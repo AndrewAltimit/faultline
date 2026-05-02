@@ -105,7 +105,7 @@ pub struct CampaignPhase {
     /// entry routes a Poisson-distributed stream of "tickets" (alerts,
     /// tips, samples to triage) into a named defender role's queue
     /// every active tick. Drives the alert-fatigue / FOIA-flood /
-    /// forensic-backlog scenario classes (Epic K). Empty = legacy
+    /// forensic-backlog scenario classes. Empty = legacy
     /// phase that does not enqueue defender work; the defender
     /// capacity machinery sees no traffic.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -286,7 +286,7 @@ pub enum PhaseOutput {
         key: String,
         value: f64,
     },
-    /// Decapitate the named faction's top leader (Epic D).
+    /// Decapitate the named faction's top leader.
     ///
     /// Advances the target faction's leadership rank index by one and
     /// applies a one-shot morale shock. During the

@@ -1,4 +1,4 @@
-//! Alliance-fracture phase (Epic D round two).
+//! Alliance-fracture phase.
 //!
 //! Evaluates each faction's declared `[factions.<id>.alliance_fracture]`
 //! rules at end-of-tick after the campaign phase, and when a rule's

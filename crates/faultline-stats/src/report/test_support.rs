@@ -30,6 +30,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         alliance_dynamics: None,
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
+        tech_cost_summaries: ::std::collections::BTreeMap::new(),
     }
 }
 

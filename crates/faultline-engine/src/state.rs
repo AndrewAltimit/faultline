@@ -43,13 +43,13 @@ pub struct SimulationState {
     /// [`Self::push_metric_snapshot`].
     #[serde(default)]
     pub metric_history: Vec<MetricSnapshot>,
-    /// Per-(faction, role) defender investigative queue state (Epic K).
+    /// Per-(faction, role) defender investigative queue state.
     /// Empty when no scenario faction declares `defender_capacities`;
     /// the campaign phase skips its queue-service step entirely in
     /// that case so legacy scenarios pay zero overhead.
     #[serde(default)]
     pub defender_queues: BTreeMap<FactionId, BTreeMap<DefenderRoleId, DefenderQueueState>>,
-    /// Per-network runtime mutation state (Epic L). Empty when the
+    /// Per-network runtime mutation state. Empty when the
     /// scenario declares no networks; the network phase short-circuits
     /// in that case so legacy scenarios pay zero overhead.
     #[serde(default)]
@@ -70,7 +70,7 @@ pub struct SimulationState {
     /// target_faction)`; `None` in inner result means the relationship
     /// has not been overridden and the scenario baseline applies.
     /// Populated by `EventEffect::DiplomacyChange` and by the
-    /// alliance-fracture phase (Epic D round two). Empty when no
+    /// alliance-fracture phase. Empty when no
     /// scenario faction declares an `alliance_fracture` rule and no
     /// event ever fires `DiplomacyChange`, so legacy scenarios pay
     /// zero overhead.
@@ -99,8 +99,8 @@ pub struct SimulationState {
     #[serde(default)]
     pub fracture_events: Vec<faultline_types::stats::FractureEvent>,
     /// Log of every civilian-segment activation in the current run,
-    /// in emission order (R3-2 round-two — population-segment
-    /// activation). Surfaced post-run on
+    /// in emission order (population-segment activation). Surfaced
+    /// post-run on
     /// [`faultline_types::stats::RunResult::civilian_activations`] and
     /// aggregated across runs by
     /// `MonteCarloSummary.civilian_activation_summaries`. Empty when
@@ -340,8 +340,8 @@ pub struct RuntimeFactionState {
     /// faction over the run. Surfaced by the report.
     #[serde(default)]
     pub leadership_decapitations: u32,
-    /// Most recently observed supply pressure in `[0, 1]` (Epic D
-    /// round three, item 2). Updated at the top of
+    /// Most recently observed supply pressure in `[0, 1]`. Updated
+    /// at the top of
     /// [`crate::tick::attrition_phase`] for any faction that owns at
     /// least one `kind = "supply"` network. Defaults to `1.0` for
     /// legacy factions and the first tick before attrition has run,
@@ -372,6 +372,39 @@ pub struct RuntimeFactionState {
     /// just severity.
     #[serde(default)]
     pub supply_pressure_pressured_ticks: u32,
+    /// Tech cards the faction was unable to deploy at engine init
+    /// because `deployment_cost` exceeded the resources remaining
+    /// after charging earlier (in `tech_access` order) cards.
+    /// Captured in declaration order; surfaced post-run via
+    /// `RunResult.tech_costs`. Empty for legacy scenarios with
+    /// zero-cost techs or sufficient starting resources.
+    #[serde(default)]
+    pub tech_denied_at_deployment: Vec<TechCardId>,
+    /// Mid-run decommissions from maintenance starvation. Each entry
+    /// pairs the loss tick with the tech that decommissioned because
+    /// `cost_per_tick` exceeded the faction's current resources.
+    /// Captured in chronological order.
+    #[serde(default)]
+    pub tech_decommissioned: Vec<(u32, TechCardId)>,
+    /// Cumulative deployment-cost spend across the run. Equals the
+    /// sum of `deployment_cost` over `tech_deployed` at engine init;
+    /// fixed for the rest of the run.
+    #[serde(default)]
+    pub tech_deployment_spend: f64,
+    /// Cumulative maintenance spend across the run. Each attrition
+    /// tick adds the per-tech `cost_per_tick` for whichever cards were
+    /// still affordable.
+    #[serde(default)]
+    pub tech_maintenance_spend: f64,
+    /// Per-tick coverage usage counter, indexed by tech card. Reset
+    /// at the start of each combat phase. The combat path increments
+    /// this each time a tech contributes to a (region, opponent) pair;
+    /// once usage reaches the card's `coverage_limit`, further
+    /// applications in the same tick are skipped. Empty for cards
+    /// without a `coverage_limit` (those bypass the gate entirely).
+    /// Not serialized — derived per-tick state, never round-tripped.
+    #[serde(skip)]
+    pub tech_coverage_used: BTreeMap<TechCardId, u32>,
 }
 
 /// Default-value helper for `#[serde(default = "...")]` on
@@ -428,6 +461,11 @@ mod tests {
             supply_pressure_samples: 0,
             supply_pressure_min: 1.0,
             supply_pressure_pressured_ticks: 0,
+            tech_denied_at_deployment: Vec::new(),
+            tech_decommissioned: Vec::new(),
+            tech_deployment_spend: 0.0,
+            tech_maintenance_spend: 0.0,
+            tech_coverage_used: BTreeMap::new(),
         }
     }
 

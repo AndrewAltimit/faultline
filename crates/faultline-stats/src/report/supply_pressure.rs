@@ -1,5 +1,4 @@
-//! Supply Pressure section (Epic D round three, item 2 — supply-network
-//! interdiction).
+//! Supply Pressure section (supply-network interdiction).
 //!
 //! Surfaces per-faction supply-pressure aggregates: the typical
 //! operating supply level (mean of per-run means), the typical

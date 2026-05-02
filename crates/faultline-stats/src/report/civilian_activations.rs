@@ -1,5 +1,4 @@
-//! Civilian Activations section (R3-2 round-two — population-segment
-//! activation).
+//! Civilian Activations section (population-segment activation).
 //!
 //! Surfaces per-segment activation analytics: rate of activation
 //! across the run set, mean tick of activation, modal favored faction,

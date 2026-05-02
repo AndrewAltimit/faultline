@@ -1,6 +1,6 @@
-//! Robustness Markdown report (Epic I — round two): per-posture
-//! rollup tables (worst / best / mean across profiles) and an explicit
-//! (posture × profile) cell table per objective.
+//! Robustness Markdown report: per-posture rollup tables (worst / best /
+//! mean across profiles) and an explicit (posture × profile) cell table
+//! per objective.
 //!
 //! The narrative is "rank postures by worst-case profile" — that's the
 //! analyst's question. Mean and best columns are present so a posture

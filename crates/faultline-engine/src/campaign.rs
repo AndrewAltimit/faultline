@@ -279,7 +279,7 @@ pub fn campaign_phase(
             // adjusted draw decides whether the defender actually
             // catches it this tick.
             //
-            // Environment factor (Epic D — weather / time-of-day) is
+            // Environment factor (weather / time-of-day) is
             // applied multiplicatively *into* `dp` itself, before the
             // saturation gate, so a Night window simultaneously
             // shrinks the unattenuated and the saturated rolls (the
@@ -739,7 +739,7 @@ fn damage_infra_in_region(
 }
 
 // ---------------------------------------------------------------------------
-// Defender capacity / queue dynamics (Epic K)
+// Defender capacity / queue dynamics
 // ---------------------------------------------------------------------------
 
 /// Drain every defender queue once per tick at its declared service
@@ -911,7 +911,7 @@ fn sample_queue_stats(state: &mut SimulationState) {
 }
 
 // ---------------------------------------------------------------------------
-// Tests for EscalationThreshold (Epic C)
+// Tests for EscalationThreshold
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1029,7 +1029,7 @@ mod escalation_tests {
 }
 
 // ---------------------------------------------------------------------------
-// Tests for defender capacity / queue dynamics (Epic K)
+// Tests for defender capacity / queue dynamics
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]

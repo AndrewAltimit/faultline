@@ -1,8 +1,8 @@
-//! End-to-end Epic K validation: defender capacity / queue dynamics.
+//! End-to-end validation: defender capacity / queue dynamics.
 //!
 //! Drives the bundled `alert_fatigue_soc.toml` through the full Monte
-//! Carlo runner and asserts the four invariants the Epic K design is
-//! supposed to deliver:
+//! Carlo runner and asserts the four invariants the defender-capacity
+//! design is supposed to deliver:
 //!
 //! 1. Tier-1 saturates in the majority of runs (the noisy_enumeration
 //!    phase actually achieves its design intent).
@@ -23,8 +23,8 @@ use faultline_engine::Engine;
 use faultline_stats::MonteCarloRunner;
 use faultline_types::stats::MonteCarloConfig;
 
-/// Load the Epic K archetype scenario via the migration layer so the
-/// test mirrors how the CLI loads it.
+/// Load the alert-fatigue archetype scenario via the migration layer
+/// so the test mirrors how the CLI loads it.
 fn load_alert_fatigue_scenario() -> faultline_types::scenario::Scenario {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios/alert_fatigue_soc.toml");
     let toml_str = std::fs::read_to_string(&path).expect("scenario file readable");

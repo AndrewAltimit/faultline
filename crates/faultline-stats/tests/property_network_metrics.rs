@@ -1,4 +1,4 @@
-//! Property tests for `faultline_stats::network_metrics` (R3-5).
+//! Property tests for `faultline_stats::network_metrics`.
 //!
 //! Two invariants worth pinning per the May 2026 refresh:
 //!

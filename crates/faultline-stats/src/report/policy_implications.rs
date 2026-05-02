@@ -1,4 +1,4 @@
-//! Policy Implications section (Epic B): surfaces declarative
+//! Policy Implications section: surfaces declarative
 //! `defender_options` on events and `escalation_rules` on factions, so
 //! analysts see which counterfactuals the scenario author has
 //! pre-enumerated alongside the doctrine / ROE contract each faction

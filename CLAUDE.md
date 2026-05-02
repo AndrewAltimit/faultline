@@ -691,8 +691,103 @@ tracked, aggregated across runs, and surfaced in the post-run report.
   validation rejections. The cross-run aggregator and the report
   section have their own unit tests in their respective modules.
 
-Round-two items still deferred after this round: tech-card costs,
-visualization metadata (`Region.centroid` / `Faction.color`),
+Round-two items still deferred after this round: tech-card costs
+(closed by the section below), visualization metadata
+(`Region.centroid` / `Faction.color`), `ForceUnit.force_projection`.
+
+**Unread-parameter audit (R3-2 round two — tech-card costs).** Closes
+the round-one and round-two "tech is free, instant, and unbounded"
+caveat for `[technology.<id>]` entries. Three previously-silent
+`TechCard` fields — `deployment_cost`, `cost_per_tick`, and
+`coverage_limit` — are now load-bearing across the engine. Authored
+in dozens of bundled scenarios with non-trivial values; until this
+round, every value was inert.
+
+- `deployment_cost` is deducted at engine init from the faction's
+  `initial_resources`. The init loop walks `Faction.tech_access` in
+  declaration order: each card whose `deployment_cost` is `<= resources`
+  is deployed and the cost subtracted; cards whose cost exceeds what's
+  left are *denied* (skipped, not added to `tech_deployed`) and
+  recorded for reporting. Iteration continues past a denial — a
+  denied big-ticket card doesn't prevent a later cheaper card from
+  fitting. Cards referenced in `tech_access` but absent from
+  `scenario.technology` are deployed at zero cost; that preserves the
+  legacy "missing tech is a silent no-op at combat time" contract.
+  Hook point: `crates/faultline-engine/src/engine.rs::initialize_state`.
+- `cost_per_tick` is deducted in the attrition phase per-tech, after
+  income (with supply-pressure attenuation) and upkeep have settled.
+  Each card whose maintenance cost exceeds the faction's current
+  resources is *decommissioned* — removed from `tech_deployed` for
+  the rest of the run, no further charges, no refund. Decommissioning
+  is final: the card does not re-deploy if resources later recover.
+  Iteration is in `tech_deployed` declaration order, deterministic.
+  Hook point: `crates/faultline-engine/src/tick.rs::attrition_phase`.
+- `coverage_limit` (when `Some(n)`) caps the per-tick number of
+  (region, opponent) pairs the card contributes to during combat.
+  `compute_tech_combat_modifier` reads the per-faction
+  `tech_coverage_used` counter (cleared at the top of `combat_phase`)
+  and skips a card whose count has reached the limit; the caller
+  bumps the counter for cards that were applied. Cards without a
+  `coverage_limit` (the legacy default `None`) bypass the gate and
+  stay out of the counter map entirely, so legacy scenarios pay zero
+  bookkeeping overhead. The gate's iteration order — `BTreeMap` over
+  contested regions, then over factions in each region — is
+  deterministic, so which (region, opponent) pairs receive the
+  benefit when supply is constrained is reproducible across runs.
+  Hook point: `crates/faultline-engine/src/tick.rs::combat_phase` +
+  `compute_tech_combat_modifier`.
+- Per-run output: `RunResult.tech_costs` (`BTreeMap<FactionId, TechCostReport>`)
+  records per-faction deployed / denied / decommissioned card lists
+  plus total deployment and maintenance spend. The map elides
+  factions whose tech roster never engaged the cost mechanic
+  (zero-cost cards, no denials, no decommissions), so legacy
+  scenarios with all-zero tech costs see no change in `RunResult` shape.
+- Cross-run rollup:
+  `MonteCarloSummary.tech_cost_summaries` (`BTreeMap<FactionId, TechCostSummary>`).
+  Per-faction mean deployment / maintenance / total spend, plus
+  `runs_with_denial` and `runs_with_decommission` (count-style
+  diagnostics rather than rates so the report renders both the
+  proportion and the underlying sample size). Producer:
+  `compute_tech_cost_summaries` in
+  `crates/faultline-stats/src/lib.rs`.
+- New `## Tech-Card Costs` report section in
+  `crates/faultline-stats/src/report/tech_costs.rs`. Elides when
+  `summary.tech_cost_summaries` is empty. Surfaces a real signal
+  on existing scenarios — `tutorial_asymmetric.toml` for instance
+  hits a 100% decommission rate against both factions because the
+  `cost_per_tick` for `surveillance_drone` (3.0) and
+  `concealment_network` (1.0) outpaces the factions' modest
+  `resource_rate` after upkeep. That's a legitimate diagnostic the
+  audit was meant to surface, not a regression.
+- Validation rejects three silent-no-op shapes at scenario load:
+  non-finite or negative `deployment_cost` / `cost_per_tick`, and
+  `coverage_limit = Some(0)` (the gate's `used >= limit` check is
+  true on the first attempt — the card never contributes). Mirrors
+  the load-time-fail-loud pattern from every prior R3-2 round.
+- Determinism: every helper is a pure function of state and scenario
+  — no RNG, no `HashMap`, no allocation in the hot path beyond what
+  the existing combat loop already does. Adding a non-zero
+  `deployment_cost` / `cost_per_tick` / `coverage_limit` to a card
+  *will* change the affected scenario's combat schedule and
+  resource trajectory (and downstream observable outcomes), but
+  determinism for any fixed seed holds. All 17 bundled scenarios
+  still `verify-bundled` deterministically; their `output_hash`
+  values shift to reflect the new mechanic.
+- Backward-compat: scenarios with all-zero tech costs (the default
+  for cards added after this round) reproduce legacy behavior
+  exactly. Tests cover the default-zero baseline along with the
+  three field-specific behaviors.
+- Coverage: `crates/faultline-engine/tests/audit_unread_params.rs::tech_costs`
+  pins (a) deployment cost deduction, (b) deployment denial when
+  unaffordable, (c) iteration-past-denial, (d) cost_per_tick
+  deduction, (e) decommission on unaffordable maintenance, (f)
+  coverage uncapped → no tracking, (g) coverage_limit = 1 caps,
+  (h) coverage_limit > demand still tracks actual usage, (i)
+  determinism across same-seed runs, (j) report emission gate, (k)
+  zero-cost roster elides, plus the three validation rejections.
+
+Round-two items still deferred after this round: visualization
+metadata (`Region.centroid` / `Faction.color`),
 `ForceUnit.force_projection`.
 
 CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> verify-migration -> verify-robustness -> js-tests**.

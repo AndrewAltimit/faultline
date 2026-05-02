@@ -1,4 +1,4 @@
-//! Deterministic graph metrics on declared networks (Epic L).
+//! Deterministic graph metrics on declared networks.
 //!
 //! Three metric families:
 //!
@@ -34,7 +34,7 @@ use faultline_types::stats::{CriticalNode, NetworkSummary, RunResult};
 /// `summary.json` — this is purely a rendering choice.
 const CRITICAL_NODES_CAP: usize = 10;
 
-/// Compute the per-network cross-run summary (Epic L).
+/// Compute the per-network cross-run summary.
 ///
 /// Returns an empty map when `scenario.networks.is_empty()` so legacy
 /// scenarios pay zero overhead. For each declared network, aggregates
@@ -386,7 +386,7 @@ pub struct MaxFlowResult {
     pub min_cut: Vec<EdgeId>,
 }
 
-/// Aggregate the per-faction infiltration footprint across runs (Epic L).
+/// Aggregate the per-faction infiltration footprint across runs.
 ///
 /// Returns a map from faction to mean count of infiltrated nodes
 /// per run on a given network. Used by the report to surface which
@@ -945,6 +945,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: std::collections::BTreeMap::new(),
         };
         let runs = vec![make_run(0, report1), make_run(1, report2)];
 

@@ -1,4 +1,4 @@
-//! Integration tests for Epic D round two — alliance fracture mechanic.
+//! Integration tests for the alliance-fracture mechanic.
 //!
 //! Covers schema validation rejections, the engine-side fracture phase
 //! semantics (one-shot, attribution / morale / tension / event-fired

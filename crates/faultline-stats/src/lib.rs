@@ -143,6 +143,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             alliance_dynamics: None,
             supply_pressure_summaries: BTreeMap::new(),
             civilian_activation_summaries: BTreeMap::new(),
+            tech_cost_summaries: BTreeMap::new(),
         };
     }
 
@@ -288,40 +289,46 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         analysis::compute_feasibility_matrix(runs, scenario, &campaign_summaries);
     let seam_scores = analysis::compute_seam_scores(runs, scenario);
 
-    // Time-dynamics post-processing (Epic C). All operate on the
+    // Time-dynamics post-processing. All operate on the
     // already-collected campaign reports; none re-runs the engine.
     let correlation_matrix = time_dynamics::output_correlation_matrix(runs, scenario);
     let pareto_frontier = time_dynamics::pareto_frontier(runs, scenario);
 
-    // Defender capacity rollup (Epic K). Pure post-processing of
-    // per-run queue reports; preserves determinism.
+    // Defender capacity rollup. Pure post-processing of per-run
+    // queue reports; preserves determinism.
     let defender_capacity = compute_defender_capacity_summary(runs);
 
-    // Network rollup (Epic L). Pure post-processing of per-run
-    // network reports; preserves determinism. Empty when scenario
-    // declares no networks.
+    // Network rollup. Pure post-processing of per-run network
+    // reports; preserves determinism. Empty when scenario declares
+    // no networks.
     let network_summaries = network_metrics::compute_network_summaries(runs, scenario);
 
-    // Alliance fracture rollup (Epic D round two). Pure post-
-    // processing of per-run fracture-event logs; preserves
+    // Alliance fracture rollup. Pure post-processing of per-run
+    // fracture-event logs; preserves
     // determinism. `None` when no scenario faction declares an
     // `alliance_fracture` block — the report section elides on that
     // signal.
     let alliance_dynamics = alliance_dynamics::compute_alliance_dynamics(runs, scenario);
 
-    // Supply-pressure rollup (Epic D round three, item 2). Pure
-    // post-processing of per-run supply-pressure reports; preserves
+    // Supply-pressure rollup. Pure post-processing of per-run
+    // supply-pressure reports; preserves
     // determinism. Empty when no scenario network has
     // `kind = "supply"` — the report section elides on that signal.
     let supply_pressure_summaries = compute_supply_pressure_summaries(runs);
 
-    // Civilian-segment activation rollup (R3-2 round-two). Pure
-    // post-processing of per-run `civilian_activations` logs;
+    // Civilian-segment activation rollup. Pure post-processing of
+    // per-run `civilian_activations` logs;
     // preserves determinism. Empty when the scenario declares no
     // `population_segments` or none ever activated — the report
     // section elides on that signal.
     let civilian_activation_summaries =
         civilian_activations::compute_civilian_activation_summaries(runs, scenario);
+
+    // Tech-card cost rollup. Pure post-processing of per-run
+    // `tech_costs` reports; preserves
+    // determinism. Empty when no faction ever exercised the cost
+    // mechanic — the report section elides on that signal.
+    let tech_cost_summaries = compute_tech_cost_summaries(runs);
 
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
@@ -341,6 +348,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         alliance_dynamics,
         supply_pressure_summaries,
         civilian_activation_summaries,
+        tech_cost_summaries,
     }
 }
 
@@ -415,6 +423,78 @@ fn compute_supply_pressure_summaries(
                 worst_min: acc.worst_min,
                 mean_pressured_ticks: acc.sum_pressured as f64 / n,
                 runs_with_any_pressure: acc.runs_with_any_pressure,
+            },
+        );
+    }
+    out
+}
+
+/// Aggregate per-faction tech-card cost analytics across runs.
+///
+/// Iterates [`RunResult::tech_costs`] across the run set and produces
+/// one [`TechCostSummary`] per faction that ever exercised the cost
+/// mechanic (any non-zero spend, any denial, any decommission). Means
+/// average over runs that *included* the faction in `tech_costs` —
+/// runs whose `tech_costs` map omitted the faction (legacy zero-cost
+/// roster, or a faction that never deployed) don't drag the mean down
+/// with phantom zeros. Returns an empty map when no run produced any
+/// tech-cost report — the report section gates on emptiness.
+fn compute_tech_cost_summaries(
+    runs: &[RunResult],
+) -> BTreeMap<FactionId, faultline_types::stats::TechCostSummary> {
+    use faultline_types::stats::TechCostSummary;
+
+    struct Acc {
+        n_runs: u32,
+        sum_deployment: f64,
+        sum_maintenance: f64,
+        runs_with_denial: u32,
+        runs_with_decommission: u32,
+        sum_decommissions: u32,
+    }
+
+    let mut accs: BTreeMap<FactionId, Acc> = BTreeMap::new();
+    for run in runs {
+        for (fid, report) in &run.tech_costs {
+            let acc = accs.entry(fid.clone()).or_insert(Acc {
+                n_runs: 0,
+                sum_deployment: 0.0,
+                sum_maintenance: 0.0,
+                runs_with_denial: 0,
+                runs_with_decommission: 0,
+                sum_decommissions: 0,
+            });
+            acc.n_runs += 1;
+            acc.sum_deployment += report.total_deployment_spend;
+            acc.sum_maintenance += report.total_maintenance_spend;
+            if !report.denied_at_deployment.is_empty() {
+                acc.runs_with_denial += 1;
+            }
+            if !report.decommissioned.is_empty() {
+                acc.runs_with_decommission += 1;
+                acc.sum_decommissions = acc
+                    .sum_decommissions
+                    .saturating_add(u32::try_from(report.decommissioned.len()).unwrap_or(u32::MAX));
+            }
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    for (fid, acc) in accs {
+        let n = f64::from(acc.n_runs);
+        let mean_deployment = acc.sum_deployment / n;
+        let mean_maintenance = acc.sum_maintenance / n;
+        out.insert(
+            fid.clone(),
+            TechCostSummary {
+                faction: fid,
+                n_runs: acc.n_runs,
+                mean_deployment_spend: mean_deployment,
+                mean_maintenance_spend: mean_maintenance,
+                mean_total_spend: mean_deployment + mean_maintenance,
+                runs_with_denial: acc.runs_with_denial,
+                runs_with_decommission: acc.runs_with_decommission,
+                mean_decommissions_per_run: f64::from(acc.sum_decommissions) / n,
             },
         );
     }
@@ -1054,6 +1134,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1251,6 +1332,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: std::collections::BTreeMap::new(),
         }
     }
 

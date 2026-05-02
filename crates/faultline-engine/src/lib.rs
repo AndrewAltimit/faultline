@@ -64,8 +64,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Terrain movement modifier (R3-2 round-two — wired into
-    // `movement_phase` via the move-accumulator gate). NaN or
+    // Terrain movement modifier (wired into `movement_phase` via the
+    // move-accumulator gate). NaN or
     // negative values would silently invert / poison the gate
     // (the `.max(0.0)` clamp turns them into 0.0, which freezes
     // any unit standing on the region). Reject loudly at load
@@ -92,8 +92,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     region: unit.region.clone(),
                 });
             }
-            // Mobility (R3-2 round-two). Same rationale as the
-            // terrain-modifier check above: a non-finite or negative
+            // Mobility. Same rationale as the terrain-modifier check
+            // above: a non-finite or negative
             // mobility silently freezes the unit under the move-
             // accumulator gate (the `.max(0.0)` clamp turns it into
             // 0.0). Fail loud.
@@ -125,8 +125,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
             }
         }
 
-        // Diplomacy table (Epic D round-three item 1 — behavioral
-        // coupling). Each entry must name a real faction and never
+        // Diplomacy table (behavioral coupling). Each entry must
+        // name a real faction and never
         // the source itself; duplicate target entries would silently
         // shadow under `baseline_stance`'s first-match semantics.
         // None of these are runtime errors — they just produce
@@ -210,7 +210,49 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Defender capacity references (Epic K): every (faction, role)
+    // Tech-card costs. Three previously-silent fields are now
+    // load-bearing on engine init (`deployment_cost`), the attrition
+    // phase (`cost_per_tick`), and the combat phase
+    // (`coverage_limit`). Reject the silent-no-op shapes at load time:
+    // - `deployment_cost` and `cost_per_tick` must be finite and
+    //   non-negative — a NaN propagates through resource arithmetic
+    //   (every comparison is false, resources stay finite but no card
+    //   can ever be paid for); a negative value would silently *give*
+    //   the faction resources at deploy / tick time.
+    // - `coverage_limit = Some(0)` is the silent-no-op shape: the
+    //   gate's `used >= limit` check is true on the first attempt, so
+    //   the card never contributes to combat. Almost always an
+    //   authoring error (the author meant `None` or some positive
+    //   integer); fail loud.
+    for (tid, card) in &scenario.technology {
+        if !card.deployment_cost.is_finite() || card.deployment_cost < 0.0 {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("technology.{tid}.deployment_cost"),
+                value: card.deployment_cost,
+                expected: ">= 0 and finite".into(),
+            });
+        }
+        if !card.cost_per_tick.is_finite() || card.cost_per_tick < 0.0 {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("technology.{tid}.cost_per_tick"),
+                value: card.cost_per_tick,
+                expected: ">= 0 and finite".into(),
+            });
+        }
+        if let Some(limit) = card.coverage_limit
+            && limit == 0
+        {
+            return Err(ScenarioError::Custom(format!(
+                "technology `{tid}` declares `coverage_limit = 0`; \
+                 the per-tick coverage gate would skip the card on \
+                 every application, making it a silent no-op. Set \
+                 `coverage_limit` to a positive integer or omit the \
+                 field entirely (None means uncapped)."
+            )));
+        }
+    }
+
+    // Defender capacity references: every (faction, role)
     // named by `gated_by_defender` or `defender_noise` on a kill-chain
     // phase must resolve to a declared `defender_capacities` entry.
     // Catching this at load time turns a silent "queue not found, no
@@ -272,7 +314,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 }
             }
 
-            // OrAny composition (Epic D): an empty `conditions` vector
+            // OrAny composition: an empty `conditions` vector
             // would silently never match — likely an unfilled author
             // template. Walk recursively so a nested OrAny inside an
             // OrAny is also caught.
@@ -285,7 +327,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 }
             }
 
-            // Leadership-targeted phase outputs (Epic D). A
+            // Leadership-targeted phase outputs. A
             // `LeadershipDecapitation` against a faction without a
             // declared cadre is a no-op at runtime — almost certainly
             // an authoring mistake. Reject loudly so the analyst gets
@@ -331,7 +373,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Environment schedule (Epic D — weather / time-of-day).
+    // Environment schedule (weather / time-of-day).
     // Catch authoring errors that would otherwise produce silent
     // no-ops or NaN-poisoned multipliers at runtime.
     let mut seen_window_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
@@ -347,7 +389,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         validate_environment_window(window)?;
     }
 
-    // Leadership cadre (Epic D — decapitation). Catch malformed cadres
+    // Leadership cadre (decapitation). Catch malformed cadres
     // (empty rank list, non-finite effectiveness, duplicate rank ids)
     // at load time so the runtime helper can stay branch-free.
     for (fid, faction) in &scenario.factions {
@@ -394,7 +436,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Alliance fracture (Epic D round two). Catch silent-no-op shapes:
+    // Alliance fracture. Catch silent-no-op shapes:
     // empty rule list, unknown counterparty / attacker / event refs,
     // duplicate rule ids within a faction, NaN / out-of-range
     // thresholds. Each fracture rule fires at most once per run, so a
@@ -444,7 +486,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Strategy space (Epic H). Structural invariants only — the path
+    // Strategy space. Structural invariants only — the path
     // string itself is validated against the `set_param` resolver in
     // the search runner since that helper lives in `faultline-stats`
     // (engine cannot depend on stats without creating a crate cycle).
@@ -479,7 +521,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         for objective in &space.objectives {
             validate_search_objective(scenario, objective)?;
         }
-        // Attacker profiles (Epic I round-two — robustness analysis).
+        // Attacker profiles (robustness analysis).
         // Structural invariants only; the path-resolution check happens
         // in the robustness runner since `set_param` lives in
         // `faultline-stats`.
@@ -543,7 +585,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Networks (Epic L). Topological invariants only; engine-side
+    // Networks. Topological invariants only; engine-side
     // semantics (capacity factor clamping, etc.) are enforced at
     // runtime in the network phase.
     for (nid, net) in &scenario.networks {
@@ -644,7 +686,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         {
             return Err(ScenarioError::UnknownFaction(owner.clone()));
         }
-        // Supply-network owner contract (Epic D round three, item 2).
+        // Supply-network owner contract.
         // The supply phase only applies pressure to the network's
         // declared owner; a `kind = "supply"` network with no owner
         // is silently a no-op at runtime, which is precisely the
@@ -659,7 +701,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Network-aware event effects (Epic L). Each NetworkEdgeCapacity
+    // Network-aware event effects. Each NetworkEdgeCapacity
     // / NetworkNodeDisrupt / NetworkInfiltrate effect must reference
     // a declared network, and within it a declared edge / node /
     // faction. Catching this at load time turns a silent runtime
@@ -676,9 +718,9 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Media landscape (R3-2 round-two — three previously-silent fields
-    // are now load-bearing on `update_civilian_segments` and
-    // `information_phase`). All five fields are documented as `[0, 1]`
+    // Media landscape. The three media-amplification fields are
+    // load-bearing on `update_civilian_segments` and
+    // `information_phase`. All five fields are documented as `[0, 1]`
     // probabilities; out-of-range or non-finite values would silently
     // amplify the new noise / tension multipliers past the design
     // bounds. The engine clamps these defensively at read time, but a
@@ -704,7 +746,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Population segments (R3-2 round-two). The activation mechanic
+    // Population segments. The activation mechanic
     // reads `volatility`, `activation_threshold`, `fraction`, and the
     // sympathy values directly. Non-finite values would propagate via
     // the noise term and turn every sympathy value into NaN on the
@@ -1328,7 +1370,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Epic D validation tests
+    // Environment / leadership / fracture validation tests
     // -----------------------------------------------------------------------
 
     #[test]
@@ -1732,8 +1774,9 @@ mod tests {
 
     #[test]
     fn validate_passes_for_well_formed_environment_and_leadership() {
-        // Sanity-check: a well-formed scenario with both Epic D
-        // surfaces declared should pass validation cleanly.
+        // Sanity-check: a well-formed scenario with both environment
+        // and leadership surfaces declared should pass validation
+        // cleanly.
         use faultline_types::campaign::{
             BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
         };
@@ -1835,11 +1878,12 @@ mod tests {
             },
         );
 
-        validate_scenario(&scenario).expect("well-formed Epic D scenario must validate");
+        validate_scenario(&scenario)
+            .expect("well-formed environment + leadership scenario must validate");
     }
 
     // -----------------------------------------------------------------------
-    // Epic H validation tests (strategy_space)
+    // strategy_space validation tests
     // -----------------------------------------------------------------------
 
     #[test]

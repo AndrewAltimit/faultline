@@ -45,17 +45,17 @@ pub struct Scenario {
     /// Optional global environmental schedule (weather, time-of-day).
     /// Empty schedule = no effect; omitted entirely from serialized
     /// output when no windows are declared so legacy scenarios stay
-    /// byte-identical (Epic D).
+    /// byte-identical.
     #[serde(default, skip_serializing_if = "EnvironmentSchedule::is_empty")]
     pub environment: EnvironmentSchedule,
-    /// Optional strategy-search declaration (Epic H). Names which
+    /// Optional strategy-search declaration. Names which
     /// scenario parameters are decision variables and what domain each
     /// can take. Consumed by the `--search` CLI mode in `faultline-cli`
     /// and `faultline_stats::search`. Skipped from serialization when
     /// empty so legacy scenarios stay byte-identical.
     #[serde(default, skip_serializing_if = "StrategySpace::is_empty")]
     pub strategy_space: StrategySpace,
-    /// Optional typed network primitives (Epic L) — supply / comms /
+    /// Optional typed network primitives — supply / comms /
     /// social / financial graphs declared per-scenario. Each network is
     /// independent (no cross-network nodes); cross-network coupling
     /// happens via [`crate::events::EventEffect`] firing into multiple

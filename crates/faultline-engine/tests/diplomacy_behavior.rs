@@ -1,11 +1,10 @@
 //! Regression tests for diplomatic-stance behavioral coupling.
 //!
-//! Epic D round-three item 1 (also closes R3-2 round-two item 2):
 //! `Faction.diplomacy` was previously authored but unread by combat
 //! and AI. These tests pin the now-live wiring so a refactor that
 //! reverts it to a silent no-op fails loudly.
 //!
-//! Conventions follow the round-one audit suite
+//! Conventions follow the unread-parameter audit suite
 //! (`audit_unread_params.rs`): each test holds the scenario constant
 //! and varies *only* the diplomatic stance, with the same RNG seed
 //! across arms. Combat divergence between arms is therefore

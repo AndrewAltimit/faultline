@@ -1,4 +1,4 @@
-//! Time & Attribution Dynamics section (Epic C):
+//! Time & Attribution Dynamics section:
 //! per-chain time-to-first-detection (right-censored), defender-
 //! reaction-time distribution, per-phase Kaplan-Meier survival curves
 //! with cumulative hazard.

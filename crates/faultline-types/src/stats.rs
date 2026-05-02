@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::faction::Diplomacy;
 use crate::ids::{
     DefenderRoleId, EdgeId, EventId, FactionId, InfraId, KillChainId, NetworkId, NodeId, PhaseId,
-    RegionId, SegmentId,
+    RegionId, SegmentId, TechCardId,
 };
 use crate::strategy::FactionState;
 
@@ -56,33 +56,33 @@ pub struct RunResult {
     /// scenario has no kill chains.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub campaign_reports: BTreeMap<KillChainId, CampaignReport>,
-    /// Per-defender-role queue summary at run end (Epic K). Empty when
+    /// Per-defender-role queue summary at run end. Empty when
     /// no scenario faction declares `defender_capacities`. Sorted
     /// (faction_id, role_id) for deterministic rendering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defender_queue_reports: Vec<DefenderQueueReport>,
-    /// Per-network terminal-state report (Epic L). Empty when the
+    /// Per-network terminal-state report. Empty when the
     /// scenario declares no networks. Each entry carries the resilience
     /// trajectory across ticks plus terminal metrics; aggregated across
     /// runs by [`MonteCarloSummary::network_summaries`].
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_reports: BTreeMap<NetworkId, NetworkReport>,
-    /// Log of every alliance-fracture firing in this run (Epic D
-    /// round two), in tick order. Each entry records which faction's
+    /// Log of every alliance-fracture firing in this run, in tick
+    /// order. Each entry records which faction's
     /// stance flipped against which counterparty, the rule that
     /// fired, and the previous / new stance. Empty when the scenario
     /// declares no `alliance_fracture` rules or none of its
     /// conditions were satisfied during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fracture_events: Vec<FractureEvent>,
-    /// Per-faction supply-pressure summary for this run (Epic D round
-    /// three, item 2). Only populated for factions that own at least
+    /// Per-faction supply-pressure summary for this run. Only
+    /// populated for factions that own at least
     /// one `kind = "supply"` network — legacy factions are elided.
     /// Keyed by `FactionId` for deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub supply_pressure_reports: BTreeMap<FactionId, SupplyPressureReport>,
-    /// Log of every civilian-segment activation in this run (R3-2
-    /// round-two — population-segment activation), in tick order.
+    /// Log of every civilian-segment activation in this run
+    /// (population-segment activation), in tick order.
     /// Each entry records the tick, the segment that activated, the
     /// faction whose sympathy crossed the activation threshold, and
     /// the action variants attached to the segment. Empty when the
@@ -90,10 +90,80 @@ pub struct RunResult {
     /// their threshold during the run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub civilian_activations: Vec<CivilianActivationEvent>,
+    /// Per-faction tech-card cost activity for this run. Records
+    /// what each faction spent on tech
+    /// (deployment + maintenance), which techs were denied at deploy
+    /// time because the faction couldn't afford them, and which were
+    /// decommissioned mid-run because maintenance outran resources.
+    /// Only populated for factions whose `tech_access` produced any of
+    /// those four signals (non-zero deployment spend, non-zero
+    /// maintenance spend, at least one denial, or at least one
+    /// decommission). `coverage_limit` activity is *not* surfaced here
+    /// — coverage gating is a within-tick limiter on combat
+    /// contribution and the per-tick counter is `#[serde(skip)]`
+    /// transient state, so it never persists post-tick. Legacy
+    /// scenarios with zero-cost tech rosters elide the entry entirely
+    /// (the outer `BTreeMap` skips when empty).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tech_costs: BTreeMap<FactionId, TechCostReport>,
 }
 
-/// One civilian-segment activation firing (R3-2 round-two —
-/// population-segment activation).
+/// Per-faction tech-card cost activity for one run.
+///
+/// Captured live by the engine as deployment runs at init and as
+/// maintenance ticks accumulate. The four `Vec` fields preserve the
+/// runtime decision order so the report can render a faithful "what
+/// happened, in what order" trace; the two scalars are the headline
+/// totals the cross-run aggregator rolls up.
+///
+/// Field semantics:
+/// - `deployed_techs` — the cards the faction successfully deployed
+///   at engine init, in `tech_access` order. Subset of `tech_access`
+///   minus `denied_at_deployment`.
+/// - `denied_at_deployment` — cards the faction *could not* afford at
+///   init time. Each was charged against starting resources in
+///   declaration order; the first one whose `deployment_cost` exceeded
+///   what was left was denied, and the iteration continued in case a
+///   later (cheaper) card could fit. So the list reflects
+///   "couldn't fit this one given prior choices", not "card was too
+///   expensive in absolute terms".
+/// - `decommissioned` — cards lost mid-run because the faction's
+///   `cost_per_tick` deduction would have driven `resources` below
+///   zero. Recorded with the tick at which the loss happened.
+/// - `total_deployment_spend` — sum of `deployment_cost` over
+///   `deployed_techs`. This is exactly what the engine deducted from
+///   `initial_resources` at init.
+/// - `total_maintenance_spend` — sum of per-tick deductions over the
+///   life of the run. Cards that decommissioned partway through
+///   contribute only the ticks they were active.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TechCostReport {
+    pub faction: FactionId,
+    #[serde(default)]
+    pub deployed_techs: Vec<TechCardId>,
+    #[serde(default)]
+    pub denied_at_deployment: Vec<TechCardId>,
+    #[serde(default)]
+    pub decommissioned: Vec<TechDecommissionEvent>,
+    pub total_deployment_spend: f64,
+    pub total_maintenance_spend: f64,
+}
+
+/// One mid-run tech-card decommission event.
+///
+/// Captured at the tick when `cost_per_tick` couldn't be paid out of
+/// the faction's current `resources`. The card is removed from
+/// `tech_deployed` for the rest of the run and contributes no further
+/// combat / detection effects. The maintenance for the *non-paid* tick
+/// is **not** charged — the faction stops paying as soon as it can't.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TechDecommissionEvent {
+    pub tick: u32,
+    pub tech: TechCardId,
+}
+
+/// One civilian-segment activation firing (population-segment
+/// activation).
 ///
 /// Captured at the tick when the segment's top sympathy crossed
 /// `activation_threshold`. `action_kinds` lists the discriminant
@@ -115,8 +185,7 @@ pub struct CivilianActivationEvent {
     pub action_kinds: Vec<String>,
 }
 
-/// Per-faction supply-pressure summary for one run (Epic D round
-/// three, item 2).
+/// Per-faction supply-pressure summary for one run.
 ///
 /// All four scalars are derived from the per-tick samples the engine
 /// captured in [`crate::stats::SupplyPressureReport`]'s upstream state
@@ -147,7 +216,7 @@ pub struct SupplyPressureReport {
     pub pressured_ticks: u32,
 }
 
-/// One alliance-fracture firing (Epic D round two).
+/// One alliance-fracture firing.
 ///
 /// Captured at the tick when the rule's condition was first satisfied.
 /// `previous_stance` reflects the live runtime stance — including any
@@ -164,7 +233,7 @@ pub struct FractureEvent {
     pub new_stance: Diplomacy,
 }
 
-/// End-of-run snapshot of one network's resilience trajectory (Epic L).
+/// End-of-run snapshot of one network's resilience trajectory.
 ///
 /// `samples` holds one [`NetworkSample`] per observed tick (in capture
 /// order — the engine emits one per tick after the network phase).
@@ -332,40 +401,45 @@ pub struct MonteCarloSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pareto_frontier: Option<ParetoFrontier>,
     /// Per-(faction, role) defender-capacity queue analytics aggregated
-    /// across runs (Epic K). Empty when no scenario faction declares
+    /// across runs. Empty when no scenario faction declares
     /// `defender_capacities`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defender_capacity: Vec<DefenderCapacitySummary>,
-    /// Per-network resilience aggregate across runs (Epic L). Empty
+    /// Per-network resilience aggregate across runs. Empty
     /// when the scenario declares no networks. Holds the
     /// critical-node ranking (deterministic Brandes betweenness over
     /// the static topology) plus mean / max disrupted-node and
     /// fragmentation counts across runs.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_summaries: BTreeMap<NetworkId, NetworkSummary>,
-    /// Per-alliance-rule fracture analytics aggregated across runs
-    /// (Epic D round two). `None` when no scenario faction declares
+    /// Per-alliance-rule fracture analytics aggregated across runs.
+    /// `None` when no scenario faction declares
     /// an `alliance_fracture` rule — the report section elides
     /// entirely in that case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alliance_dynamics: Option<AllianceDynamics>,
-    /// Per-faction supply-pressure aggregate across runs (Epic D
-    /// round three, item 2). Empty when the scenario declares no
+    /// Per-faction supply-pressure aggregate across runs. Empty when
+    /// the scenario declares no
     /// active supply networks — the report section elides in that
     /// case. Keyed by `FactionId` for deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub supply_pressure_summaries: BTreeMap<FactionId, SupplyPressureSummary>,
-    /// Per-segment civilian-activation aggregate across runs (R3-2
-    /// round-two). Empty when the scenario declares no
+    /// Per-segment civilian-activation aggregate across runs. Empty
+    /// when the scenario declares no
     /// `population_segments` or none ever activated — the report
     /// section elides in that case. Keyed by `SegmentId` for
     /// deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub civilian_activation_summaries: BTreeMap<SegmentId, SegmentActivationSummary>,
+    /// Per-faction tech-card cost aggregate across runs. Empty when
+    /// no faction's `tech_access` ever produced a [`TechCostReport`]
+    /// — the report section elides on that signal. Keyed by
+    /// `FactionId` for deterministic rendering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tech_cost_summaries: BTreeMap<FactionId, TechCostSummary>,
 }
 
-/// Cross-run civilian-activation analytics for one population segment
-/// (R3-2 round-two).
+/// Cross-run civilian-activation analytics for one population segment.
 ///
 /// Aggregates [`CivilianActivationEvent`] rows across the Monte Carlo
 /// batch. `activation_count` is the number of runs in which the
@@ -415,8 +489,7 @@ pub struct SegmentActivationSummary {
     pub action_kind_counts: BTreeMap<String, u32>,
 }
 
-/// Cross-run supply-pressure analytics for one faction (Epic D round
-/// three, item 2).
+/// Cross-run supply-pressure analytics for one faction.
 ///
 /// Each scalar aggregates the corresponding per-run scalar on
 /// [`SupplyPressureReport`]:
@@ -442,7 +515,34 @@ pub struct SupplyPressureSummary {
     pub runs_with_any_pressure: u32,
 }
 
-/// Cross-run alliance-fracture analytics (Epic D round two).
+/// Cross-run tech-card cost analytics for one faction.
+///
+/// Aggregates per-run [`TechCostReport`] rows across the Monte Carlo
+/// batch. Three concerns are surfaced separately because they answer
+/// different design questions:
+/// - `mean_total_spend` — the typical total tech burn (deployment +
+///   maintenance) per run. Useful for budget sizing.
+/// - `runs_with_denial` — how often the faction's `tech_access` roster
+///   exceeded what it could afford to deploy. A non-zero rate is a
+///   diagnostic — either the roster is over-spec'd for the starting
+///   resources or the faction is meant to make hard choices.
+/// - `runs_with_decommission` and `mean_decommissions_per_run` — how
+///   often (and how many) deployed cards collapsed mid-run from
+///   maintenance starvation. A non-zero rate signals the faction's
+///   `resource_rate` can't sustain the active roster.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TechCostSummary {
+    pub faction: FactionId,
+    pub n_runs: u32,
+    pub mean_deployment_spend: f64,
+    pub mean_maintenance_spend: f64,
+    pub mean_total_spend: f64,
+    pub runs_with_denial: u32,
+    pub runs_with_decommission: u32,
+    pub mean_decommissions_per_run: f64,
+}
+
+/// Cross-run alliance-fracture analytics.
 ///
 /// Each [`FractureRuleSummary`] aggregates one declared rule across
 /// the full Monte Carlo batch. `final_stance_distribution` reports
@@ -489,7 +589,7 @@ pub struct FractureRuleSummary {
     pub final_stance_distribution: BTreeMap<Diplomacy, u32>,
 }
 
-/// Aggregate per-run network analytics (Epic L).
+/// Aggregate per-run network analytics.
 ///
 /// Mean / max stats are over [`RunResult::network_reports`]; the
 /// `critical_nodes` ranking is computed once over the static topology
@@ -513,7 +613,7 @@ pub struct NetworkSummary {
     pub critical_nodes: Vec<CriticalNode>,
 }
 
-/// One row of the critical-node ranking (Epic L).
+/// One row of the critical-node ranking.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CriticalNode {
     pub node: NodeId,
@@ -1005,4 +1105,8 @@ pub struct DeltaEncodedRun {
     /// activated.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub civilian_activations: Vec<CivilianActivationEvent>,
+    /// Per-faction tech-card cost activity — preserved verbatim. Empty
+    /// when no faction's tech roster engaged the cost mechanic.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tech_costs: BTreeMap<FactionId, TechCostReport>,
 }

@@ -1,5 +1,4 @@
-//! Cross-run civilian-segment activation rollup (R3-2 round-two —
-//! population-segment activation).
+//! Cross-run civilian-segment activation rollup.
 //!
 //! Pure post-processing of `RunResult.civilian_activations` and
 //! `Scenario.political_climate.population_segments`. No engine re-runs,
@@ -169,6 +168,7 @@ mod tests {
             fracture_events: Vec::new(),
             supply_pressure_reports: BTreeMap::new(),
             civilian_activations: Vec::new(),
+            tech_costs: BTreeMap::new(),
         }
     }
 

@@ -151,7 +151,7 @@ work.
 
 ## Status snapshot
 
-**Closed (22):** A (uncertainty), B (counterfactual), C (time +
+**Closed (23):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -171,19 +171,22 @@ wired), R3-2 round-two item 3 (`MediaLandscape.fragmentation` +
 `social_media_penetration` + `internet_availability` wired into the
 political / information phases as coupled noise / tension
 multipliers; per-segment activation events tracked end-to-end and
-surfaced in a new `## Civilian Activations` report section), R3-3
-(decompose `report.rs`), R3-5 (property tests — `proptest` coverage
-of engine / search / uncertainty / network_metrics invariants).
+surfaced in a new `## Civilian Activations` report section), R3-2
+round-two item 4 (`TechCard.deployment_cost` /
+`cost_per_tick` / `coverage_limit` wired into engine init,
+attrition, and combat phases respectively; per-faction tech-cost
+report added), R3-3 (decompose `report.rs`), R3-5 (property tests —
+`proptest` coverage of engine / search / uncertainty /
+network_metrics invariants).
 
 **Deferred / open epics:** D round-three (2 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
 (belief asymmetry), N (calibration), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
-round-two (audit follow-up — items 2 + 1 + 3 closed; three items
-still deferred: tech-card costs, visualization metadata,
-`force_projection`), R3-4 (generalize leadership morale cap), R3-6
-(decompose `Scenario`).
+round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
+still deferred: visualization metadata, `force_projection`), R3-4
+(generalize leadership morale cap), R3-6 (decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -431,10 +434,23 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
      rejects out-of-range / non-finite media-landscape and segment
      fields. See the "Unread-parameter audit (R3-2 round two —
      population-segment activation)" section in `CLAUDE.md`.
-  4. `TechCard.{cost_per_tick, deployment_cost, coverage_limit}`.
+  4. ~~`TechCard.{cost_per_tick, deployment_cost, coverage_limit}`.
      Depend on broadening budget enforcement (covered indirectly
      by `defender_budget` wiring; missing piece is enforcing tech
-     activation cost against per-faction running spend).
+     activation cost against per-faction running spend).~~ **Shipped
+     May 2026.** `deployment_cost` is deducted at engine init in
+     `tech_access` declaration order, with cards the faction can't
+     afford recorded as denied (skipped, not deployed); `cost_per_tick`
+     is deducted in the attrition phase per-tech, with cards whose
+     maintenance can't be paid decommissioned for the rest of the run;
+     `coverage_limit` (when `Some(n)`) caps the per-tick number of
+     (region, opponent) pairs the card contributes to during combat.
+     Per-faction `RunResult.tech_costs` records the activity, rolled
+     up cross-run by `MonteCarloSummary.tech_cost_summaries` and
+     surfaced in a new `## Tech-Card Costs` report section. Validation
+     rejects three silent-no-op shapes: non-finite or negative cost
+     fields, and `coverage_limit = Some(0)`. See the "Unread-parameter
+     audit (R3-2 round two — tech-card costs)" section in `CLAUDE.md`.
   5. `Region.centroid`, `Faction.color`. Visualization metadata
      (used by the WASM frontend). Document as such; not silent
      no-ops by the engine's standards.
