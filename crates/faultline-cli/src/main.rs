@@ -2563,26 +2563,35 @@ mod cli_tests {
     #[test]
     fn explain_is_mutually_exclusive_with_run_modes() {
         // `--explain` is a pure schema view; mixing it with a run mode
-        // is almost certainly an authoring mistake. Pin one
-        // representative conflict per run mode so a future refactor of
-        // the conflicts_with_all list does not silently widen the
-        // shape that's accepted.
-        for run_mode in [
-            "--single-run",
-            "--sensitivity",
-            "--search",
-            "--coevolve",
-            "--robustness",
-            "--migrate",
-        ] {
-            let res = Cli::try_parse_from(["faultline", "scenario.toml", "--explain", run_mode]);
+        // is almost certainly an authoring mistake. Exercise every
+        // entry from the `conflicts_with_all` list so a future
+        // refactor that drops one is caught immediately. Value-taking
+        // flags (--counterfactual, --compare, --verify) need a dummy
+        // value attached or clap rejects them on argument parsing
+        // rather than the conflict check we want to assert.
+        let cases: &[&[&str]] = &[
+            &["--single-run"],
+            &["--sensitivity"],
+            &["--search"],
+            &["--coevolve"],
+            &["--robustness"],
+            &["--migrate"],
+            &["--counterfactual", "faction.alpha.initial_morale=0.3"],
+            &["--compare", "other.toml"],
+            &["--verify", "manifest.json"],
+        ];
+        for extra in cases {
+            let mut args = vec!["faultline", "scenario.toml", "--explain"];
+            args.extend_from_slice(extra);
+            let label = extra.join(" ");
+            let res = Cli::try_parse_from(&args);
             let err = res.expect_err(&format!(
-                "--explain + {run_mode} must conflict but parsed successfully"
+                "--explain + {label} must conflict but parsed successfully"
             ));
             assert_eq!(
                 err.kind(),
                 clap::error::ErrorKind::ArgumentConflict,
-                "wrong error kind for --explain + {run_mode}: {err}"
+                "wrong error kind for --explain + {label}: {err}"
             );
         }
     }

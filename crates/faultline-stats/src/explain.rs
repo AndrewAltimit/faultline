@@ -17,15 +17,19 @@
 //! repeatedly on the same scenario; output is fully determined by the
 //! inputs.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::{Deserialize, Serialize};
 
-use faultline_types::campaign::KillChain;
+use faultline_types::campaign::{CampaignPhase, KillChain};
 use faultline_types::faction::{Diplomacy, Faction, FactionType, MilitaryBranch};
 use faultline_types::ids::{FactionId, KillChainId, NetworkId, PhaseId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::ConfidenceLevel;
 use faultline_types::strategy_space::{Domain, StrategySpace};
 use faultline_types::victory::{NonKineticMetric, VictoryType};
+
+use crate::markdown::escape_md_cell;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -301,12 +305,7 @@ fn build_kill_chains(scenario: &Scenario) -> Vec<ExplainKillChain> {
 
 fn build_kill_chain(id: &KillChainId, kc: &KillChain) -> ExplainKillChain {
     let phase_count = kc.phases.len();
-    let mut min_total = 0u32;
-    let mut max_total = 0u32;
-    for phase in kc.phases.values() {
-        min_total = min_total.saturating_add(phase.min_duration);
-        max_total = max_total.saturating_add(phase.max_duration);
-    }
+    let (min_total, max_total) = kill_chain_path_bounds(kc);
     let mut low_confidence_phases: Vec<String> = kc
         .phases
         .iter()
@@ -327,6 +326,59 @@ fn build_kill_chain(id: &KillChainId, kc: &KillChain) -> ExplainKillChain {
         max_total_ticks: max_total,
         low_confidence_phases,
     }
+}
+
+/// Compute `(min, max)` total ticks across the executable paths from
+/// `entry_phase`. Each phase contributes its own duration plus the
+/// best/worst contribution of any of its branches; a phase with no
+/// branches is terminal (zero further contribution). For DAG kill
+/// chains this is exact. If the chain contains a cycle (rare —
+/// validation should reject most authoring mistakes that produce
+/// one), the cycle is broken at the second visit so the recursion
+/// terminates; the resulting bounds describe a single-traversal
+/// estimate rather than an unbounded loop.
+fn kill_chain_path_bounds(kc: &KillChain) -> (u32, u32) {
+    let mut memo: BTreeMap<PhaseId, (u32, u32)> = BTreeMap::new();
+    let mut visiting: BTreeSet<PhaseId> = BTreeSet::new();
+    phase_path_bounds(&kc.phases, &kc.entry_phase, &mut memo, &mut visiting)
+}
+
+fn phase_path_bounds(
+    phases: &BTreeMap<PhaseId, CampaignPhase>,
+    pid: &PhaseId,
+    memo: &mut BTreeMap<PhaseId, (u32, u32)>,
+    visiting: &mut BTreeSet<PhaseId>,
+) -> (u32, u32) {
+    if let Some(cached) = memo.get(pid) {
+        return *cached;
+    }
+    if visiting.contains(pid) {
+        // Cycle: break at the re-entry point. The traversal contributes
+        // 0 from this branch, which gives a defensible single-pass
+        // estimate without diverging.
+        return (0, 0);
+    }
+    let Some(phase) = phases.get(pid) else {
+        // Branch points at an unknown next_phase id. Validation
+        // should reject this; treat defensively as terminal so the
+        // explain renderer can still produce a report.
+        return (0, 0);
+    };
+    visiting.insert(pid.clone());
+
+    let (mut branch_min, mut branch_max): (Option<u32>, Option<u32>) = (None, None);
+    for branch in &phase.branches {
+        let (b_min, b_max) = phase_path_bounds(phases, &branch.next_phase, memo, visiting);
+        branch_min = Some(branch_min.map_or(b_min, |m| m.min(b_min)));
+        branch_max = Some(branch_max.map_or(b_max, |m| m.max(b_max)));
+    }
+
+    let phase_min = phase.min_duration.saturating_add(branch_min.unwrap_or(0));
+    let phase_max = phase.max_duration.saturating_add(branch_max.unwrap_or(0));
+
+    visiting.remove(pid);
+    memo.insert(pid.clone(), (phase_min, phase_max));
+    (phase_min, phase_max)
 }
 
 fn format_phase_id(p: &PhaseId) -> String {
@@ -501,18 +553,23 @@ pub fn render_markdown(report: &ExplainReport) -> String {
 }
 
 fn render_meta(s: &mut String, m: &ExplainMeta) {
-    s.push_str(&format!(
-        "# {}\n\n",
-        non_empty_or(&m.name, "(unnamed scenario)")
-    ));
+    // Heading text is single-line by definition: a literal newline in
+    // an authored name would split the `#` heading across two lines
+    // and contaminate the next paragraph. Collapse line breaks so the
+    // heading layout is stable regardless of author input.
+    let name_line = collapse_newlines(non_empty_or(&m.name, "(unnamed scenario)"));
+    s.push_str(&format!("# {name_line}\n\n"));
     s.push_str(&format!(
         "**Author:** {}  \n**Version:** {}  \n**Schema:** v{}\n",
-        non_empty_or(&m.author, "—"),
-        non_empty_or(&m.version, "—"),
+        collapse_newlines(non_empty_or(&m.author, "—")),
+        collapse_newlines(non_empty_or(&m.version, "—")),
         m.schema_version,
     ));
     if !m.tags.is_empty() {
-        s.push_str(&format!("**Tags:** {}\n", m.tags.join(", ")));
+        s.push_str(&format!(
+            "**Tags:** {}\n",
+            collapse_newlines(&m.tags.join(", "))
+        ));
     }
     if let Some(level) = &m.confidence {
         s.push_str(&format!(
@@ -522,9 +579,17 @@ fn render_meta(s: &mut String, m: &ExplainMeta) {
     }
     s.push('\n');
     if !m.description.trim().is_empty() {
+        // The description is free-form prose intended for Markdown
+        // rendering, so we deliberately preserve interior newlines
+        // here rather than collapsing them — they're meaningful as
+        // paragraph breaks.
         s.push_str(m.description.trim());
         s.push_str("\n\n");
     }
+}
+
+fn collapse_newlines(s: &str) -> String {
+    s.replace(['\n', '\r'], " ")
 }
 
 fn render_scale(s: &mut String, sc: &ExplainScale) {
@@ -561,10 +626,10 @@ fn render_factions(s: &mut String, factions: &[ExplainFaction]) {
     for f in factions {
         s.push_str(&format!(
             "| {} | {} | {} | {} | {} | {:.2} | {} | {} | {} |\n",
-            md_cell(&f.id),
-            md_cell(&f.name),
-            md_cell(&f.kind),
-            md_cell(&f.doctrine),
+            escape_md_cell(&f.id),
+            escape_md_cell(&f.name),
+            escape_md_cell(&f.kind),
+            escape_md_cell(&f.doctrine),
             f.force_count,
             f.initial_morale,
             cadre_marker(f.has_leadership_cadre, f.leadership_rank_count),
@@ -582,9 +647,9 @@ fn render_factions(s: &mut String, factions: &[ExplainFaction]) {
             for d in &f.diplomacy {
                 s.push_str(&format!(
                     "| {} | {} | {} |\n",
-                    md_cell(&f.id),
-                    md_cell(&d.target),
-                    md_cell(&d.stance),
+                    escape_md_cell(&f.id),
+                    escape_md_cell(&d.target),
+                    escape_md_cell(&d.stance),
                 ));
             }
         }
@@ -613,18 +678,18 @@ fn render_kill_chains(s: &mut String, chains: &[ExplainKillChain]) {
     for c in chains {
         s.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
-            md_cell(&c.id),
-            md_cell(&c.name),
-            md_cell(&c.attacker),
-            md_cell(&c.target),
-            md_cell(&c.entry_phase),
+            escape_md_cell(&c.id),
+            escape_md_cell(&c.name),
+            escape_md_cell(&c.attacker),
+            escape_md_cell(&c.target),
+            escape_md_cell(&c.entry_phase),
             c.phase_count,
             c.min_total_ticks,
             c.max_total_ticks,
             if c.low_confidence_phases.is_empty() {
                 "—".to_string()
             } else {
-                md_cell(&c.low_confidence_phases.join(", "))
+                escape_md_cell(&c.low_confidence_phases.join(", "))
             },
         ));
     }
@@ -641,10 +706,10 @@ fn render_victory_conditions(s: &mut String, vs: &[ExplainVictory]) {
     for v in vs {
         s.push_str(&format!(
             "| {} | {} | {} | {} |\n",
-            md_cell(&v.id),
-            md_cell(&v.name),
-            md_cell(&v.faction),
-            md_cell(&v.kind),
+            escape_md_cell(&v.id),
+            escape_md_cell(&v.name),
+            escape_md_cell(&v.faction),
+            escape_md_cell(&v.kind),
         ));
     }
     s.push('\n');
@@ -662,10 +727,10 @@ fn render_networks(s: &mut String, ns: &[ExplainNetwork]) {
     for n in ns {
         s.push_str(&format!(
             "| {} | {} | {} | {} | {} | {} |\n",
-            md_cell(&n.id),
-            md_cell(&n.name),
-            md_cell(&n.kind),
-            md_cell(n.owner.as_deref().unwrap_or("—")),
+            escape_md_cell(&n.id),
+            escape_md_cell(&n.name),
+            escape_md_cell(&n.kind),
+            escape_md_cell(n.owner.as_deref().unwrap_or("—")),
             n.node_count,
             n.edge_count,
         ));
@@ -687,9 +752,9 @@ fn render_strategy_space(s: &mut String, ss: &ExplainStrategySpace) {
         for v in &ss.variables {
             s.push_str(&format!(
                 "| {} | {} | {} |\n",
-                md_cell(&v.path),
-                md_cell(v.owner.as_deref().unwrap_or("—")),
-                md_cell(&v.domain),
+                escape_md_cell(&v.path),
+                escape_md_cell(v.owner.as_deref().unwrap_or("—")),
+                escape_md_cell(&v.domain),
             ));
         }
         s.push('\n');
@@ -721,9 +786,9 @@ fn render_low_confidence(s: &mut String, items: &[ExplainLowConfidence]) {
     for item in items {
         s.push_str(&format!(
             "| {} | {} | {} |\n",
-            md_cell(&item.location),
+            escape_md_cell(&item.location),
             confidence_label(&item.level),
-            md_cell(&item.note),
+            escape_md_cell(&item.note),
         ));
     }
     s.push('\n');
@@ -745,22 +810,11 @@ fn non_empty_or<'a>(s: &'a str, fallback: &'a str) -> &'a str {
     if s.trim().is_empty() { fallback } else { s }
 }
 
-/// Markdown table cell escape — pipe / newline / backtick / backslash
-/// neutralization. Mirrors `report::util::escape_md_cell` but that
-/// helper is `pub(super)` to the report module so we keep a local
-/// copy here rather than widening its visibility.
-fn md_cell(s: &str) -> String {
-    s.replace('\\', r"\\")
-        .replace('|', r"\|")
-        .replace('`', r"\`")
-        .replace(['\n', '\r'], " ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use faultline_types::campaign::{CampaignPhase, KillChain, PhaseCost};
+    use faultline_types::campaign::{CampaignPhase, KillChain, PhaseBranch, PhaseCost};
     use faultline_types::faction::{Faction, FactionType};
     use faultline_types::ids::{FactionId, KillChainId, PhaseId, VictoryId};
     use faultline_types::scenario::{Scenario, ScenarioMeta};
@@ -929,13 +983,15 @@ mod tests {
     }
 
     #[test]
-    fn md_cell_neutralizes_pipes_and_newlines() {
+    fn escape_md_cell_neutralizes_pipes_and_newlines() {
         // Authored fields can contain pipes / newlines / backticks; the
-        // table renderer must not let them break row layout.
-        assert_eq!(md_cell("a|b"), r"a\|b");
-        assert_eq!(md_cell("line1\nline2"), "line1 line2");
-        assert_eq!(md_cell("a`b"), r"a\`b");
-        assert_eq!(md_cell(r"x\y"), r"x\\y");
+        // table renderer must not let them break row layout. Mirrors
+        // the test in `crate::markdown` so a local regression here is
+        // caught even if the upstream test still passes.
+        assert_eq!(escape_md_cell("a|b"), r"a\|b");
+        assert_eq!(escape_md_cell("line1\nline2"), "line1 line2");
+        assert_eq!(escape_md_cell("a`b"), r"a\`b");
+        assert_eq!(escape_md_cell(r"x\y"), r"x\\y");
     }
 
     #[test]
@@ -955,6 +1011,155 @@ mod tests {
         let md = render_markdown(&report);
         assert!(md.contains("Capture all regions"));
         assert!(md.contains("StrategicControl(>= 0.75)"));
+    }
+
+    /// Helper for tests that need a phase with non-default duration
+    /// and an explicit branch list.
+    fn make_phase(id: &str, min: u32, max: u32, branches: Vec<PhaseBranch>) -> CampaignPhase {
+        CampaignPhase {
+            id: PhaseId::from(id),
+            name: id.to_string(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 0.5,
+            min_duration: min,
+            max_duration: max,
+            detection_probability_per_tick: 0.1,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost::default(),
+            targets_domains: vec![],
+            outputs: vec![],
+            branches,
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        }
+    }
+
+    #[test]
+    fn kill_chain_path_bounds_follow_branches_not_phase_sum() {
+        // A → (B | C) with min/max durations:
+        //   A: 1..2
+        //   B: 5..6
+        //   C: 1..1
+        // Old (buggy) code: min = 1+5+1 = 7, max = 2+6+1 = 9.
+        // Correct critical-path: min = 1+min(5,1) = 2, max = 2+max(6,1) = 8.
+        use faultline_types::campaign::{BranchCondition, PhaseBranch};
+
+        let mut s = minimal_scenario();
+        let chain_id = KillChainId::from("c1");
+        let mut chain = KillChain {
+            id: chain_id.clone(),
+            name: "Chain 1".to_string(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("alpha"),
+            entry_phase: PhaseId::from("a"),
+            phases: Default::default(),
+        };
+        chain.phases.insert(
+            PhaseId::from("a"),
+            make_phase(
+                "a",
+                1,
+                2,
+                vec![
+                    PhaseBranch {
+                        condition: BranchCondition::OnSuccess,
+                        next_phase: PhaseId::from("b"),
+                    },
+                    PhaseBranch {
+                        condition: BranchCondition::OnFailure,
+                        next_phase: PhaseId::from("c"),
+                    },
+                ],
+            ),
+        );
+        chain
+            .phases
+            .insert(PhaseId::from("b"), make_phase("b", 5, 6, vec![]));
+        chain
+            .phases
+            .insert(PhaseId::from("c"), make_phase("c", 1, 1, vec![]));
+        s.kill_chains.insert(chain_id, chain);
+
+        let report = explain(&s);
+        let kc = &report.kill_chains[0];
+        assert_eq!(
+            kc.min_total_ticks, 2,
+            "min path should follow shortest branch"
+        );
+        assert_eq!(
+            kc.max_total_ticks, 8,
+            "max path should follow longest branch"
+        );
+    }
+
+    #[test]
+    fn kill_chain_path_bounds_break_cycles_safely() {
+        // A → B → A — with min/max bounds, a naive recursion would
+        // diverge. The traversal must terminate and produce finite
+        // bounds.
+        use faultline_types::campaign::{BranchCondition, PhaseBranch};
+
+        let mut s = minimal_scenario();
+        let chain_id = KillChainId::from("c-cycle");
+        let mut chain = KillChain {
+            id: chain_id.clone(),
+            name: "Cycle".to_string(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: FactionId::from("alpha"),
+            entry_phase: PhaseId::from("a"),
+            phases: Default::default(),
+        };
+        chain.phases.insert(
+            PhaseId::from("a"),
+            make_phase(
+                "a",
+                1,
+                2,
+                vec![PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: PhaseId::from("b"),
+                }],
+            ),
+        );
+        chain.phases.insert(
+            PhaseId::from("b"),
+            make_phase(
+                "b",
+                3,
+                4,
+                vec![PhaseBranch {
+                    condition: BranchCondition::Always,
+                    next_phase: PhaseId::from("a"),
+                }],
+            ),
+        );
+        s.kill_chains.insert(chain_id, chain);
+
+        let report = explain(&s);
+        let kc = &report.kill_chains[0];
+        // Cycle is broken at B's re-entry to A — both branches
+        // contribute (a.min + b.min, a.max + b.max).
+        assert_eq!(kc.min_total_ticks, 4);
+        assert_eq!(kc.max_total_ticks, 6);
+    }
+
+    #[test]
+    fn render_meta_collapses_newlines_in_heading() {
+        // An author-supplied scenario name with a literal newline
+        // would split the `# heading` line and contaminate the next
+        // paragraph. The renderer must collapse line breaks.
+        let mut s = minimal_scenario();
+        s.meta.name = "Multi\nLine\rName".to_string();
+        let md = render_markdown(&explain(&s));
+        // The heading line is the first line of the rendered output.
+        let first_line = md.lines().next().expect("at least one line");
+        assert_eq!(first_line, "# Multi Line Name");
     }
 
     #[test]

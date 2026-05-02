@@ -12,6 +12,7 @@ pub mod counterfactual;
 pub mod delta;
 pub mod explain;
 pub mod manifest;
+pub(crate) mod markdown;
 pub mod morris;
 pub mod network_metrics;
 pub mod report;
