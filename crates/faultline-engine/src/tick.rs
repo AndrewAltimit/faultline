@@ -405,13 +405,21 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
         let env_defense_factor = environment_defense_factor(scenario, &terrain_type, state.tick);
         let terrain_defense = base_terrain_defense * env_defense_factor;
 
-        // Pairwise combat: all faction pairs engage each other.
+        // Pairwise combat: all faction pairs engage each other,
+        // except mutually-Allied pairs (Epic D round-three item 1 —
+        // diplomacy behavioral coupling). Cooperative pairs still
+        // fight if their forces collide; only `Diplomacy::Allied`
+        // (in both directions) blocks combat.
         let factions: Vec<&FactionId> = faction_forces.keys().collect();
 
         for i in 0..factions.len() {
             for j in (i + 1)..factions.len() {
                 let fid_a = factions[i];
                 let fid_b = factions[j];
+
+                if crate::diplomacy::combat_blocked(state, scenario, fid_a, fid_b) {
+                    continue;
+                }
 
                 let str_a = faction_forces.get(fid_a).copied().unwrap_or(0.0);
                 let str_b = faction_forces.get(fid_b).copied().unwrap_or(0.0);

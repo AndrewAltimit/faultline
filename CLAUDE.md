@@ -113,10 +113,10 @@ cargo run -p faultline-cli -- scenarios/coevolution_demo.toml --coevolve \
 # `## Alliance Dynamics` section ranks per-rule fire rate, mean fire
 # tick, and terminal-stance distribution across runs.
 #
-# Note: alliance fracture is currently *analytical accounting* — the
-# engine does not yet consume the post-fracture stance for combat /
-# AI / victory dynamics. The fracture is observable in the report and
-# in `RunResult.fracture_events`, not in tick-level run behavior.
+# Note: as of Epic D round-three item 1 the post-fracture stance is
+# now consumed by combat targeting and AI decision-making (see the
+# "Diplomatic stance behavioral coupling" section below). The
+# victory-check phase still ignores diplomacy.
 cargo run -p faultline-cli -- scenarios/coalition_fracture_demo.toml -n 32
 
 # Replay a saved manifest and assert bit-identical output (Epic Q)
@@ -346,18 +346,21 @@ runtime override map (`SimulationState.diplomacy_overrides`) so
 runtime stance is direction-aware and queryable via
 `fracture::current_stance` / `fracture::baseline_stance`.
 
-**Scope caveat: analytical accounting only.** The current engine
-does not consume `Diplomacy` stance for downstream effects — combat
-targeting (`tick::find_contested_regions`) treats every co-located
-faction as a combatant regardless of stance, and the AI / victory-
-check / political phases never consult diplomacy. A fracture is
-observable in `RunResult.fracture_events`, in the cross-run rollup
-on `MonteCarloSummary.alliance_dynamics`, and in the rendered
-report's `## Alliance Dynamics` section, but not in tick-level run
-dynamics. Treat fire rates as scenario-design diagnostics rather
-than live behavioral predictions. A future round will add behavioral
-coupling (combat targeting respecting `Diplomacy::Allied`, AI
-de-prioritizing Cooperative neighbors).
+**Scope caveat (now partially closed by Epic D round three —
+behavioral coupling).** As of round three, combat targeting and the
+AI consume diplomatic stance directly: mutually-Allied pairs skip
+combat entirely, and Cooperative neighbors are de-rated to 0.3× in
+both threat presence and attack scoring. See the "Diplomatic stance
+behavioral coupling" section below for the contract. A fracture
+remains observable post-run via `RunResult.fracture_events` and the
+`## Alliance Dynamics` report section, *and* it now flips behavior
+at the tick the rule fires.
+The victory-check and political phases still do not consult
+diplomacy — that piece is left for a follow-up. Treat fire rates
+under scenarios authored before round three as a scenario-design
+diagnostic: they describe when the rule trips, not the
+counter-factual behavior that would have unfolded if the engine had
+consumed the stance from the start.
 
 - Optional `[factions.<id>.alliance_fracture]` block declares one or
   more `FractureRule { id, counterparty, new_stance, condition }`.
@@ -390,6 +393,58 @@ de-prioritizing Cooperative neighbors).
   rule and a tension-driven rule against `red_attacker`. Demo run
   produces ~22% attribution-fracture rate and 100% tension-fracture
   rate over 32 runs.
+
+**Diplomatic stance behavioral coupling (Epic D — round three,
+item 1; also closes R3-2 round-two item 2).** Closes the round-two
+"analytical accounting only" caveat for the combat and AI phases.
+Adds `crates/faultline-engine/src/diplomacy.rs`, two helpers, and
+two integration points:
+
+- `diplomacy::combat_blocked(state, scenario, a, b)` — true iff
+  both A→B and B→A current stances are `Diplomacy::Allied`. Mutual
+  alliance is required; one-sided declarations don't bind the other
+  party. Reads `fracture::current_stance` so post-fracture and
+  `EventEffect::DiplomacyChange` overrides are respected.
+- `diplomacy::ai_threat_multiplier(state, scenario, self_id, other)`
+  — scales `other`'s contribution to `self_id`'s perceived threat
+  and attack-priority: `Allied` → 0.0 (excluded), `Cooperative` →
+  0.3 (`COOPERATIVE_AI_FACTOR`, soft de-prioritization), else 1.0.
+  Self-perspective only: a faction that mistakenly views a hostile
+  party as Allied will fail to defend against them; that asymmetry
+  is the intended signal in scenarios modeling miscalibrated
+  diplomacy.
+- Combat hook: `tick::combat_phase` calls `combat_blocked` before
+  resolving each faction pair. Cooperative pairs still fight if
+  their forces collide — the relationship is "we cooperate but
+  aren't sworn allies", and accidental engagement is plausible.
+- AI hook: `ai::compute_enemy_presence` and the two
+  `evaluate_attack_actions` variants (ground-truth + fog) consult
+  `ai_threat_multiplier`. The fog-of-war path reads stance from
+  ground truth on the principle that a faction always knows its
+  own declared posture; when `FactionWorldView.diplomacy` is wired
+  up in a future epic, this can shift to consulting the world-view
+  directly.
+- The RNG draw in `evaluate_attack_actions` happens *before* the
+  diplomacy multiplier check so adding an `Allied` declaration to a
+  legacy scenario does not desync the RNG sequence for any
+  unaffected pair — preserves bit-identical replay across legacy
+  seeds.
+- Validation rejects three silent-no-op shapes: self-stance
+  declarations, unknown `target_faction`, and duplicate target
+  entries (which silently shadow under first-match resolution).
+- Determinism: every helper is a pure function of state and
+  scenario — no RNG, no allocation. Adding a `Cooperative` /
+  `Allied` declaration to a scenario *will* change combat /
+  AI output, but determinism for any fixed seed holds.
+- Backward-compat: scenarios without authored diplomacy default
+  every pair to `Neutral`, which preserves legacy combat semantics.
+  All bundled scenarios except `coalition_fracture_demo.toml`
+  retain their pre-round-three behavior.
+- Coverage: `crates/faultline-engine/tests/diplomacy_behavior.rs`
+  pins (a) Allied pair skips combat, (b) Neutral default still
+  fights, (c) Cooperative still fights but AI de-rates, (d)
+  one-sided alliance does not block, (e) `DiplomacyChange` event
+  flips behavior live, plus the three validation rejections.
 
 **Unread-parameter audit (R3-2 round one).** Three previously-silent
 fields now affect simulation outcomes; each was authored in dozens of

@@ -10,6 +10,7 @@
 pub mod ai;
 pub mod campaign;
 pub mod combat;
+pub mod diplomacy;
 pub mod engine;
 pub mod error;
 pub mod fracture;
@@ -70,6 +71,35 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     faction: fid.clone(),
                     region: unit.region.clone(),
                 });
+            }
+        }
+
+        // Diplomacy table (Epic D round-three item 1 — behavioral
+        // coupling). Each entry must name a real faction and never
+        // the source itself; duplicate target entries would silently
+        // shadow under `baseline_stance`'s first-match semantics.
+        // None of these are runtime errors — they just produce
+        // surprising behavior — so the audit fails loudly at load
+        // time rather than at tick N.
+        let mut seen_diplomacy_targets: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for entry in &faction.diplomacy {
+            if entry.target_faction == *fid {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} declares diplomacy toward itself; \
+                     a faction cannot have a diplomatic stance with itself."
+                )));
+            }
+            if !scenario.factions.contains_key(&entry.target_faction) {
+                return Err(ScenarioError::UnknownFaction(entry.target_faction.clone()));
+            }
+            if !seen_diplomacy_targets.insert(entry.target_faction.0.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} declares diplomacy toward `{}` more than once; \
+                     duplicate entries silently shadow under first-match resolution, \
+                     which is almost always an authoring mistake.",
+                    entry.target_faction
+                )));
             }
         }
         // Defender capacity sanity: a zero-depth queue is permanently

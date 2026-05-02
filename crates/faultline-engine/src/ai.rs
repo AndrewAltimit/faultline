@@ -99,9 +99,10 @@ pub fn evaluate_actions(
         return Vec::new();
     }
 
-    // Determine which factions are hostile (simplification: any
-    // faction that controls a region we want or vice versa).
-    let enemy_presence = compute_enemy_presence(faction_id, state);
+    // Determine which factions are hostile, weighted by diplomatic
+    // stance (Epic D round-three item 1). Allied factions contribute
+    // 0× to perceived threat; Cooperative neighbors contribute 0.3×.
+    let enemy_presence = compute_enemy_presence(faction_id, state, scenario);
 
     let weights = determine_weights(faction_id, state, scenario);
 
@@ -121,6 +122,7 @@ pub fn evaluate_actions(
         faction_id,
         faction_state,
         state,
+        scenario,
         map,
         &weights,
         rng,
@@ -190,17 +192,32 @@ fn determine_weights(
 }
 
 /// Compute which regions have enemy forces and their total strength.
+///
+/// Each contributing faction's strength is weighted by
+/// [`crate::diplomacy::ai_threat_multiplier`] from `faction_id`'s
+/// perspective: `Allied` factions are excluded entirely (0.0×),
+/// `Cooperative` neighbors are de-rated to
+/// [`crate::diplomacy::COOPERATIVE_AI_FACTOR`], everyone else
+/// contributes at full strength. This is the "AI de-prioritizes
+/// Cooperative neighbors" half of the Epic D round-three diplomacy
+/// coupling — the AI doesn't size up defenses against allies, and
+/// only modestly against partners.
 fn compute_enemy_presence(
     faction_id: &FactionId,
     state: &SimulationState,
+    scenario: &Scenario,
 ) -> BTreeMap<RegionId, f64> {
     let mut presence = BTreeMap::new();
     for (fid, fs) in &state.faction_states {
         if fid == faction_id || fs.eliminated {
             continue;
         }
+        let multiplier = crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, fid);
+        if multiplier == 0.0 {
+            continue;
+        }
         for force in fs.forces.values() {
-            *presence.entry(force.region.clone()).or_insert(0.0) += force.strength;
+            *presence.entry(force.region.clone()).or_insert(0.0) += force.strength * multiplier;
         }
     }
     presence
@@ -235,10 +252,20 @@ fn evaluate_defend_actions(
 
 /// Score attack actions toward adjacent regions with enemy forces
 /// or uncontrolled strategic regions.
+///
+/// The controller's diplomatic stance is consulted via
+/// [`crate::diplomacy::ai_threat_multiplier`]: `Allied` controllers
+/// are skipped entirely (the AI never targets sworn allies), and
+/// `Cooperative` controllers' attack scores are de-rated by
+/// [`crate::diplomacy::COOPERATIVE_AI_FACTOR`] — the AI may still
+/// queue an attack against a Cooperative neighbor, but it will
+/// almost always be outranked by a true-enemy alternative.
+#[allow(clippy::too_many_arguments)]
 fn evaluate_attack_actions(
     faction_id: &FactionId,
     faction_state: &RuntimeFactionState,
     state: &SimulationState,
+    scenario: &Scenario,
     map: &GameMap,
     weights: &AiWeights,
     rng: &mut impl Rng,
@@ -248,25 +275,40 @@ fn evaluate_attack_actions(
         let neighbors = adjacent_regions(&force.region, map);
         for neighbor in &neighbors {
             // Check if this region is controlled by an enemy.
-            let enemy_controlled = state
+            let controller = state
                 .region_control
                 .get(neighbor)
-                .and_then(|ctrl| ctrl.as_ref())
-                .is_some_and(|ctrl| ctrl != faction_id);
+                .and_then(|ctrl| ctrl.as_ref());
+            let enemy_controlled = controller.is_some_and(|ctrl| ctrl != faction_id);
 
             if !enemy_controlled {
                 continue;
             }
 
+            let priority_multiplier = controller
+                .map(|ctrl| {
+                    crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, ctrl)
+                })
+                .unwrap_or(1.0);
+            if priority_multiplier == 0.0 {
+                continue;
+            }
+
             let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
 
-            // Small random factor for variety.
+            // Small random factor for variety. Note: the RNG is
+            // consumed unconditionally per neighbor regardless of
+            // diplomacy multiplier so adding diplomatic state to a
+            // pre-existing scenario doesn't change the RNG sequence
+            // for un-affected pairs (preserves bit-identical replay
+            // across legacy seeds).
             let noise: f64 = rng.r#gen::<f64>() * 0.1;
 
-            let score = weights.objective_weight * strategic_value * 0.1
+            let score = (weights.objective_weight * strategic_value * 0.1
                 + weights.opportunity_weight * 0.3
                 + noise
-                - weights.risk_aversion * 0.2;
+                - weights.risk_aversion * 0.2)
+                * priority_multiplier;
 
             if score > 0.0 {
                 actions.push(ScoredAction {
@@ -495,10 +537,19 @@ pub fn evaluate_actions_fog(
         return Vec::new();
     }
 
-    // Build enemy presence from detected forces only.
+    // Build enemy presence from detected forces only, weighted by
+    // diplomatic stance (Epic D round-three item 1). A faction's
+    // declared diplomatic posture is "self-knowledge" — the AI
+    // applies its own stance multiplier even under fog of war.
     let mut enemy_presence = BTreeMap::new();
     for df in &world_view.detected_forces {
-        *enemy_presence.entry(df.region.clone()).or_insert(0.0) += df.estimated_strength;
+        let multiplier =
+            crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, &df.faction);
+        if multiplier == 0.0 {
+            continue;
+        }
+        *enemy_presence.entry(df.region.clone()).or_insert(0.0) +=
+            df.estimated_strength * multiplier;
     }
 
     let weights = determine_weights(faction_id, state, scenario);
@@ -517,6 +568,8 @@ pub fn evaluate_actions_fog(
     evaluate_attack_actions_fog(
         faction_id,
         faction_state,
+        state,
+        scenario,
         world_view,
         map,
         &weights,
@@ -540,9 +593,17 @@ pub fn evaluate_actions_fog(
 }
 
 /// Attack evaluation using fog-of-war region control.
+///
+/// The diplomacy multiplier is read from ground truth (a faction
+/// always knows its own declared stance). When `world_view.diplomacy`
+/// is wired up in a future epic, this can shift to consulting the
+/// world-view directly.
+#[allow(clippy::too_many_arguments)]
 fn evaluate_attack_actions_fog(
     faction_id: &FactionId,
     faction_state: &RuntimeFactionState,
+    state: &SimulationState,
+    scenario: &Scenario,
     world_view: &FactionWorldView,
     map: &GameMap,
     weights: &AiWeights,
@@ -552,23 +613,33 @@ fn evaluate_attack_actions_fog(
     for force in faction_state.forces.values() {
         let neighbors = adjacent_regions(&force.region, map);
         for neighbor in &neighbors {
-            let enemy_controlled = world_view
+            let controller = world_view
                 .known_regions
                 .get(neighbor)
-                .and_then(|ctrl| ctrl.as_ref())
-                .is_some_and(|ctrl| ctrl != faction_id);
+                .and_then(|ctrl| ctrl.as_ref());
+            let enemy_controlled = controller.is_some_and(|ctrl| ctrl != faction_id);
 
             if !enemy_controlled {
+                continue;
+            }
+
+            let priority_multiplier = controller
+                .map(|ctrl| {
+                    crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, ctrl)
+                })
+                .unwrap_or(1.0);
+            if priority_multiplier == 0.0 {
                 continue;
             }
 
             let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
             let noise: f64 = rng.r#gen::<f64>() * 0.1;
 
-            let score = weights.objective_weight * strategic_value * 0.1
+            let score = (weights.objective_weight * strategic_value * 0.1
                 + weights.opportunity_weight * 0.3
                 + noise
-                - weights.risk_aversion * 0.2;
+                - weights.risk_aversion * 0.2)
+                * priority_multiplier;
 
             if score > 0.0 {
                 actions.push(ScoredAction {
