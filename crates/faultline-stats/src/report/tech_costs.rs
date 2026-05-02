@@ -46,10 +46,14 @@ impl ReportSection for TechCosts {
         let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
 
         for row in summary.tech_cost_summaries.values() {
-            // `n_runs >= 1` for any row by construction in
-            // `compute_tech_cost_summaries` (the same `or_insert`
-            // that creates an `Acc` increments `n_runs`).
-            debug_assert!(row.n_runs > 0);
+            // `n_runs >= 1` for any row built by
+            // `compute_tech_cost_summaries`, but `MonteCarloSummary`
+            // is `Deserialize` so an externally-supplied row could
+            // arrive with `n_runs = 0` and produce `NaN%` rates. Skip
+            // it in that case rather than emitting garbage.
+            if row.n_runs == 0 {
+                continue;
+            }
             let denial_rate = f64::from(row.runs_with_denial) / f64::from(row.n_runs);
             let decom_rate = f64::from(row.runs_with_decommission) / f64::from(row.n_runs);
             let _ = writeln!(

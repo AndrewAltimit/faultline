@@ -796,7 +796,6 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
             // missing tech is a silent no-op, not a runtime error).
             // A separate audit could promote that to a load-time
             // error.
-            let mut kept: Vec<TechCardId> = Vec::with_capacity(fs.tech_deployed.len());
             let mut decommissioned_now: Vec<TechCardId> = Vec::new();
             for tech_id in &fs.tech_deployed {
                 let cost = scenario
@@ -808,14 +807,15 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
                 } else {
                     fs.resources -= cost;
                     fs.tech_maintenance_spend += cost;
-                    kept.push(tech_id.clone());
                 }
             }
             if !decommissioned_now.is_empty() {
+                let removed: std::collections::BTreeSet<TechCardId> =
+                    decommissioned_now.iter().cloned().collect();
+                fs.tech_deployed.retain(|id| !removed.contains(id));
                 for tech_id in decommissioned_now {
                     fs.tech_decommissioned.push((tick, tech_id));
                 }
-                fs.tech_deployed = kept;
             }
 
             // Recruitment: spawn new units if affordable.

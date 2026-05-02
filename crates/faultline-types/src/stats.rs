@@ -95,11 +95,15 @@ pub struct RunResult {
     /// (deployment + maintenance), which techs were denied at deploy
     /// time because the faction couldn't afford them, and which were
     /// decommissioned mid-run because maintenance outran resources.
-    /// Only populated for factions whose `tech_access` referenced at
-    /// least one card with a non-zero `deployment_cost` /
-    /// `cost_per_tick` or a `coverage_limit`. Legacy scenarios with
-    /// zero-cost tech rosters elide the entry entirely (the outer
-    /// `BTreeMap` skips when empty).
+    /// Only populated for factions whose `tech_access` produced any of
+    /// those four signals (non-zero deployment spend, non-zero
+    /// maintenance spend, at least one denial, or at least one
+    /// decommission). `coverage_limit` activity is *not* surfaced here
+    /// — coverage gating is a within-tick limiter on combat
+    /// contribution and the per-tick counter is `#[serde(skip)]`
+    /// transient state, so it never persists post-tick. Legacy
+    /// scenarios with zero-cost tech rosters elide the entry entirely
+    /// (the outer `BTreeMap` skips when empty).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tech_costs: BTreeMap<FactionId, TechCostReport>,
 }
@@ -526,7 +530,7 @@ pub struct SupplyPressureSummary {
 ///   often (and how many) deployed cards collapsed mid-run from
 ///   maintenance starvation. A non-zero rate signals the faction's
 ///   `resource_rate` can't sustain the active roster.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TechCostSummary {
     pub faction: FactionId,
     pub n_runs: u32,
