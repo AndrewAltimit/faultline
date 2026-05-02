@@ -26,6 +26,7 @@ use faultline_types::faction::{Diplomacy, Faction, FactionType, MilitaryBranch};
 use faultline_types::ids::{FactionId, KillChainId, NetworkId, PhaseId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::ConfidenceLevel;
+use faultline_types::strategy::Doctrine;
 use faultline_types::strategy_space::{Domain, StrategySpace};
 use faultline_types::victory::{NonKineticMetric, VictoryType};
 
@@ -222,7 +223,7 @@ fn build_factions(scenario: &Scenario) -> Vec<ExplainFaction> {
 
 fn build_faction(id: &FactionId, f: &Faction) -> ExplainFaction {
     let kind = faction_type_label(&f.faction_type);
-    let doctrine = format!("{:?}", f.doctrine);
+    let doctrine = doctrine_label(&f.doctrine).to_string();
     let leadership_rank_count = f.leadership.as_ref().map(|c| c.ranks.len()).unwrap_or(0);
     let alliance_fracture_rule_count = f
         .alliance_fracture
@@ -292,6 +293,18 @@ fn diplomacy_label(d: &Diplomacy) -> &'static str {
         Diplomacy::Neutral => "Neutral",
         Diplomacy::Cooperative => "Cooperative",
         Diplomacy::Allied => "Allied",
+    }
+}
+
+fn doctrine_label(d: &Doctrine) -> &'static str {
+    match d {
+        Doctrine::Conventional => "Conventional",
+        Doctrine::Guerrilla => "Guerrilla",
+        Doctrine::Defensive => "Defensive",
+        Doctrine::Disruption => "Disruption",
+        Doctrine::CounterInsurgency => "CounterInsurgency",
+        Doctrine::Blitzkrieg => "Blitzkrieg",
+        Doctrine::Adaptive => "Adaptive",
     }
 }
 
@@ -761,12 +774,18 @@ fn render_strategy_space(s: &mut String, ss: &ExplainStrategySpace) {
     }
     if !ss.objectives.is_empty() {
         s.push_str("**Embedded objectives:** ");
-        s.push_str(&ss.objectives.join(", "));
+        let escaped: Vec<String> = ss.objectives.iter().map(|o| escape_md_cell(o)).collect();
+        s.push_str(&escaped.join(", "));
         s.push_str("\n\n");
     }
     if !ss.attacker_profiles.is_empty() {
         s.push_str("**Attacker profiles for robustness:** ");
-        s.push_str(&ss.attacker_profiles.join(", "));
+        let escaped: Vec<String> = ss
+            .attacker_profiles
+            .iter()
+            .map(|p| escape_md_cell(p))
+            .collect();
+        s.push_str(&escaped.join(", "));
         s.push_str("\n\n");
     }
 }
