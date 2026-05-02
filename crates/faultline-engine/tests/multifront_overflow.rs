@@ -323,6 +323,31 @@ fn overflow_routes_excess_to_target_role() {
         r2.spillover_out, 0,
         "tier2 has no overflow_to, so spillover_out must be 0"
     );
+
+    // total_enqueued on the spilling role must NOT include the
+    // spillover_out portion — those items never entered tier1's
+    // queue. The doc on `spillover_out` pins this contract; pin it
+    // here too so a future regression that re-charges spillover to
+    // total_enqueued (the bug fixed in the PR feedback round) is
+    // caught by the suite. With Backlog policy and no drops the
+    // queue conservation is `total_enqueued == depth + total_serviced`,
+    // so `total_enqueued <= max_depth + total_serviced` is the
+    // upper-bound check.
+    assert!(
+        r1.total_enqueued <= u64::from(r1.max_depth) + r1.total_serviced,
+        "tier1 total_enqueued ({}) cannot exceed max_depth ({}) + total_serviced ({}) — that \
+         would imply spillover_out items were charged to total_enqueued",
+        r1.total_enqueued,
+        r1.max_depth,
+        r1.total_serviced,
+    );
+    assert!(
+        r1.total_enqueued < r1.spillover_out,
+        "with high noise relative to capacity tier1 should spill far more than it enqueues; \
+         got total_enqueued={} vs spillover_out={}",
+        r1.total_enqueued,
+        r1.spillover_out,
+    );
 }
 
 #[test]

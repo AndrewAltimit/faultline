@@ -258,12 +258,19 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
             let mut cursor = start_rid.clone();
             loop {
                 if !seen.insert(cursor.clone()) {
+                    // `cursor` is the role we just revisited — i.e.
+                    // a node *on* the cycle. For a path A→B→C→B the
+                    // walk starts at A but the repeated node is B,
+                    // so naming `cursor` gives the author the actual
+                    // member of the cycle to break rather than the
+                    // walk's entry point (which may not be on the
+                    // cycle at all).
                     return Err(ScenarioError::Custom(format!(
                         "defender role chain on faction `{fid}` cycles \
-                         starting at `{start_rid}`; an overflow loop would \
-                         either spin forever or silently drop spillover at \
-                         the recursion guard. Break the cycle in \
-                         scenario authoring."
+                         at `{cursor}` (walk started at `{start_rid}`); \
+                         an overflow loop would either spin forever or \
+                         silently drop spillover at the recursion guard. \
+                         Break the cycle in scenario authoring."
                     )));
                 }
                 let Some(cap) = faction.defender_capacities.get(&cursor) else {

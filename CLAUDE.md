@@ -585,14 +585,22 @@ declarative escalation chain.
   intended semantic.
 - Per-role queue accounting on
   `state::DefenderQueueState`: `spillover_in: u64` is the cumulative
-  count that arrived via cross-role escalation (a subset of
-  `total_enqueued` — incoming spillover increments both); `spillover_out`
-  is the cumulative count this role redirected to its overflow
-  target (not in `total_enqueued`; the items left this queue without
-  ever being enqueued here). Conservation invariant: for any
-  saturated role `A` whose `overflow_to = B`, `A.spillover_out`
-  exactly equals `B.spillover_in` (modulo the `MAX_OVERFLOW_CHAIN_DEPTH
-  = 32` recursion guard, which never trips on validated authoring).
+  count that arrived at this role via another role's overflow chain
+  — it tracks the conservation chain link from upstream regardless of
+  what this role then does with the items (so when this role itself
+  further spills, `spillover_in` may exceed `total_enqueued`).
+  `spillover_out` is the cumulative count this role redirected to its
+  overflow target (not in `total_enqueued`; the items left this queue
+  without ever being enqueued here). `total_enqueued` charges only
+  the items that actually entered this role's queue policy — items
+  that arrived but immediately spilled onward to another role are
+  *not* counted, so the throughput counter stays meaningful for
+  drop-rate analytics. Conservation invariant: for any saturated
+  role `A` whose `overflow_to = B`, `A.spillover_out` exactly equals
+  `B.spillover_in` (modulo the `MAX_OVERFLOW_CHAIN_DEPTH = 32`
+  recursion guard, which surfaces as `total_dropped` on the would-be-
+  target queue if it ever trips — defense in depth for hand-built
+  fixtures only, never trips on validated authoring).
 - `MAX_OVERFLOW_CHAIN_DEPTH = 32` is defense in depth against
   hand-built `SimulationState` fixtures that bypass the loader, and
   against any future schema mutation that might let a chain grow past

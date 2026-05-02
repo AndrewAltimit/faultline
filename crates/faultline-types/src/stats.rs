@@ -331,10 +331,16 @@ pub struct DefenderQueueReport {
     pub shadow_detections: u32,
     /// Items that arrived on this queue via cross-role escalation
     /// (Epic D round-three item 3 — multi-front resource contention).
-    /// Subset of `total_enqueued`; surfaces how much of the queue's
-    /// load came from another saturated queue's spillover rather
-    /// than direct phase noise. Always `0` for scenarios that do
-    /// not declare `overflow_to` anywhere on the faction.
+    /// Tracks the chain link from upstream: the count delivered here
+    /// from another saturated role's overflow, independent of how
+    /// much of it then further spills downstream. Pairs with the
+    /// upstream role's `spillover_out` for the conservation
+    /// invariant `A.spillover_out == B.spillover_in`. Always `0`
+    /// for scenarios that do not declare `overflow_to` anywhere on
+    /// the faction. When this role itself further spills,
+    /// `spillover_in` may exceed `total_enqueued` (the further-
+    /// spilled portion arrived but never entered this queue's
+    /// policy).
     #[serde(default)]
     pub spillover_in: u64,
     /// Items this queue redirected to its `overflow_to` target

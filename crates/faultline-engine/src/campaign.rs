@@ -860,7 +860,7 @@ const MAX_OVERFLOW_CHAIN_DEPTH: u32 = 32;
 /// Determinism: every step is a pure function of the scenario, the
 /// state, and `count`. No RNG; the Poisson draw happened once at the
 /// top of the phase-noise loop.
-pub(crate) fn enqueue_with_overflow(
+fn enqueue_with_overflow(
     state: &mut SimulationState,
     scenario: &Scenario,
     faction: &FactionId,
@@ -880,7 +880,21 @@ fn enqueue_with_overflow_inner(
     is_spillover: bool,
     chain_depth: u32,
 ) {
-    if count == 0 || chain_depth >= MAX_OVERFLOW_CHAIN_DEPTH {
+    if count == 0 {
+        return;
+    }
+    if chain_depth >= MAX_OVERFLOW_CHAIN_DEPTH {
+        // Defense in depth against hand-built `SimulationState`
+        // fixtures that bypass scenario validation (which already
+        // rejects authored cycles, so a real TOML can never reach
+        // this branch). The upstream caller has already incremented
+        // its `spillover_out` counter for these items, so silently
+        // returning would break the chain-conservation invariant the
+        // report relies on. Surface the loss as a drop on the
+        // would-be-target queue instead.
+        if let Some(q) = queue_mut(state, faction, role) {
+            q.total_dropped += u64::from(count);
+        }
         return;
     }
 
@@ -900,7 +914,11 @@ fn enqueue_with_overflow_inner(
         let Some(q) = queue_mut(state, faction, role) else {
             return;
         };
-        q.total_enqueued += u64::from(count);
+        // `spillover_in` tracks the chain link from upstream — it's
+        // the count that arrived here from another saturated role,
+        // independent of how much of it then further spills. Pairs
+        // with the upstream role's `spillover_out` for the
+        // conservation invariant `A.spillover_out == B.spillover_in`.
         if is_spillover {
             q.spillover_in += u64::from(count);
         }
@@ -922,6 +940,13 @@ fn enqueue_with_overflow_inner(
         } else {
             (count, 0)
         };
+
+        // `total_enqueued` charges only the direct portion: items
+        // that further spill to another role never enter this queue's
+        // policy and must not inflate this row's throughput counter
+        // (the docs on `DefenderQueueState.spillover_out` /
+        // `DefenderQueueReport.spillover_out` pin this contract).
+        q.total_enqueued += u64::from(direct);
 
         if direct > 0 {
             apply_policy_to_direct(q, direct, queue_depth_cap, policy);
@@ -1162,10 +1187,11 @@ mod capacity_tests {
     }
 
     /// Bump `total_enqueued` then defer to `apply_policy_to_direct` —
-    /// the public `enqueue_with_overflow` path always increments
-    /// `total_enqueued` for any arrival before applying the policy,
-    /// so the legacy single-queue policy tests below preserve that
-    /// invariant.
+    /// for a role without `overflow_to` the production path
+    /// (`enqueue_with_overflow_inner`) treats every arrival as
+    /// `direct` and charges it to `total_enqueued`, so the legacy
+    /// single-queue policy tests below preserve that invariant
+    /// exactly.
     fn legacy_enqueue(s: &mut DefenderQueueState, count: u32, policy: OverflowPolicy) {
         s.total_enqueued += u64::from(count);
         apply_policy_to_direct(s, count, s.capacity, policy);
