@@ -136,6 +136,7 @@ fn make_test_scenario() -> Scenario {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -154,6 +155,7 @@ fn make_test_scenario() -> Scenario {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -334,7 +336,7 @@ fn event_phase_fires_eligible_event() {
 fn movement_phase_moves_unit() {
     let scenario = make_test_scenario();
     let map = faultline_geo::load_map(&scenario.map).expect("map should load");
-    let engine = Engine::new(scenario).expect("engine should create");
+    let engine = Engine::new(scenario.clone()).expect("engine should create");
 
     // Queue a MoveUnit action for alpha_inf from nw to ne.
     let alpha = FactionId::from("alpha");
@@ -350,7 +352,7 @@ fn movement_phase_moves_unit() {
     // Get mutable access to state and run movement phase directly.
     // We use a single tick then check. Instead, build state manually.
     let mut state = engine.state().clone();
-    tick::movement_phase(&mut state, &map, &queued);
+    tick::movement_phase(&mut state, &scenario, &map, &queued);
 
     let alpha_state = state
         .faction_states
@@ -579,6 +581,7 @@ fn update_region_control_assigns_to_strongest() {
                 upkeep: 2.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
     scenario
@@ -599,6 +602,7 @@ fn update_region_control_assigns_to_strongest() {
                 upkeep: 1.0,
                 morale_modifier: 0.0,
                 capabilities: vec![],
+                move_progress: 0.0,
             },
         );
 

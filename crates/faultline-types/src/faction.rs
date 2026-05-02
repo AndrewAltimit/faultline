@@ -298,6 +298,19 @@ pub struct ForceUnit {
     pub upkeep: f64,
     pub morale_modifier: f64,
     pub capabilities: Vec<UnitCapability>,
+    /// Movement accumulator (R3-2 round-two). Runtime state, not
+    /// authored by users — `#[serde(default)]` keeps existing TOML
+    /// scenarios loading unchanged. Each tick a queued
+    /// `MoveUnit` action adds the unit's effective mobility (its own
+    /// `mobility` × source-region `terrain.movement_modifier` × any
+    /// active environment-window `movement_factor`) to this
+    /// accumulator and the move only fires once it reaches `1.0`,
+    /// at which point `1.0` is consumed. With the legacy default
+    /// (`mobility = 1.0`, terrain modifier `1.0`, no env windows),
+    /// the accumulator hits `1.0` on the first attempt and the unit
+    /// moves every tick — preserving pre-round-two behavior.
+    #[serde(default)]
+    pub move_progress: f64,
 }
 
 /// Categories of military/paramilitary units.

@@ -74,6 +74,7 @@ fn base_scenario() -> Scenario {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -91,6 +92,7 @@ fn base_scenario() -> Scenario {
             upkeep: 2.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
 
@@ -176,6 +178,13 @@ fn base_scenario() -> Scenario {
             },
             regions,
             infrastructure: BTreeMap::new(),
+            // Note: `movement_modifier` is uniform 1.0 across regions
+            // so the integration suite is insensitive to the R3-2
+            // round-two move-accumulator gate — these tests pin
+            // tech / combat / event behavior, not movement rate.
+            // `defense_modifier` and `visibility` keep their per-
+            // region variation since several tests in this file
+            // depend on those values.
             terrain: vec![
                 TerrainModifier {
                     region: r1,
@@ -187,7 +196,7 @@ fn base_scenario() -> Scenario {
                 TerrainModifier {
                     region: r2,
                     terrain_type: TerrainType::Forest,
-                    movement_modifier: 0.7,
+                    movement_modifier: 1.0,
                     defense_modifier: 1.3,
                     visibility: 0.5,
                 },
@@ -201,7 +210,7 @@ fn base_scenario() -> Scenario {
                 TerrainModifier {
                     region: r4,
                     terrain_type: TerrainType::Mountain,
-                    movement_modifier: 0.5,
+                    movement_modifier: 1.0,
                     defense_modifier: 1.5,
                     visibility: 0.6,
                 },
@@ -1582,6 +1591,7 @@ fn fog_of_war_recon_extends_visibility() {
                     range: 2.0,
                     detection: 0.8,
                 }],
+                move_progress: 0.0,
             },
         );
 

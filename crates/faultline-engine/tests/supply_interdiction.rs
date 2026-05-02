@@ -56,6 +56,7 @@ fn make_force(id: &str, region: &RegionId, strength: f64) -> ForceUnit {
         upkeep: 1.0,
         morale_modifier: 0.0,
         capabilities: vec![],
+        move_progress: 0.0,
     }
 }
 

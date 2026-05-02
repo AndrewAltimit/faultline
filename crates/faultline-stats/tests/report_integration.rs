@@ -48,6 +48,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
             upkeep: 1.0,
             morale_modifier: 0.0,
             capabilities: vec![],
+            move_progress: 0.0,
         },
     );
     Faction {
