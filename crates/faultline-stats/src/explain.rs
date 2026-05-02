@@ -319,7 +319,10 @@ fn build_kill_chains(scenario: &Scenario) -> Vec<ExplainKillChain> {
 fn build_kill_chain(id: &KillChainId, kc: &KillChain) -> ExplainKillChain {
     let phase_count = kc.phases.len();
     let (min_total, max_total) = kill_chain_path_bounds(kc);
-    let mut low_confidence_phases: Vec<String> = kc
+    // `kc.phases` is a `BTreeMap<PhaseId, _>` and `PhaseId`'s derived `Ord`
+    // delegates to its inner `String`, so the filtered Vec is already in
+    // sorted order — no explicit `.sort()` needed.
+    let low_confidence_phases: Vec<String> = kc
         .phases
         .iter()
         .filter_map(|(pid, p)| match p.parameter_confidence {
@@ -327,7 +330,6 @@ fn build_kill_chain(id: &KillChainId, kc: &KillChain) -> ExplainKillChain {
             _ => None,
         })
         .collect();
-    low_confidence_phases.sort();
     ExplainKillChain {
         id: id.0.clone(),
         name: kc.name.clone(),

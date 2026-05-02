@@ -142,8 +142,13 @@ fn every_bundled_scenario_explains_cleanly() {
             let pos = md
                 .find(anchor)
                 .unwrap_or_else(|| panic!("{name}: anchor {anchor} missing"));
+            // Strict `>` rather than `>=`: distinct anchor strings can
+            // never share a byte offset (the header `# <name>` always
+            // precedes the first `## Scale` so even iter 1 satisfies
+            // `pos > 0`), and the tighter bound documents the
+            // strict-ordering guarantee.
             assert!(
-                pos >= last,
+                pos > last,
                 "{name}: section {anchor} appears before a prior section"
             );
             last = pos;
