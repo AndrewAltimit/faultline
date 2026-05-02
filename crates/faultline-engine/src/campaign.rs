@@ -891,9 +891,20 @@ fn enqueue_with_overflow_inner(
         // its `spillover_out` counter for these items, so silently
         // returning would break the chain-conservation invariant the
         // report relies on. Surface the loss as a drop on the
-        // would-be-target queue instead.
+        // would-be-target queue instead. If the target queue itself
+        // is missing (a deeper malformation — validation rejects
+        // unknown roles too), log a warning so the broken invariant
+        // is visible rather than silent.
         if let Some(q) = queue_mut(state, faction, role) {
             q.total_dropped += u64::from(count);
+        } else {
+            tracing::warn!(
+                faction = %faction,
+                role = %role,
+                count,
+                "MAX_OVERFLOW_CHAIN_DEPTH guard fired but target queue not in state — \
+                 malformed fixture bypassed scenario validation; chain-conservation invariant broken"
+            );
         }
         return;
     }
@@ -908,7 +919,11 @@ fn enqueue_with_overflow_inner(
     let policy = cap.overflow;
     let queue_depth_cap = cap.queue_depth;
     let overflow_target = cap.overflow_to.clone();
-    let threshold = cap.overflow_threshold.unwrap_or(1.0).clamp(0.0, 1.0);
+    // Validation rejects out-of-range and non-finite thresholds at
+    // scenario load (see `validate_defender_capacities`), so the
+    // engine trusts the value here and the previous `.clamp(0.0, 1.0)`
+    // was redundant defensive code on the hot path.
+    let threshold = cap.overflow_threshold.unwrap_or(1.0);
 
     let spillover = {
         let Some(q) = queue_mut(state, faction, role) else {
