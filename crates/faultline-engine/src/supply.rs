@@ -149,10 +149,11 @@ pub fn supply_pressure_for_faction(
         if !is_active_supply_network(net) {
             continue;
         }
-        // owner is Some by construction — checked above.
-        let owner = match net.owner.as_ref() {
-            Some(o) => o,
-            None => continue,
+        // `is_active_supply_network` already required `owner.is_some()`,
+        // so `if let` here is a self-documenting infallible bind rather
+        // than runtime branching.
+        let Some(owner) = net.owner.as_ref() else {
+            continue;
         };
         if owner != faction {
             continue;

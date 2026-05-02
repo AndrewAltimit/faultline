@@ -97,9 +97,11 @@ pub struct SupplyPressureReport {
     pub faction: FactionId,
     /// Number of attrition ticks where supply pressure was sampled —
     /// equal to the number of attrition ticks the faction was alive
-    /// for and owned a supply network. Always `>= 1` because this
-    /// report is only emitted for factions that owned a supply
-    /// network at run end.
+    /// for and owned a non-degenerate supply network. Always `>= 1`
+    /// because the engine only emits this report when at least one
+    /// pressure sample was recorded; factions whose owned supply
+    /// networks all have zero baseline capacity are skipped, as are
+    /// factions eliminated before the first attrition tick.
     pub samples: u32,
     /// Mean per-tick pressure across `samples` (in `[0, 1]`).
     pub mean_pressure: f64,

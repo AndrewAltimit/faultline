@@ -43,11 +43,11 @@ impl ReportSection for SupplyPressure {
         let _ = writeln!(out, "|---|---|---|---|---|---|---|");
 
         for row in summary.supply_pressure_summaries.values() {
-            let stress_rate = if row.n_runs > 0 {
-                f64::from(row.runs_with_any_pressure) / f64::from(row.n_runs)
-            } else {
-                0.0
-            };
+            // `n_runs >= 1` for any entry by construction in
+            // `compute_supply_pressure_summaries` (the same `or_insert`
+            // that creates an `Acc` increments `n_runs`).
+            debug_assert!(row.n_runs > 0);
+            let stress_rate = f64::from(row.runs_with_any_pressure) / f64::from(row.n_runs);
             let _ = writeln!(
                 out,
                 "| `{}` | {} | {:.2} | {:.2} | {:.2} | {:.1} | {:.0}% ({}/{}) |",
