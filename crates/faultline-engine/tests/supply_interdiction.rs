@@ -364,8 +364,8 @@ fn full_severance_zeroes_income_for_owner() {
     let scenario_a = empty_scenario(17, 4);
     let mut scenario_b = scenario_a.clone();
 
-    // Both arms: rate = 200 per tick, upkeep = 1.0 from one force.
-    // Arm A: no networks → income = 200 * 4 = 800 added on top of 10,000.
+    // Both arms: rate = 100 per tick, upkeep = 1.0 from one force.
+    // Arm A: no networks → income = 100 * 4 = 400 added on top of 10,000.
     let mut engine_a = Engine::new(scenario_a.clone()).expect("validate");
     let result_a = engine_a.run().expect("run");
     let final_resources_a = result_a

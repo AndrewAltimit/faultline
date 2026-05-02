@@ -16,6 +16,7 @@
 
 use std::fmt::Write;
 
+use faultline_engine::supply::PRESSURE_REPORTING_THRESHOLD;
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::MonteCarloSummary;
 
@@ -65,7 +66,7 @@ impl ReportSection for SupplyPressure {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "Reading the table: `Mean pressure` reports the typical operating supply level — a value near `1.0` means most ticks ran intact. `Worst min` is the single deepest dip observed across the batch — useful for sizing how bad a tail-event interdiction can get. `Runs under stress` is the fraction of runs where pressure ever fell below the engine's reporting threshold (currently 0.9), separating *severity* (`Worst min`) from *frequency* (this column)."
+            "Reading the table: `Mean pressure` reports the typical operating supply level — a value near `1.0` means most ticks ran intact. `Worst min` is the single deepest dip observed across the batch — useful for sizing how bad a tail-event interdiction can get. `Runs under stress` is the fraction of runs where pressure ever fell below the engine's reporting threshold (currently {PRESSURE_REPORTING_THRESHOLD}), separating *severity* (`Worst min`) from *frequency* (this column)."
         );
         let _ = writeln!(out);
     }
