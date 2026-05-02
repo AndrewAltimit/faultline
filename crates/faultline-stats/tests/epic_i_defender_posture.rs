@@ -186,6 +186,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
         tech_cost_summaries: ::std::collections::BTreeMap::new(),
+        calibration: None,
     };
     summary.win_rates.insert(FactionId::from("blue"), 0.5);
 

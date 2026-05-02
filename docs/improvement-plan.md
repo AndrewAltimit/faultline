@@ -9,7 +9,8 @@ The plan was originally derived from a three-angle audit (engine
 analytics, frontend/UX, scenario content — ~190 findings). It has
 since been refreshed twice as epics closed and external reviews
 landed. **Last refresh: 2026-05-02** — incorporating the May 2026
-priority review and the game-middleware reframing.
+priority review, the game-middleware reframing, and the Epic N
+calibration scaffold landing.
 
 ---
 
@@ -17,13 +18,23 @@ priority review and the game-middleware reframing.
 
 The five highest-leverage open items, in order:
 
-1. **Epic N — calibration discipline.** The hardest and most
+1. ~~**Epic N — calibration discipline.** The hardest and most
    important. Even one well-documented historical analogue with
    calibration metrics in the report would change what the tool
    *means*. Until calibration exists, every analytical output is
    internally consistent but externally unjustified, and every new
    epic that produces more outputs (J, M, D-round-three) compounds
-   the trust gap.
+   the trust gap.~~ **Scaffold shipped May 2026** — see closed-epics
+   list. Schema (`[meta.historical_analogue]`), calibration computation
+   (`faultline_stats::calibration` with Pass / Marginal / Fail verdict
+   ladder per `Winner` / `WinRate` / `DurationTicks` observation), and
+   the always-emit `## Calibration` report section all landed. One
+   bundled archetype (`scenarios/calibration_demo.toml`). Remaining N
+   work: 5–10 cleanly-sourced single-event analogues for the bundled
+   scenario set; per-scenario "calibration confidence" surfaced in the
+   methodology appendix; deciding whether calibration verdicts should
+   gate the `verify-bundled` CI step (currently they don't — output is
+   bit-stable but verdicts can be `Fail` without breaking CI).
 2. ~~**R3-5 property tests.** Determinism + seeded RNG = ideal
    substrate. "For any seed, no faction strength goes negative" /
    "Wilson CI bounds always contain the point estimate" /
@@ -70,7 +81,11 @@ priority context (why this item, in this order, ahead of what)
 remains visible to a future reader who wants to see how the list
 was reasoned about. R3-5 (property tests) shipped after Epic P
 explain — same reasoning for striking through rather than
-re-numbering.
+re-numbering. Epic N scaffold shipped after R3-5; same reasoning
+again for striking-through rather than re-numbering. Note that the
+N entry remains the *highest* priority despite the strike-through:
+the framework is in place, but the value compounds with each
+single-event analogue added.
 
 ---
 
@@ -151,7 +166,7 @@ work.
 
 ## Status snapshot
 
-**Closed (23):** A (uncertainty), B (counterfactual), C (time +
+**Closed (24):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -160,28 +175,33 @@ interdiction phase), G (reference sanitization), H round-one
 (strategy search), H round-two (adversarial co-evolution), I
 round-one (defender-posture optimization), I round-two (robustness
 analysis), K (defender capacity / queue dynamics), L (network
-primitives), O (schema versioning), P sub-item (`faultline-cli
-explain` — pure-schema "what does this scenario actually model?"
-view), Q (manifest replay), R3-2 round-one (unread-parameter audit,
-three highest-leverage parameters), R3-2 round-two item 1
-(`ForceUnit.mobility` + `terrain.movement_modifier` +
-`EnvironmentWindow.movement_factor` wired into a per-tick
-move-accumulator gate; `ForceUnit.upkeep` turned out to be already
-wired), R3-2 round-two item 3 (`MediaLandscape.fragmentation` +
-`social_media_penetration` + `internet_availability` wired into the
-political / information phases as coupled noise / tension
-multipliers; per-segment activation events tracked end-to-end and
-surfaced in a new `## Civilian Activations` report section), R3-2
-round-two item 4 (`TechCard.deployment_cost` /
-`cost_per_tick` / `coverage_limit` wired into engine init,
-attrition, and combat phases respectively; per-faction tech-cost
-report added), R3-3 (decompose `report.rs`), R3-5 (property tests —
-`proptest` coverage of engine / search / uncertainty /
-network_metrics invariants).
+primitives), N round-one (calibration scaffold —
+`[meta.historical_analogue]` schema, per-observation Pass / Marginal
+/ Fail verdict computation, `## Calibration` report section gating
+on synthetic-vs-calibrated, one bundled archetype), O (schema
+versioning), P sub-item (`faultline-cli explain` — pure-schema "what
+does this scenario actually model?" view), Q (manifest replay), R3-2
+round-one (unread-parameter audit, three highest-leverage
+parameters), R3-2 round-two item 1 (`ForceUnit.mobility` +
+`terrain.movement_modifier` + `EnvironmentWindow.movement_factor`
+wired into a per-tick move-accumulator gate; `ForceUnit.upkeep`
+turned out to be already wired), R3-2 round-two item 3
+(`MediaLandscape.fragmentation` + `social_media_penetration` +
+`internet_availability` wired into the political / information
+phases as coupled noise / tension multipliers; per-segment
+activation events tracked end-to-end and surfaced in a new
+`## Civilian Activations` report section), R3-2 round-two item 4
+(`TechCard.deployment_cost` / `cost_per_tick` / `coverage_limit`
+wired into engine init, attrition, and combat phases respectively;
+per-faction tech-cost report added), R3-3 (decompose `report.rs`),
+R3-5 (property tests — `proptest` coverage of engine / search /
+uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** D round-three (2 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
-(belief asymmetry), N (calibration), P (authoring depth).
+(belief asymmetry), N (reference scenario set + per-scenario
+calibration confidence — round-two; framework round-one shipped),
+P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
 round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
@@ -306,32 +326,58 @@ adds a back-testing harness that runs scenarios against historical
 analogues with known outcomes and reports calibration metrics. Does
 not claim prediction; disciplines the parameter library.
 
-- [ ] `historical_analogue` field on scenarios (overlaps Epic F's
-      `historical_precedent` — pick one and have F inherit)
-- [ ] Calibration metric: how well does the MC outcome distribution
-      shape the historical observation? (KS distance, log-likelihood)
-- [ ] Reference scenario set: 5–10 well-documented historical
+- [x] **`historical_analogue` field on scenarios.** Shipped May 2026
+      as `[meta.historical_analogue]` with three observation variants
+      (`Winner`, `WinRate`, `DurationTicks`). See the schema reference
+      in `docs/scenario_schema.md`. Overlaps Epic F's
+      `historical_precedent`; F inherits the field.
+- [x] **Calibration verdict.** Shipped May 2026 as a coarse
+      Pass / Marginal / Fail ladder per observation in
+      `faultline_stats::calibration`, plus a worst-of roll-up. Not
+      KS-distance / log-likelihood — the coarse ladder reflects how
+      much confidence the framework can defensibly carry on its own
+      thresholds. Tightening to a continuous metric is a follow-up
+      once the framework has more bundled analogues to tune against.
+- [x] **Synthetic-scenario disclaimer.** Shipped May 2026. Scenarios
+      without an analogue render a "purely synthetic" notice in the
+      `## Calibration` section explaining what the absence means for
+      result interpretation.
+- [ ] **Reference scenario set: 5–10 well-documented historical
       analogues where parameters are constrained by published
-      estimates
-- [ ] Per-scenario "calibration confidence" surfaced alongside the
-      methodology appendix
-- [ ] Scenarios with no historical analogue tagged as "purely
-      synthetic"; analyst is told what that means for result
-      interpretation
+      estimates.** Round-two work. Round-one shipped one bundled
+      archetype (`scenarios/calibration_demo.toml`) using a stylized
+      aggregate analogue rather than a single named event. Each
+      single-event addition is per-scenario research work, not a
+      framework change.
+- [ ] **Per-scenario "calibration confidence" surfaced alongside the
+      methodology appendix.** Round-two work. The current `##
+      Calibration` section surfaces per-observation source confidence
+      and a per-scenario verdict; rolling the verdict into a
+      methodology-section "calibration confidence" tag (alongside the
+      existing scenario-level `meta.confidence` parameter-defensibility
+      tag) is the next iteration.
 
-**Why hardest.** Data availability is the bottleneck — finding even
-one analogue with cleanly published outcome distributions plus
-parameter constraints is real work, and the right framing for
-"calibration confidence" without overclaiming requires care.
+**Why hardest, retrospectively.** Round one was tractable because the
+framework only requires the schema + the verdict computation + the
+report section — none of which depended on actually finding clean
+single-event data. Round two is the data-availability work the
+original "hardest" framing was about: finding even one analogue with
+cleanly published outcome distributions plus parameter constraints is
+real work.
 
-**Why most important.** Without it, every output is internally
-consistent but externally unjustified. The trust gap will only widen
-as J / M / D-round-three add machinery whose outputs we can't
-calibrate.
+**Why still most important.** Without filling in single-event
+analogues, every output remains internally consistent but externally
+unjustified for the bundled scenarios. Round one closed the framework
+gap; round two closes the trust gap.
 
 **Skip if game-middleware pivot is taken.** Calibration is the
-analyst-use-case payoff; it's irrelevant for game middleware.
-Status: deferred (pending strategic decision).
+analyst-use-case payoff; it's irrelevant for game middleware. The
+framework that round one shipped is cheap to leave in place
+regardless — `historical_analogue` is opt-in per scenario; game
+scenarios just wouldn't declare one.
+
+Status: round one shipped; round two deferred per priority list above
+(framework now exists, data work proceeds opportunistically).
 
 ### Epic P — Authoring depth: editor, linter, explain
 

@@ -1,0 +1,309 @@
+# Calibration demo (Epic N scaffold)
+#
+# An asymmetric short-duration inter-state conflict. Demonstrates the
+# `[meta.historical_analogue]` mechanism end-to-end: the scenario
+# declares observations from a documented precedent, and the report's
+# `## Calibration` section reports a per-observation verdict against the
+# Monte Carlo distribution.
+#
+# Scope caveat — this scenario uses a *stylized aggregate* analogue
+# (statistical patterns from a reference set of similar short conflicts)
+# rather than a single named historical event. That keeps the wiring
+# illustrative without forcing the analyst to chase down whether the
+# specific casualty / duration figures for a single named conflict are
+# defensible. Filling in scenarios with cleanly-sourced single-event
+# analogues is an Epic N follow-up.
+#
+# Expected verdicts on this scenario as currently configured:
+#
+# - `winner = stronger_state`: **Fail** — the basic engine attrition
+#   configuration on this map does not produce a decisive victor in the
+#   30-day horizon, so every MC run terminates as stalemate.
+# - `win_rate(stronger_state) ∈ [70%, 95%]`: **Fail** — same reason.
+# - `duration_ticks ∈ [3, 14]`: **Fail** — the engine reaches max_ticks
+#   on every run and the duration distribution is concentrated at 30.
+# - `duration_ticks ∈ [1, 100]`: **Pass** — wide interval covering the
+#   max_ticks cap; demonstrates the verdict ladder's positive case.
+#
+# Three Fail verdicts + one Pass is *intentional* and illustrates
+# exactly the diagnostic value Epic N exists to provide: the analyst
+# sees that the scenario, as configured, does not reproduce the
+# analogue. The next iteration is for a follow-up — either tune the
+# scenario parameters until the verdict turns Pass, or revise the
+# analogue to match what the engine actually models. Either response
+# is legitimate; the calibration verdict makes the gap visible instead
+# of leaving it implicit.
+#
+# Sources are intentionally generic OSINT references — the grep-guard
+# CI step blocks coupling to any specific external publication series.
+
+[meta]
+schema_version = 1
+name = "Calibration Demo — Asymmetric Short Conflict"
+description = """
+A scaffold scenario demonstrating Epic N's calibration mechanism. Two
+factions: a stronger state (3x force ratio) and a weaker state. Conflict
+should resolve quickly in favor of the stronger side; the Monte Carlo
+output is calibrated against a stylized aggregate analogue of short
+asymmetric inter-state conflicts.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["demo", "calibration", "asymmetric", "inter-state"]
+confidence = "Low"
+
+[meta.historical_analogue]
+name = "Stylized aggregate — short asymmetric inter-state conflicts"
+description = """
+A stylized aggregate analogue, not a single named event. Calibrates
+against the statistical pattern observed across published references on
+short conventional inter-state conflicts where one side holds a 3-5x
+conventional force advantage. The scenario should reproduce both the
+typical outcome (stronger side prevails) and the typical duration
+(short — days, not months).
+"""
+period = "Late-20th and early-21st-century reference set"
+sources = [
+    "IISS Military Balance (annual)",
+    "RAND aggregate analyses on inter-state conflict outcomes",
+    "Congressional Research Service (CRS) reports on regional conflicts",
+]
+confidence = "Low"
+
+[[meta.historical_analogue.observations]]
+notes = "stronger side has decisive advantage in asymmetric short wars"
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "stronger_state"
+
+[[meta.historical_analogue.observations]]
+notes = "stronger-side win rate across reference set ~ 70-90%"
+confidence = "Low"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "stronger_state"
+low = 0.70
+high = 0.95
+
+[[meta.historical_analogue.observations]]
+notes = "active operations typically resolve in days, not weeks"
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 3
+high = 14
+
+# A wide-interval observation that the engine's stalemate-at-cap
+# behavior will satisfy. Demonstrates the `Pass` end of the verdict
+# ladder alongside the three `Fail` observations above. Authors with
+# fully-tuned scenarios would not need this trivial check; it's
+# included here to keep the demo's calibration table from looking like
+# the verdict ladder is broken.
+[[meta.historical_analogue.observations]]
+notes = "loose duration band, expected Pass"
+confidence = "Low"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 1
+high = 100
+
+# -- Map (4-region grid) ----------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.alpha_capital]
+id = "alpha_capital"
+name = "Stronger State — Capital"
+population = 2000000
+urbanization = 0.7
+initial_control = "stronger_state"
+strategic_value = 1.0
+borders = ["border_north", "border_south"]
+
+[map.regions.border_north]
+id = "border_north"
+name = "Northern Border"
+population = 300000
+urbanization = 0.3
+initial_control = "weaker_state"
+strategic_value = 0.4
+borders = ["alpha_capital", "weaker_capital"]
+
+[map.regions.border_south]
+id = "border_south"
+name = "Southern Border"
+population = 250000
+urbanization = 0.3
+initial_control = "weaker_state"
+strategic_value = 0.3
+borders = ["alpha_capital", "weaker_capital"]
+
+[map.regions.weaker_capital]
+id = "weaker_capital"
+name = "Weaker State — Capital"
+population = 800000
+urbanization = 0.5
+initial_control = "weaker_state"
+strategic_value = 0.8
+borders = ["border_north", "border_south"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "alpha_capital"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.2
+visibility = 0.8
+
+[[map.terrain]]
+region = "border_north"
+terrain_type = "Mountain"
+movement_modifier = 0.7
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "border_south"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 1.0
+
+[[map.terrain]]
+region = "weaker_capital"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.1
+visibility = 0.8
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.stronger_state]
+id = "stronger_state"
+name = "Stronger State"
+description = "Better-equipped conventional military"
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 50.0
+initial_resources = 500.0
+resource_rate = 30.0
+command_resilience = 0.7
+intelligence = 0.7
+diplomacy = []
+doctrine = "Blitzkrieg"
+
+[factions.stronger_state.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.stronger_state.forces.stronger_armor]
+id = "stronger_armor"
+name = "Stronger State Armored Brigade"
+unit_type = "Armor"
+region = "border_north"
+strength = 300.0
+mobility = 1.2
+upkeep = 5.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.weaker_state]
+id = "weaker_state"
+name = "Weaker State"
+description = "Smaller conventional defense force"
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 15.0
+initial_resources = 150.0
+resource_rate = 8.0
+command_resilience = 0.4
+intelligence = 0.4
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.weaker_state.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.weaker_state.forces.weaker_infantry]
+id = "weaker_infantry"
+name = "Weaker State Infantry Brigade"
+unit_type = "Infantry"
+region = "weaker_capital"
+strength = 100.0
+mobility = 0.9
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) ------------------------------------------------------
+
+[technology]
+
+# -- Political Climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.7
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.3
+state_control = 0.4
+social_media_penetration = 0.6
+internet_availability = 0.85
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Simulation Config ------------------------------------------------------
+#
+# Short horizon — the analogue says these resolve quickly. A 30-tick
+# (30-day) cap is a comfortable headroom; runs that hit the cap without
+# resolution count as stalemate and pull the calibration verdict toward
+# Marginal/Fail, which is the desired diagnostic if the model is
+# under-resolving.
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 100
+fog_of_war = false
+snapshot_interval = 5
+seed = 42
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.stronger_dominance]
+id = "stronger_dominance"
+name = "Stronger State Dominance"
+faction = "stronger_state"
+
+[victory_conditions.stronger_dominance.condition]
+type = "MilitaryDominance"
+enemy_strength_below = 5.0
+
+[victory_conditions.weaker_survival]
+id = "weaker_survival"
+name = "Weaker State Strategic Control"
+faction = "weaker_state"
+
+[victory_conditions.weaker_survival.condition]
+type = "StrategicControl"
+threshold = 0.75

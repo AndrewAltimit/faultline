@@ -759,6 +759,7 @@ mod tests {
                 tags: vec![],
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+                historical_analogue: None,
             },
             map: MapConfig {
                 source: MapSource::Grid {
@@ -1041,6 +1042,7 @@ mod tests {
                 supply_pressure_summaries: ::std::collections::BTreeMap::new(),
                 civilian_activation_summaries: ::std::collections::BTreeMap::new(),
                 tech_cost_summaries: ::std::collections::BTreeMap::new(),
+                calibration: None,
             },
         };
         // Trial 0 dominates trial 1 (better win, equal detection).
@@ -1093,6 +1095,7 @@ mod tests {
                 supply_pressure_summaries: ::std::collections::BTreeMap::new(),
                 civilian_activation_summaries: ::std::collections::BTreeMap::new(),
                 tech_cost_summaries: ::std::collections::BTreeMap::new(),
+                calibration: None,
             },
         };
         let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
@@ -1142,6 +1145,7 @@ mod tests {
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
             tech_cost_summaries: ::std::collections::BTreeMap::new(),
+            calibration: None,
         }
     }
 
@@ -1479,6 +1483,7 @@ mod tests {
             supply_pressure_summaries: ::std::collections::BTreeMap::new(),
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
             tech_cost_summaries: ::std::collections::BTreeMap::new(),
+            calibration: None,
         };
 
         // Cost-style objectives sum across chains.

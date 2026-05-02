@@ -1284,6 +1284,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         supply_pressure_summaries: ::std::collections::BTreeMap::new(),
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
         tech_cost_summaries: ::std::collections::BTreeMap::new(),
+        calibration: None,
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

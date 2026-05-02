@@ -160,6 +160,7 @@ fn minimal_search_scenario(low: f64, high: f64) -> Scenario {
             tags: vec![],
             confidence: None,
             schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+            historical_analogue: None,
         },
         map: MapConfig {
             source: MapSource::Grid {

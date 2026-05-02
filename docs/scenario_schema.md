@@ -83,6 +83,81 @@ The policy is encoded in `migration.rs` and enforced by the `verify-migration` C
 
 **`--migrate` formatting caveat:** the CLI's `--migrate` flag emits the canonical TOML form of the parsed scenario — keys are BTreeMap-sorted, multi-line strings are collapsed, and comments are stripped. Authorial formatting is not preserved. For scenarios where formatting matters, run `--migrate` to a temp file, diff it against the source, and apply the diff by hand rather than using `--migrate --in-place`.
 
+### `[meta.historical_analogue]` (Epic N — calibration scaffold)
+
+Optional sub-table that pins the scenario to a real-world precedent and lets the report's `## Calibration` section back-test the Monte Carlo distribution against documented observations. A scenario without this block is reported as "purely synthetic" — the analyst is told what that means for result interpretation rather than left to assume calibration.
+
+The author's commitment when declaring an analogue: the engine output, run with these parameters, *should* match what actually happened in the named precedent within the declared uncertainty. The calibration pipeline computes per-observation verdicts (`Pass` / `Marginal` / `Fail`) and a roll-up. A `Fail` verdict on a scenario the author claims models X is exactly the diagnostic Epic N exists to provide — it surfaces the gap between claim and behavior instead of leaving it implicit.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Short label, used as report section header |
+| `description` | string | no | Prose paragraph: what the analogue captures, what it does not |
+| `period` | string | no | Free-form date or date-range label (`"2008-08-07 to 2008-08-12"`, `"Q4 2014"`, etc.) |
+| `sources` | `[string]` | yes | Open-source citations supporting the observations. Validation rejects an empty list — an analogue without sources is conceptually a back-test against the author's recollection. Sources must be generic OSINT references (RAND, IISS, CRS, academic literature, congressional testimony); the `tools/ci/grep-guard.sh` step blocks specific external threat-assessment publication series |
+| `confidence` | enum? | no | `high` / `medium` / `low` — coarse author confidence in the analogue's *fit* (orthogonal to per-observation source confidence below) |
+| `observations` | `[Observation]` | yes | One or more `[[meta.historical_analogue.observations]]` entries. Validation rejects an empty list |
+
+Each `[[meta.historical_analogue.observations]]` entry has:
+
+| Field | Type | Description |
+|---|---|---|
+| `metric` | tagged enum | What was observed — see variants below |
+| `confidence` | enum? | Author's confidence in the historical record itself for this observation. Surfaced alongside the verdict so a `Pass` against a `Low`-confidence observation reads differently than a `Pass` against a `High`-confidence one |
+| `notes` | string? | Free-form rationale for how the observation was derived from the sources |
+
+**`metric` variants** (tagged by `kind`):
+
+```toml
+# Winner — historical victor was a specific faction
+[[meta.historical_analogue.observations]]
+notes = "decisive conventional victory"
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "stronger_state"
+
+# WinRate — across a reference set, the named faction won at this rate
+[[meta.historical_analogue.observations]]
+notes = "stronger-side wins ~ 80% in similar short asymmetric conflicts"
+confidence = "Low"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "stronger_state"
+low = 0.70
+high = 0.95
+
+# DurationTicks — conflict resolved within this tick interval
+[[meta.historical_analogue.observations]]
+notes = "active phase typically days, not weeks"
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 3
+high = 14
+```
+
+**Verdict ladder** (computed in `faultline_stats::calibration`):
+
+| Metric | Pass | Marginal | Fail |
+|---|---|---|---|
+| `Winner` | observed faction is MC modal *and* MC mass ≥ 50% | observed faction is MC modal *or* mass ≥ 25% | otherwise |
+| `WinRate` | MC point estimate falls in `[low, high]` | Wilson 95% CI overlaps `[low, high]` | otherwise |
+| `DurationTicks` | ≥ 50% of MC runs fall in `[low, high]` | ≥ 25% | otherwise |
+
+Coverage is the fraction of MC `final_tick` values inside the historical interval. The `Winner` ladder treats "right faction, low mass" and "wrong faction, near-marginal mass" symmetrically as `Marginal` because both are "calibrated to the same precedent but with caveats." Overall calibration is the *worst* per-observation verdict — calibration claims compose as ANDs, not ORs.
+
+**Validation rejects** at scenario load (load-loud, not silent-no-op):
+
+- Empty `sources` or empty `observations`.
+- `Winner.faction` / `WinRate.faction` referencing an unknown faction. (A typo would silently produce 0% MC mass and a near-guaranteed `Fail`, which reads as a model failure when the real issue is a typo.)
+- `WinRate.low > WinRate.high`, `DurationTicks.low > DurationTicks.high`.
+- `WinRate` bounds outside `[0.0, 1.0]` or non-finite (NaN, ±∞).
+
+**Determinism contract:** calibration is a pure function of `(scenario, runs, win_rates)` — no RNG, no `HashMap`, no engine re-runs. Adding an analogue *will* change `MonteCarloSummary.calibration` and therefore the manifest content hash; that's intentional, since the analogue declaration is part of the scenario's analytical claim. Scenarios without an analogue see no change in summary shape (the field is `#[serde(skip_serializing_if = ...)]` on `None`).
+
+Worked archetype: `scenarios/calibration_demo.toml`.
+
 ---
 
 ## `[map]`

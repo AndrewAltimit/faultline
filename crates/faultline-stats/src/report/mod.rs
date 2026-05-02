@@ -23,6 +23,7 @@ use faultline_types::stats::MonteCarloSummary;
 mod util;
 
 mod alliance_dynamics;
+mod calibration;
 mod civilian_activations;
 mod continuous_metrics;
 mod correlation;
@@ -85,7 +86,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 22] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 23] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -108,6 +109,13 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 22] {
         &leadership_disruption::LeadershipDisruption,
         &alliance_dynamics::AllianceDynamics,
         &civilian_activations::CivilianActivations,
+        // Calibration sits just before Methodology so the verdict and
+        // the methodology appendix are next to each other in the
+        // rendered report — the reader sees the calibration claim,
+        // then the explanation of how every CI in the report was
+        // computed. Always emits (synthetic disclaimer when no
+        // analogue is declared); see the section's gating note.
+        &calibration::Calibration,
         &methodology::Methodology,
     ]
 }
@@ -234,7 +242,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 22);
+        assert_eq!(monte_carlo_sections().len(), 23);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -311,11 +319,18 @@ mod tests {
     /// 'should I call you?'" contract — moving the gate into the
     /// composer for any section would silently break it.
     ///
-    /// Contract: only `Header` and `Methodology` may emit anything
-    /// for empty inputs. Every other section must produce an empty
-    /// string, because emitting even a bare heading would change
-    /// the manifest content hash for legacy scenarios that have no
-    /// data for that section.
+    /// Contract: only `Header`, `Calibration`, and `Methodology` may
+    /// emit anything for empty inputs. Every other section must
+    /// produce an empty string, because emitting even a bare heading
+    /// would change the manifest content hash for legacy scenarios
+    /// that have no data for that section.
+    ///
+    /// `Calibration` is unconditional because absence-of-statement
+    /// about calibration is a worse signal than a synthetic-scenario
+    /// disclaimer. See the section's gating note in
+    /// `report/calibration.rs`. Adding `Calibration` to this list is
+    /// the load-bearing reason every bundled scenario's `output_hash`
+    /// rebases on the Epic N scaffold.
     #[test]
     fn every_section_elides_cleanly_on_empty_inputs() {
         let summary = empty_summary();
@@ -324,8 +339,9 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 21 = Methodology (last entry).
-        let unconditional_indices = [0usize, 21];
+        // 0 = Header, 21 = Calibration (added in Epic N), 22 =
+        // Methodology (last entry).
+        let unconditional_indices = [0usize, 21, 22];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

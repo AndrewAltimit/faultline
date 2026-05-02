@@ -210,6 +210,108 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Historical analogue (Epic N calibration scaffold). Catch silent-
+    // no-op shapes at load time so the calibration pipeline can stay
+    // branch-free. Validation is intentionally narrow — the analogue
+    // is a *claim* about reality, not a parameter the engine consumes,
+    // so we reject only shapes that would surface a false verdict to
+    // the analyst:
+    //
+    // - empty `sources`: an analogue without sources is a back-test
+    //   against the author's recollection. Fail loud.
+    // - empty `observations`: a label without content; the calibration
+    //   roll-up on zero observations defensively falls back to Fail,
+    //   but reporting that as a "calibration failure" misleads.
+    // - `Winner` / `WinRate` against unknown faction: produces a
+    //   silent 0% MC mass and a near-guaranteed Fail verdict, which
+    //   reads as "the model is wrong" when the real issue is a typo.
+    // - `WinRate.{low, high}` outside `[0, 1]` or NaN, low > high.
+    // - `DurationTicks.low > DurationTicks.high`.
+    if let Some(analogue) = scenario.meta.historical_analogue.as_ref() {
+        if analogue.sources.is_empty() {
+            return Err(ScenarioError::Custom(
+                "meta.historical_analogue declares zero `sources`; an \
+                 analogue without sources is conceptually a back-test \
+                 against the author's recollection. Add at least one \
+                 free-form citation or remove the analogue block."
+                    .into(),
+            ));
+        }
+        if analogue.observations.is_empty() {
+            return Err(ScenarioError::Custom(
+                "meta.historical_analogue declares zero `observations`; \
+                 an analogue with no observations is a label without \
+                 content. Add at least one observation or remove the \
+                 analogue block."
+                    .into(),
+            ));
+        }
+        for (idx, obs) in analogue.observations.iter().enumerate() {
+            match &obs.metric {
+                faultline_types::scenario::HistoricalMetric::Winner { faction } => {
+                    if !scenario.factions.contains_key(faction) {
+                        return Err(ScenarioError::Custom(format!(
+                            "meta.historical_analogue.observations[{idx}] \
+                             names unknown faction `{faction}` as Winner; \
+                             the calibration verdict would silently report \
+                             0% MC mass and Fail, which reads as a model \
+                             failure when the real issue is a typo."
+                        )));
+                    }
+                },
+                faultline_types::scenario::HistoricalMetric::WinRate { faction, low, high } => {
+                    if !scenario.factions.contains_key(faction) {
+                        return Err(ScenarioError::Custom(format!(
+                            "meta.historical_analogue.observations[{idx}] \
+                             names unknown faction `{faction}` as WinRate; \
+                             the calibration verdict would silently report \
+                             0% MC mass and Fail."
+                        )));
+                    }
+                    if !low.is_finite() || !high.is_finite() {
+                        return Err(ScenarioError::ValueOutOfRange {
+                            field: format!("meta.historical_analogue.observations[{idx}].WinRate"),
+                            value: if low.is_finite() { *high } else { *low },
+                            expected: "finite".into(),
+                        });
+                    }
+                    if !(0.0..=1.0).contains(low) || !(0.0..=1.0).contains(high) {
+                        return Err(ScenarioError::ValueOutOfRange {
+                            field: format!(
+                                "meta.historical_analogue.observations[{idx}].WinRate \
+                                 (low, high)"
+                            ),
+                            value: if (0.0..=1.0).contains(low) {
+                                *high
+                            } else {
+                                *low
+                            },
+                            expected: "[0.0, 1.0]".into(),
+                        });
+                    }
+                    if low > high {
+                        return Err(ScenarioError::Custom(format!(
+                            "meta.historical_analogue.observations[{idx}].WinRate \
+                             declares low ({low}) > high ({high}); the \
+                             interval would never contain any MC point \
+                             estimate and the verdict would always Fail."
+                        )));
+                    }
+                },
+                faultline_types::scenario::HistoricalMetric::DurationTicks { low, high } => {
+                    if low > high {
+                        return Err(ScenarioError::Custom(format!(
+                            "meta.historical_analogue.observations[{idx}].DurationTicks \
+                             declares low ({low}) > high ({high}); the \
+                             interval would never contain any MC final_tick \
+                             and the verdict would always Fail."
+                        )));
+                    }
+                },
+            }
+        }
+    }
+
     // Tech-card costs. Three previously-silent fields are now
     // load-bearing on engine init (`deployment_cost`), the attrition
     // phase (`cost_per_tick`), and the combat phase
@@ -1303,6 +1405,7 @@ mod tests {
                 tags: vec![],
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
+                historical_analogue: None,
             },
             map: MapConfig {
                 source: MapSource::Grid {
@@ -2435,5 +2538,167 @@ mod tests {
         let fid = FactionId::from("gov");
         let control = snap.region_control.get(&rid).expect("should have capital");
         assert_eq!(control, &Some(fid), "capital should be controlled by gov");
+    }
+
+    // -----------------------------------------------------------------------
+    // Historical-analogue validation tests (Epic N calibration scaffold)
+    // -----------------------------------------------------------------------
+    //
+    // These tests pin the silent-no-op shapes that the Epic N
+    // validation block in `validate_scenario` rejects. Each test
+    // constructs a minimal scenario, attaches a deliberately-malformed
+    // analogue, and confirms the loader fails loudly. The contract is
+    // "fail at load, not at calibration verdict time" — a typo in a
+    // faction name should produce a diagnostic naming the typo, not a
+    // silent Fail verdict that the analyst reads as a model failure.
+
+    use faultline_types::scenario::{HistoricalAnalogue, HistoricalMetric, HistoricalObservation};
+
+    fn analogue_with(observations: Vec<HistoricalObservation>) -> HistoricalAnalogue {
+        HistoricalAnalogue {
+            name: "Test Analogue".into(),
+            description: "test".into(),
+            period: "test".into(),
+            sources: vec!["unit-test".into()],
+            confidence: None,
+            observations,
+        }
+    }
+
+    fn winner_obs(faction: &str) -> HistoricalObservation {
+        HistoricalObservation {
+            metric: HistoricalMetric::Winner {
+                faction: FactionId::from(faction),
+            },
+            confidence: None,
+            notes: String::new(),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_analogue_without_sources() {
+        let mut s = minimal_scenario();
+        let mut a = analogue_with(vec![winner_obs("gov")]);
+        a.sources.clear();
+        s.meta.historical_analogue = Some(a);
+        let err = validate_scenario(&s).expect_err("should fail without sources");
+        assert!(
+            format!("{err}").contains("sources"),
+            "diagnostic should mention sources, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_analogue_without_observations() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![]));
+        let err = validate_scenario(&s).expect_err("should fail without observations");
+        assert!(
+            format!("{err}").contains("observations"),
+            "diagnostic should mention observations, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_winner_against_unknown_faction() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![winner_obs("nonexistent_faction")]));
+        let err = validate_scenario(&s).expect_err("should fail on unknown faction");
+        assert!(
+            format!("{err}").contains("nonexistent_faction"),
+            "diagnostic should name the unknown faction, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_win_rate_against_unknown_faction() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![HistoricalObservation {
+            metric: HistoricalMetric::WinRate {
+                faction: FactionId::from("nope"),
+                low: 0.4,
+                high: 0.6,
+            },
+            confidence: None,
+            notes: String::new(),
+        }]));
+        let err = validate_scenario(&s).expect_err("should fail on unknown faction");
+        assert!(format!("{err}").contains("nope"));
+    }
+
+    #[test]
+    fn validate_rejects_win_rate_inverted_bounds() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![HistoricalObservation {
+            metric: HistoricalMetric::WinRate {
+                faction: FactionId::from("gov"),
+                low: 0.7,
+                high: 0.3,
+            },
+            confidence: None,
+            notes: String::new(),
+        }]));
+        let err = validate_scenario(&s).expect_err("should fail on inverted bounds");
+        assert!(
+            format!("{err}").contains("low") && format!("{err}").contains("high"),
+            "diagnostic should mention bounds: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_win_rate_out_of_range() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![HistoricalObservation {
+            metric: HistoricalMetric::WinRate {
+                faction: FactionId::from("gov"),
+                low: 0.5,
+                high: 1.5,
+            },
+            confidence: None,
+            notes: String::new(),
+        }]));
+        let err = validate_scenario(&s).expect_err("should fail on out-of-range");
+        assert!(format!("{err}").contains("[0.0, 1.0]"));
+    }
+
+    #[test]
+    fn validate_rejects_win_rate_nan() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![HistoricalObservation {
+            metric: HistoricalMetric::WinRate {
+                faction: FactionId::from("gov"),
+                low: f64::NAN,
+                high: 0.5,
+            },
+            confidence: None,
+            notes: String::new(),
+        }]));
+        validate_scenario(&s).expect_err("should fail on NaN");
+    }
+
+    #[test]
+    fn validate_rejects_duration_inverted_bounds() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![HistoricalObservation {
+            metric: HistoricalMetric::DurationTicks { low: 50, high: 10 },
+            confidence: None,
+            notes: String::new(),
+        }]));
+        let err = validate_scenario(&s).expect_err("should fail on inverted bounds");
+        assert!(format!("{err}").contains("low"));
+    }
+
+    #[test]
+    fn validate_passes_for_well_formed_analogue() {
+        let mut s = minimal_scenario();
+        s.meta.historical_analogue = Some(analogue_with(vec![
+            winner_obs("gov"),
+            HistoricalObservation {
+                metric: HistoricalMetric::DurationTicks { low: 1, high: 100 },
+                confidence: Some(faultline_types::stats::ConfidenceLevel::Medium),
+                notes: "based on simulation horizon".into(),
+            },
+        ]));
+        validate_scenario(&s).expect("well-formed analogue should pass");
     }
 }
