@@ -113,17 +113,18 @@ pub fn compute_civilian_activation_summaries(
 
 /// Highest-sympathy faction declared on a segment. Used as the
 /// fallback `favored_faction` for segments that never activated in
-/// the run set. Defaults to a placeholder `FactionId` only when the
-/// segment has no declared sympathies — that's an authoring shape
-/// the engine treats as "cannot activate" anyway, so the placeholder
-/// will never surface in a report row with `activation_count > 0`.
+/// the run set. Scenario validation rejects empty `sympathies` lists
+/// so the `unwrap_or_else` branch is unreachable on validated input;
+/// it stays as a defense-in-depth fallback for callers (e.g. unit
+/// tests) that construct `PopulationSegment` directly without going
+/// through the validator.
 fn baseline_favored_faction(segment: &faultline_types::politics::PopulationSegment) -> FactionId {
     segment
         .sympathies
         .iter()
         .max_by(|a, b| a.sympathy.total_cmp(&b.sympathy))
         .map(|s| s.faction.clone())
-        .unwrap_or_else(|| FactionId::from(""))
+        .unwrap_or_else(|| FactionId::from("(none)"))
 }
 
 #[cfg(test)]

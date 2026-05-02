@@ -383,13 +383,13 @@ pub struct SegmentActivationSummary {
     #[serde(default)]
     pub name: String,
     /// Author-supplied faction the segment is most strongly aligned
-    /// with — recorded once at the first activation observed in the
-    /// run set so the report can show "who benefits when this
-    /// segment mobilizes". Subsequent activations in different runs
-    /// may have a different favored faction (sympathy drift); when
-    /// that happens this field reflects the *modal* favored faction
-    /// across the run set, with ties broken by `BTreeMap` order
-    /// (deterministic).
+    /// with at activation time. Sympathy drift can drive different
+    /// runs to different favored factions; this field reflects the
+    /// *modal* favored faction across the run set, with ties broken
+    /// by `BTreeMap` order (deterministic). When no run activated the
+    /// segment, falls back to the highest-sympathy faction declared
+    /// on the segment so the report row still names a representative
+    /// beneficiary.
     pub favored_faction: FactionId,
     /// Total runs in the batch.
     pub n_runs: u32,

@@ -756,9 +756,29 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 )));
             }
         }
+        if segment.sympathies.is_empty() {
+            return Err(ScenarioError::Custom(format!(
+                "population segment `{}` has no `sympathies` entries; \
+                 such a segment cannot activate (no faction sympathy \
+                 can ever cross the threshold) and would surface a \
+                 blank `Modal beneficiary` cell in the report",
+                segment.id
+            )));
+        }
+        let mut seen_sympathy_factions: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
         for sym in &segment.sympathies {
             if !scenario.factions.contains_key(&sym.faction) {
                 return Err(ScenarioError::UnknownFaction(sym.faction.clone()));
+            }
+            if !seen_sympathy_factions.insert(sym.faction.0.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "population segment `{}` declares sympathy toward \
+                     faction `{}` more than once; duplicate entries \
+                     trigger independent per-tick noise draws against \
+                     the same faction and silently double-count drift",
+                    segment.id, sym.faction
+                )));
             }
             if !sym.sympathy.is_finite() || !(-1.0..=1.0).contains(&sym.sympathy) {
                 return Err(ScenarioError::ValueOutOfRange {

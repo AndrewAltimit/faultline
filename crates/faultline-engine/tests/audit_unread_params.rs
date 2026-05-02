@@ -1290,6 +1290,91 @@ fn validate_rejects_duplicate_segment_ids() {
 }
 
 #[test]
+fn validate_rejects_population_segment_with_empty_sympathies() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::PopulationSegment;
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("voiceless"),
+            name: "Voiceless".into(),
+            fraction: 0.1,
+            concentrated_in: vec![],
+            sympathies: vec![],
+            activation_threshold: 0.5,
+            activation_actions: vec![],
+            volatility: 0.5,
+            activated: false,
+        });
+
+    let err = validate_scenario(&sc).expect_err("empty sympathies must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("voiceless") && msg.contains("sympathies"),
+        "expected empty-sympathies rejection naming `voiceless`, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_population_segment_with_duplicate_sympathy_factions() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::{FactionSympathy, PopulationSegment};
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("doubled"),
+            name: "Doubled".into(),
+            fraction: 0.1,
+            concentrated_in: vec![],
+            sympathies: vec![
+                FactionSympathy {
+                    faction: FactionId::from("alpha"),
+                    sympathy: 0.5,
+                },
+                FactionSympathy {
+                    faction: FactionId::from("alpha"),
+                    sympathy: 0.3,
+                },
+            ],
+            activation_threshold: 0.5,
+            activation_actions: vec![],
+            volatility: 0.5,
+            activated: false,
+        });
+
+    let err = validate_scenario(&sc).expect_err("duplicate sympathy factions must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("doubled") && msg.contains("alpha"),
+        "expected duplicate-sympathy rejection naming `doubled` and `alpha`, got `{msg}`"
+    );
+}
+
+#[test]
 fn segment_activation_determinism_pinned_by_seed() {
     // Two engine runs at the same seed must produce bit-identical
     // civilian_activations logs — the determinism contract for the
