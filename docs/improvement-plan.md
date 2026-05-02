@@ -47,10 +47,14 @@ The five highest-leverage open items, in order:
    `mobility` + `terrain.movement_modifier` +
    `EnvironmentWindow.movement_factor` triple shipped as a coupled
    "movement rate" wiring (R3-2 round-two item 1; `upkeep` was
-   already wired). Items still deferred: population-segment
-   activation, tech-card costs, visualization metadata
-   (`Region.centroid`, `Faction.color`), `force_projection`.
-   Closing the gap maintains the trust the round-one audit bought.
+   already wired); population-segment activation shipped as a
+   coupled "media landscape + activation tracking" wiring
+   (R3-2 round-two item 3 — wires `MediaLandscape.fragmentation`,
+   `social_media_penetration`, `internet_availability` and adds
+   per-segment activation tracking + report). Items still deferred:
+   tech-card costs, visualization metadata (`Region.centroid`,
+   `Faction.color`), `force_projection`. Closing the gap maintains
+   the trust the round-one audit bought.
 5. **Defer Epic J (adaptive AI) and Epic M (belief states) until
    N is at least scaffolded.** Both are interesting but produce
    more outputs whose calibration is unknown. They compound the
@@ -147,7 +151,7 @@ work.
 
 ## Status snapshot
 
-**Closed (21):** A (uncertainty), B (counterfactual), C (time +
+**Closed (22):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -163,19 +167,23 @@ three highest-leverage parameters), R3-2 round-two item 1
 (`ForceUnit.mobility` + `terrain.movement_modifier` +
 `EnvironmentWindow.movement_factor` wired into a per-tick
 move-accumulator gate; `ForceUnit.upkeep` turned out to be already
-wired), R3-3 (decompose `report.rs`), R3-5 (property tests —
-`proptest` coverage of engine / search / uncertainty /
-network_metrics invariants).
+wired), R3-2 round-two item 3 (`MediaLandscape.fragmentation` +
+`social_media_penetration` + `internet_availability` wired into the
+political / information phases as coupled noise / tension
+multipliers; per-segment activation events tracked end-to-end and
+surfaced in a new `## Civilian Activations` report section), R3-3
+(decompose `report.rs`), R3-5 (property tests — `proptest` coverage
+of engine / search / uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** D round-three (2 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
 (belief asymmetry), N (calibration), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
-round-two (audit follow-up — items 2 + 1 closed; four items still
-deferred: population-segment activation, tech-card costs,
-visualization metadata, `force_projection`), R3-4 (generalize
-leadership morale cap), R3-6 (decompose `Scenario`).
+round-two (audit follow-up — items 2 + 1 + 3 closed; three items
+still deferred: tech-card costs, visualization metadata,
+`force_projection`), R3-4 (generalize leadership morale cap), R3-6
+(decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -404,11 +412,25 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
      `Diplomacy::Allied` and `Diplomacy::Cooperative`). Political-
      phase and victory-check coupling remain deferred — open whenever
      a use case appears.
-  3. `MediaLandscape.{fragmentation, social_media_penetration,
+  3. ~~`MediaLandscape.{fragmentation, social_media_penetration,
      internet_availability}` and `PopulationSegment.{activation_threshold,
      activation_actions, volatility}`. The population-segment
      activation mechanic is half-built; finishing it is a small
-     epic in its own right.
+     epic in its own right.~~ **Shipped May 2026.** The three
+     unread `MediaLandscape` fields are now load-bearing on
+     `update_civilian_segments` (noise amplification + tension-pull
+     dampening) and `information_phase` (disinfo-amplification). The
+     other listed `PopulationSegment` fields turned out to be already
+     wired (`activation_threshold` / `activation_actions` / `volatility`
+     all read in the latch and post-activation processor). The
+     "half-built" gap was the missing reporting layer: each activation
+     is now logged on `RunResult.civilian_activations`, aggregated
+     across runs by
+     `MonteCarloSummary.civilian_activation_summaries`, and surfaced
+     in a new `## Civilian Activations` report section. Validation
+     rejects out-of-range / non-finite media-landscape and segment
+     fields. See the "Unread-parameter audit (R3-2 round two —
+     population-segment activation)" section in `CLAUDE.md`.
   4. `TechCard.{cost_per_tick, deployment_cost, coverage_limit}`.
      Depend on broadening budget enforcement (covered indirectly
      by `defender_budget` wiring; missing piece is enforcing tech

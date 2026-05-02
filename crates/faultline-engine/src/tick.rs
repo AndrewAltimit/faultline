@@ -823,7 +823,49 @@ pub fn political_phase(state: &mut SimulationState, scenario: &Scenario, rng: &m
             faction = %activation.favored_faction,
             "civilian segment activated"
         );
+        // Capture the activation onto the per-run log before processing
+        // so the post-run report records the firing even if the
+        // processor itself short-circuits on a malformed action set.
+        // `action_kinds` mirrors the order of `actions` so the report
+        // can describe "what fired in what order"; the pretty
+        // discriminant strings come from the dedicated helper rather
+        // than `Debug` so the manifest schema stays stable when new
+        // `CivilianAction` variants are added with extra payload.
+        state
+            .civilian_activations
+            .push(faultline_types::stats::CivilianActivationEvent {
+                tick: state.tick,
+                segment: activation.segment_id.clone(),
+                favored_faction: activation.favored_faction.clone(),
+                action_kinds: activation
+                    .actions
+                    .iter()
+                    .map(civilian_action_kind)
+                    .map(str::to_owned)
+                    .collect(),
+            });
         process_civilian_activation(state, scenario, activation, rng);
+    }
+}
+
+/// Stable discriminant name for a [`CivilianAction`] — used by the
+/// per-run civilian-activation log to record what an activation will
+/// fire without dragging the typed payload into the report schema.
+///
+/// Keeping the mapping local (rather than deriving it from `Debug`)
+/// ensures adding a new `CivilianAction` variant fails compilation
+/// here, forcing a deliberate decision about how to surface it in
+/// the cross-run summary.
+fn civilian_action_kind(action: &faultline_types::politics::CivilianAction) -> &'static str {
+    use faultline_types::politics::CivilianAction;
+    match action {
+        CivilianAction::NonCooperation { .. } => "NonCooperation",
+        CivilianAction::Protest { .. } => "Protest",
+        CivilianAction::Intelligence { .. } => "Intelligence",
+        CivilianAction::MaterialSupport { .. } => "MaterialSupport",
+        CivilianAction::ArmedResistance { .. } => "ArmedResistance",
+        CivilianAction::Flee { .. } => "Flee",
+        CivilianAction::Sabotage { .. } => "Sabotage",
     }
 }
 
@@ -972,15 +1014,40 @@ fn process_civilian_activation(
 // Phase 7: Information warfare
 // -----------------------------------------------------------------------
 
-/// Process information warfare effects (simplified).
+/// Process information warfare effects.
+///
+/// Reads four media-landscape fields (R3-2 round-two — three of these
+/// were silent before this round):
+/// - `disinformation_susceptibility` (existing): high values raise
+///   tension above the 0.5 baseline.
+/// - `state_control` (existing): high values dampen tension above the
+///   0.7 baseline.
+/// - `fragmentation` (newly read): amplifies the disinfo→tension
+///   effect — a fragmented audience is more vulnerable to bubble-
+///   targeted narratives than a unified one.
+/// - `social_media_penetration × internet_availability` (newly read):
+///   the penetration field is gated by internet availability so a
+///   "lights out" scenario neutralizes both. The composed value
+///   amplifies the disinfo→tension effect — high reach amplifies
+///   whichever narrative is dominant in the moment.
 pub fn information_phase(state: &mut SimulationState, _scenario: &Scenario) {
     // Information warfare affects civilian sympathy and tension.
     let media = &state.political_climate.media_landscape;
     let disinfo_factor = media.disinformation_susceptibility;
+    let fragmentation = media.fragmentation.clamp(0.0, 1.0);
+    let social_media = media.social_media_penetration.clamp(0.0, 1.0);
+    let internet = media.internet_availability.clamp(0.0, 1.0);
+    let effective_social_media = social_media * internet;
 
-    // High disinformation susceptibility increases tension.
+    // High disinformation susceptibility increases tension. Both
+    // multipliers are >= 1.0 (the no-amp default at fragmentation = 0
+    // and effective_social_media = 0 reproduces the legacy delta of
+    // `(disinfo_factor - 0.5) * 0.01`). The bound at max-amp is ~2×
+    // (fragmentation = 1.0 contributes 0.5, effective_social_media =
+    // 1.0 contributes 0.5).
     if disinfo_factor > 0.5 {
-        let delta = (disinfo_factor - 0.5) * 0.01;
+        let amp = 1.0 + 0.5 * fragmentation + 0.5 * effective_social_media;
+        let delta = (disinfo_factor - 0.5) * 0.01 * amp;
         state.political_climate.tension = (state.political_climate.tension + delta).min(1.0);
     }
 

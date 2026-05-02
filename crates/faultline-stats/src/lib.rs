@@ -7,6 +7,7 @@
 
 pub mod alliance_dynamics;
 pub mod analysis;
+pub mod civilian_activations;
 pub mod coevolve;
 pub mod counterfactual;
 pub mod delta;
@@ -141,6 +142,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             network_summaries: BTreeMap::new(),
             alliance_dynamics: None,
             supply_pressure_summaries: BTreeMap::new(),
+            civilian_activation_summaries: BTreeMap::new(),
         };
     }
 
@@ -313,6 +315,14 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // `kind = "supply"` — the report section elides on that signal.
     let supply_pressure_summaries = compute_supply_pressure_summaries(runs);
 
+    // Civilian-segment activation rollup (R3-2 round-two). Pure
+    // post-processing of per-run `civilian_activations` logs;
+    // preserves determinism. Empty when the scenario declares no
+    // `population_segments` or none ever activated — the report
+    // section elides on that signal.
+    let civilian_activation_summaries =
+        civilian_activations::compute_civilian_activation_summaries(runs, scenario);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -330,6 +340,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         network_summaries,
         alliance_dynamics,
         supply_pressure_summaries,
+        civilian_activation_summaries,
     }
 }
 
@@ -1042,6 +1053,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         }
     }
 
@@ -1238,6 +1250,7 @@ mod tests {
             network_reports: std::collections::BTreeMap::new(),
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         }
     }
 

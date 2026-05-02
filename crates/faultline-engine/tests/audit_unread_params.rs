@@ -958,3 +958,442 @@ fn validate_rejects_authored_move_progress() {
         "expected move_progress-related rejection, got `{msg}`"
     );
 }
+
+// ---------------------------------------------------------------------------
+// R3-2 round-two: population-segment activation + media-landscape wiring
+// ---------------------------------------------------------------------------
+
+/// Build a scenario with one population segment whose top sympathy is
+/// already at the activation threshold so the very first political-
+/// phase tick latches the segment. The MediaLandscape is parameterised
+/// so a single test can exercise both the no-amp baseline and the
+/// max-amp arm without two near-identical builders.
+fn segment_activation_scenario(
+    media: faultline_types::politics::MediaLandscape,
+    activation_threshold: f64,
+    sympathy: f64,
+    volatility: f64,
+) -> Scenario {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::{
+        CivilianAction, FactionSympathy, PoliticalClimate, PopulationSegment,
+    };
+
+    let mut sc = empty_scenario(7, 5);
+    let r1 = RegionId::from("r1");
+
+    // One faction so sympathy has a target.
+    let mut forces = BTreeMap::new();
+    forces.insert(ForceId::from("a"), make_force("a", &r1, 50.0, 0.0));
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate = PoliticalClimate {
+        tension: 0.5,
+        institutional_trust: 0.5,
+        media_landscape: media,
+        population_segments: vec![PopulationSegment {
+            id: SegmentId::from("urban"),
+            name: "Urban Core".into(),
+            fraction: 0.4,
+            concentrated_in: vec![r1],
+            sympathies: vec![FactionSympathy {
+                faction: FactionId::from("alpha"),
+                sympathy,
+            }],
+            activation_threshold,
+            activation_actions: vec![
+                CivilianAction::Protest { intensity: 0.3 },
+                CivilianAction::Intelligence {
+                    target_faction: FactionId::from("alpha"),
+                    quality: 0.4,
+                },
+            ],
+            volatility,
+            activated: false,
+        }],
+        global_modifiers: vec![],
+    };
+    sc
+}
+
+#[test]
+fn population_segment_activation_records_event() {
+    // Sympathy starts safely above the threshold so the small per-tick
+    // tension-pull drift (one-active-faction scenarios slowly cool
+    // tension toward zero) can't push it below before the activation
+    // latch fires. Volatility = 0 zeros the noise term, so on the first
+    // political-phase tick the latch trips and records the event with
+    // the discriminant names of both authored actions in order.
+    let media = MediaLandscape {
+        fragmentation: 0.0,
+        disinformation_susceptibility: 0.0,
+        state_control: 0.0,
+        social_media_penetration: 0.0,
+        internet_availability: 0.0,
+    };
+    let sc = segment_activation_scenario(media, 0.5, 0.6, 0.0);
+    let mut engine = Engine::with_seed(sc, 7).expect("engine init");
+    let result = engine.run().expect("run");
+
+    assert_eq!(
+        result.civilian_activations.len(),
+        1,
+        "exactly one activation expected, got {:?}",
+        result.civilian_activations
+    );
+    let ev = &result.civilian_activations[0];
+    assert_eq!(ev.segment.0, "urban");
+    assert_eq!(ev.favored_faction.0, "alpha");
+    assert_eq!(
+        ev.action_kinds,
+        vec!["Protest".to_string(), "Intelligence".to_string()],
+        "action_kinds should preserve authored order with stable discriminant strings"
+    );
+}
+
+#[test]
+fn media_fragmentation_amplifies_sympathy_drift() {
+    // Two scenarios: identical except for `fragmentation`. With high
+    // fragmentation the noise term is amplified ~1.5×. Same RNG seed,
+    // same volatility, so the only difference between final sympathy
+    // values is the fragmentation multiplier.
+    use faultline_types::ids::SegmentId;
+    let zero_frag = MediaLandscape {
+        fragmentation: 0.0,
+        disinformation_susceptibility: 0.0,
+        state_control: 0.0,
+        social_media_penetration: 0.0,
+        internet_availability: 0.0,
+    };
+    let high_frag = MediaLandscape {
+        fragmentation: 1.0,
+        ..zero_frag
+    };
+    // Set sympathy below the threshold so the segment doesn't activate
+    // (we want to read the post-tick sympathy, not the latch).
+    let sc_a = segment_activation_scenario(zero_frag, 0.99, 0.0, 1.0);
+    let sc_b = segment_activation_scenario(high_frag, 0.99, 0.0, 1.0);
+
+    let mut a = Engine::with_seed(sc_a, 7).expect("engine init");
+    let mut b = Engine::with_seed(sc_b, 7).expect("engine init");
+    a.run().expect("run a");
+    b.run().expect("run b");
+
+    let sym_a = a
+        .state()
+        .political_climate
+        .population_segments
+        .iter()
+        .find(|s| s.id == SegmentId::from("urban"))
+        .expect("segment a")
+        .sympathies[0]
+        .sympathy;
+    let sym_b = b
+        .state()
+        .political_climate
+        .population_segments
+        .iter()
+        .find(|s| s.id == SegmentId::from("urban"))
+        .expect("segment b")
+        .sympathies[0]
+        .sympathy;
+    // Same seed, but the fragmentation multiplier scales the noise
+    // sample by 1.5×, so the two final sympathies cannot be equal.
+    // (We can't predict the sign — RNG output drives that — but the
+    // magnitudes must differ.)
+    assert!(
+        (sym_a - sym_b).abs() > 1e-9,
+        "fragmentation must affect drift trajectory: sym_a={sym_a}, sym_b={sym_b}"
+    );
+}
+
+#[test]
+fn internet_gates_social_media_amplification() {
+    // social_media_penetration=1.0 with internet_availability=0.0
+    // must reproduce the no-amp baseline exactly — `effective_social_media`
+    // is the product. This pins that internet outages neutralize the
+    // social-media wiring (the "lights out" guard).
+    use faultline_types::ids::SegmentId;
+    let no_internet = MediaLandscape {
+        fragmentation: 0.0,
+        disinformation_susceptibility: 0.0,
+        state_control: 0.0,
+        social_media_penetration: 1.0,
+        internet_availability: 0.0,
+    };
+    let baseline = MediaLandscape {
+        fragmentation: 0.0,
+        disinformation_susceptibility: 0.0,
+        state_control: 0.0,
+        social_media_penetration: 0.0,
+        internet_availability: 0.0,
+    };
+
+    let sc_no_inet = segment_activation_scenario(no_internet, 0.99, 0.0, 1.0);
+    let sc_base = segment_activation_scenario(baseline, 0.99, 0.0, 1.0);
+
+    let mut a = Engine::with_seed(sc_no_inet, 7).expect("engine init");
+    let mut b = Engine::with_seed(sc_base, 7).expect("engine init");
+    a.run().expect("run a");
+    b.run().expect("run b");
+
+    let sym_a = a
+        .state()
+        .political_climate
+        .population_segments
+        .iter()
+        .find(|s| s.id == SegmentId::from("urban"))
+        .expect("segment a")
+        .sympathies[0]
+        .sympathy;
+    let sym_b = b
+        .state()
+        .political_climate
+        .population_segments
+        .iter()
+        .find(|s| s.id == SegmentId::from("urban"))
+        .expect("segment b")
+        .sympathies[0]
+        .sympathy;
+    assert!(
+        (sym_a - sym_b).abs() < 1e-12,
+        "internet=0 must zero out social-media amplification: sym_a={sym_a}, sym_b={sym_b}"
+    );
+}
+
+/// Build a minimally-valid scenario with one faction (so validation
+/// gets past the "no factions" check and reaches the media-landscape /
+/// population-segment guards under test).
+fn populated_scenario_for_validation() -> Scenario {
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+    sc
+}
+
+#[test]
+fn validate_rejects_media_landscape_out_of_range() {
+    let mut sc = populated_scenario_for_validation();
+    sc.political_climate.media_landscape.fragmentation = 1.5;
+    let err = validate_scenario(&sc).expect_err("out-of-range fragmentation must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("fragmentation"),
+        "expected fragmentation-related rejection, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_media_landscape_nan() {
+    let mut sc = populated_scenario_for_validation();
+    sc.political_climate
+        .media_landscape
+        .social_media_penetration = f64::NAN;
+    let err = validate_scenario(&sc).expect_err("NaN social_media_penetration must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("social_media_penetration"),
+        "expected social-media-related rejection, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_population_segment_with_unknown_region() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::{FactionSympathy, PopulationSegment};
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("ghost"),
+            name: "Ghost Region".into(),
+            fraction: 0.1,
+            concentrated_in: vec![RegionId::from("nowhere")],
+            sympathies: vec![FactionSympathy {
+                faction: FactionId::from("alpha"),
+                sympathy: 0.0,
+            }],
+            activation_threshold: 0.5,
+            activation_actions: vec![],
+            volatility: 0.5,
+            activated: false,
+        });
+
+    let err = validate_scenario(&sc).expect_err("unknown segment region must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("nowhere") && msg.contains("region"),
+        "expected unknown-region rejection naming `nowhere`, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_duplicate_segment_ids() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::{FactionSympathy, PopulationSegment};
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    let seg = |id: &str| PopulationSegment {
+        id: SegmentId::from(id),
+        name: id.into(),
+        fraction: 0.1,
+        concentrated_in: vec![],
+        sympathies: vec![FactionSympathy {
+            faction: FactionId::from("alpha"),
+            sympathy: 0.0,
+        }],
+        activation_threshold: 0.5,
+        activation_actions: vec![],
+        volatility: 0.5,
+        activated: false,
+    };
+    sc.political_climate.population_segments.push(seg("dup"));
+    sc.political_climate.population_segments.push(seg("dup"));
+
+    let err = validate_scenario(&sc).expect_err("duplicate segment ids must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("dup"),
+        "expected duplicate-id rejection naming `dup`, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_population_segment_with_empty_sympathies() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::PopulationSegment;
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("voiceless"),
+            name: "Voiceless".into(),
+            fraction: 0.1,
+            concentrated_in: vec![],
+            sympathies: vec![],
+            activation_threshold: 0.5,
+            activation_actions: vec![],
+            volatility: 0.5,
+            activated: false,
+        });
+
+    let err = validate_scenario(&sc).expect_err("empty sympathies must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("voiceless") && msg.contains("sympathies"),
+        "expected empty-sympathies rejection naming `voiceless`, got `{msg}`"
+    );
+}
+
+#[test]
+fn validate_rejects_population_segment_with_duplicate_sympathy_factions() {
+    use faultline_types::ids::SegmentId;
+    use faultline_types::politics::{FactionSympathy, PopulationSegment};
+
+    let mut sc = empty_scenario(1, 5);
+    let mut forces = BTreeMap::new();
+    forces.insert(
+        ForceId::from("a"),
+        make_force("a", &RegionId::from("r1"), 1.0, 0.0),
+    );
+    sc.factions.insert(
+        FactionId::from("alpha"),
+        make_faction("alpha", forces, 0.0, None),
+    );
+
+    sc.political_climate
+        .population_segments
+        .push(PopulationSegment {
+            id: SegmentId::from("doubled"),
+            name: "Doubled".into(),
+            fraction: 0.1,
+            concentrated_in: vec![],
+            sympathies: vec![
+                FactionSympathy {
+                    faction: FactionId::from("alpha"),
+                    sympathy: 0.5,
+                },
+                FactionSympathy {
+                    faction: FactionId::from("alpha"),
+                    sympathy: 0.3,
+                },
+            ],
+            activation_threshold: 0.5,
+            activation_actions: vec![],
+            volatility: 0.5,
+            activated: false,
+        });
+
+    let err = validate_scenario(&sc).expect_err("duplicate sympathy factions must be rejected");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("doubled") && msg.contains("alpha"),
+        "expected duplicate-sympathy rejection naming `doubled` and `alpha`, got `{msg}`"
+    );
+}
+
+#[test]
+fn segment_activation_determinism_pinned_by_seed() {
+    // Two engine runs at the same seed must produce bit-identical
+    // civilian_activations logs — the determinism contract for the
+    // new RunResult field. The engine state was sized for one segment
+    // so the field is non-trivially populated.
+    let media = MediaLandscape {
+        fragmentation: 0.5,
+        disinformation_susceptibility: 0.0,
+        state_control: 0.0,
+        social_media_penetration: 0.7,
+        internet_availability: 0.9,
+    };
+    let sc = segment_activation_scenario(media, 0.5, 0.5, 0.5);
+    let mut a = Engine::with_seed(sc.clone(), 99).expect("engine a");
+    let mut b = Engine::with_seed(sc, 99).expect("engine b");
+    let ra = a.run().expect("run a");
+    let rb = b.run().expect("run b");
+    assert_eq!(
+        ra.civilian_activations, rb.civilian_activations,
+        "civilian_activations must be deterministic across same-seed runs"
+    );
+}

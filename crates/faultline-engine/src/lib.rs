@@ -676,6 +676,123 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Media landscape (R3-2 round-two — three previously-silent fields
+    // are now load-bearing on `update_civilian_segments` and
+    // `information_phase`). All five fields are documented as `[0, 1]`
+    // probabilities; out-of-range or non-finite values would silently
+    // amplify the new noise / tension multipliers past the design
+    // bounds. The engine clamps these defensively at read time, but a
+    // value that needs clamping is almost always an authoring error —
+    // fail loud at load time rather than at tick N.
+    let media = &scenario.political_climate.media_landscape;
+    for (label, value) in [
+        ("fragmentation", media.fragmentation),
+        (
+            "disinformation_susceptibility",
+            media.disinformation_susceptibility,
+        ),
+        ("state_control", media.state_control),
+        ("social_media_penetration", media.social_media_penetration),
+        ("internet_availability", media.internet_availability),
+    ] {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("political_climate.media_landscape.{label}"),
+                value,
+                expected: "[0.0, 1.0] and finite".into(),
+            });
+        }
+    }
+
+    // Population segments (R3-2 round-two). The activation mechanic
+    // reads `volatility`, `activation_threshold`, `fraction`, and the
+    // sympathy values directly. Non-finite values would propagate via
+    // the noise term and turn every sympathy value into NaN on the
+    // first tick (NaN.clamp(-1, 1) returns NaN). Out-of-range values
+    // silently change the activation latch behavior — a threshold
+    // outside `[-1, 1]` is unreachable; a `fraction` outside `[0, 1]`
+    // breaks the segment-fraction accounting `Flee` depends on.
+    let mut seen_segment_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for segment in &scenario.political_climate.population_segments {
+        if !seen_segment_ids.insert(segment.id.0.as_str()) {
+            return Err(ScenarioError::Custom(format!(
+                "population segment id `{}` is declared more than once; \
+                 ids must be unique so per-segment activation tracking \
+                 attributes events to the right row",
+                segment.id
+            )));
+        }
+        if !segment.volatility.is_finite() || segment.volatility < 0.0 {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("population_segment {} volatility", segment.id),
+                value: segment.volatility,
+                expected: ">= 0.0 and finite".into(),
+            });
+        }
+        if !segment.activation_threshold.is_finite()
+            || !(-1.0..=1.0).contains(&segment.activation_threshold)
+        {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("population_segment {} activation_threshold", segment.id),
+                value: segment.activation_threshold,
+                expected: "[-1.0, 1.0] and finite (sympathy is clamped to that range)".into(),
+            });
+        }
+        if !segment.fraction.is_finite() || !(0.0..=1.0).contains(&segment.fraction) {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("population_segment {} fraction", segment.id),
+                value: segment.fraction,
+                expected: "[0.0, 1.0] and finite".into(),
+            });
+        }
+        for region in &segment.concentrated_in {
+            if !scenario.map.regions.contains_key(region) {
+                return Err(ScenarioError::Custom(format!(
+                    "population segment `{}` is concentrated_in unknown \
+                     region `{region}`; civilian-action effects (e.g. \
+                     ArmedResistance, Sabotage, NonCooperation) target \
+                     these regions and would silently no-op",
+                    segment.id
+                )));
+            }
+        }
+        if segment.sympathies.is_empty() {
+            return Err(ScenarioError::Custom(format!(
+                "population segment `{}` has no `sympathies` entries; \
+                 such a segment cannot activate (no faction sympathy \
+                 can ever cross the threshold) and would surface a \
+                 blank `Modal beneficiary` cell in the report",
+                segment.id
+            )));
+        }
+        let mut seen_sympathy_factions: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for sym in &segment.sympathies {
+            if !scenario.factions.contains_key(&sym.faction) {
+                return Err(ScenarioError::UnknownFaction(sym.faction.clone()));
+            }
+            if !seen_sympathy_factions.insert(sym.faction.0.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "population segment `{}` declares sympathy toward \
+                     faction `{}` more than once; duplicate entries \
+                     trigger independent per-tick noise draws against \
+                     the same faction and silently double-count drift",
+                    segment.id, sym.faction
+                )));
+            }
+            if !sym.sympathy.is_finite() || !(-1.0..=1.0).contains(&sym.sympathy) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "population_segment {} sympathy toward {}",
+                        segment.id, sym.faction
+                    ),
+                    value: sym.sympathy,
+                    expected: "[-1.0, 1.0] and finite".into(),
+                });
+            }
+        }
+    }
+
     Ok(())
 }
 

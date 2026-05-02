@@ -944,6 +944,7 @@ mod tests {
             },
             fracture_events: Vec::new(),
             supply_pressure_reports: std::collections::BTreeMap::new(),
+            civilian_activations: Vec::new(),
         };
         let runs = vec![make_run(0, report1), make_run(1, report2)];
 

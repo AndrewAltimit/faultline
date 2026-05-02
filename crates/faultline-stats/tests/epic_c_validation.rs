@@ -322,6 +322,7 @@ fn make_run(
         network_reports: std::collections::BTreeMap::new(),
         fracture_events: Vec::new(),
         supply_pressure_reports: ::std::collections::BTreeMap::new(),
+        civilian_activations: Vec::new(),
     }
 }
 

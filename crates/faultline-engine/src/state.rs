@@ -98,6 +98,16 @@ pub struct SimulationState {
     /// alliance-fracture rule fired.
     #[serde(default)]
     pub fracture_events: Vec<faultline_types::stats::FractureEvent>,
+    /// Log of every civilian-segment activation in the current run,
+    /// in emission order (R3-2 round-two — population-segment
+    /// activation). Surfaced post-run on
+    /// [`faultline_types::stats::RunResult::civilian_activations`] and
+    /// aggregated across runs by
+    /// `MonteCarloSummary.civilian_activation_summaries`. Empty when
+    /// no `population_segments` are declared or none crossed their
+    /// activation threshold during the run.
+    #[serde(default)]
+    pub civilian_activations: Vec<faultline_types::stats::CivilianActivationEvent>,
 }
 
 /// Per-run runtime state for one declared [`Network`](
