@@ -621,21 +621,20 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
         // Supply pressure (Epic D round three, item 2). Computed
         // before reading `resource_rate` so income is attenuated by
         // the latest network state. Pure function — no RNG, no
-        // allocation, returns 1.0 for any faction without an owned
-        // supply network so legacy scenarios are untouched. Captured
-        // onto `current_supply_pressure` and rolled into per-faction
-        // sum / min / pressured-tick counters for the post-run
-        // report. We sample only when the faction owns at least one
-        // active supply network so legacy factions don't pollute the
-        // mean denominator.
-        let pressure = crate::supply::supply_pressure_for_faction(scenario, state, fid);
-        let owns_supply = scenario
-            .networks
-            .values()
-            .any(|n| crate::supply::is_active_supply_network(n) && n.owner.as_ref() == Some(fid));
+        // allocation, returns (1.0, false) for any faction without
+        // an owned non-degenerate supply network so legacy scenarios
+        // are untouched. Captured onto `current_supply_pressure` and
+        // rolled into per-faction sum / min / pressured-tick counters
+        // for the post-run report. We sample only when at least one
+        // non-degenerate owned supply network actually contributed to
+        // the product — a faction whose only supply networks have
+        // zero baseline capacity never carried supply, and emitting
+        // `(mean=1.0, min=1.0)` samples for it would falsely
+        // advertise "supply intact" in the report.
+        let (pressure, sampled) = crate::supply::supply_pressure_for_faction(scenario, state, fid);
         if let Some(fs) = state.faction_states.get_mut(fid) {
             fs.current_supply_pressure = pressure;
-            if owns_supply {
+            if sampled {
                 fs.supply_pressure_sum += pressure;
                 fs.supply_pressure_samples = fs.supply_pressure_samples.saturating_add(1);
                 if pressure < fs.supply_pressure_min {
@@ -672,8 +671,12 @@ pub fn attrition_phase(state: &mut SimulationState, scenario: &Scenario) {
             // the legacy default) leaves income unchanged. Upkeep is
             // *not* attenuated — units still consume regardless of
             // whether resupply is reaching them, which is exactly why
-            // cut supply lines hurt in the first place.
-            fs.resources += resource_rate * fs.current_supply_pressure;
+            // cut supply lines hurt in the first place. We use the
+            // local `pressure` here rather than re-reading
+            // `fs.current_supply_pressure` so a future refactor that
+            // splits or reorders the two `get_mut` blocks can't
+            // silently apply the *previous* tick's pressure.
+            fs.resources += resource_rate * pressure;
 
             // Upkeep.
             fs.resources = (fs.resources - upkeep).max(0.0);

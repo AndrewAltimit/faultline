@@ -114,10 +114,19 @@ pub fn compute_residual_and_baseline(net: &Network, rt: &NetworkRuntimeState) ->
     (residual, baseline)
 }
 
-/// Per-faction supply pressure in `[0, 1]` for one tick.
+/// Per-faction supply pressure in `[0, 1]` for one tick, plus a flag
+/// indicating whether at least one non-degenerate owned supply network
+/// contributed to the product.
 ///
-/// Returns `1.0` (no effect) for any faction without an owned supply
-/// network. Otherwise: the multiplicative product of
+/// Returns `(1.0, false)` for any faction without an owned supply
+/// network — and also for the degenerate-authoring case where every
+/// owned network has zero baseline capacity. The `sampled` bit is
+/// what callers should key per-faction reporting on: a faction whose
+/// only supply networks have zero baseline never carried supply, so
+/// emitting `(mean=1.0, min=1.0)` samples for it would falsely
+/// advertise "supply intact" in the post-run report.
+///
+/// Otherwise: the multiplicative product of
 /// `(residual / baseline).clamp(0, 1)` across every owned supply
 /// network with a non-zero baseline. Networks where `baseline == 0`
 /// (degenerate authoring — every edge has zero capacity) are skipped
@@ -130,11 +139,12 @@ pub fn supply_pressure_for_faction(
     scenario: &Scenario,
     state: &SimulationState,
     faction: &FactionId,
-) -> f64 {
+) -> (f64, bool) {
     if scenario.networks.is_empty() {
-        return 1.0;
+        return (1.0, false);
     }
     let mut pressure = 1.0_f64;
+    let mut sampled = false;
     for (nid, net) in &scenario.networks {
         if !is_active_supply_network(net) {
             continue;
@@ -156,8 +166,9 @@ pub fn supply_pressure_for_faction(
         }
         let ratio = (residual / baseline).clamp(0.0, 1.0);
         pressure *= ratio;
+        sampled = true;
     }
-    pressure
+    (pressure, sampled)
 }
 
 #[cfg(test)]

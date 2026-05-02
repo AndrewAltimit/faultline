@@ -390,11 +390,10 @@ fn compute_supply_pressure_summaries(
     let mut out = BTreeMap::new();
     for (fid, acc) in accs {
         let n = f64::from(acc.n_runs);
-        let worst_min = if acc.worst_min.is_finite() {
-            acc.worst_min
-        } else {
-            1.0
-        };
+        // `worst_min` is initialised to `f64::INFINITY` only at insertion
+        // time; the same insertion increments `n_runs` and updates
+        // `worst_min` to a finite `min_pressure ∈ [0, 1]`. Any entry that
+        // appears in `accs` therefore has a finite `worst_min` here.
         out.insert(
             fid.clone(),
             SupplyPressureSummary {
@@ -402,7 +401,7 @@ fn compute_supply_pressure_summaries(
                 n_runs: acc.n_runs,
                 mean_of_means: acc.sum_means / n,
                 mean_of_mins: acc.sum_mins / n,
-                worst_min,
+                worst_min: acc.worst_min,
                 mean_pressured_ticks: acc.sum_pressured as f64 / n,
                 runs_with_any_pressure: acc.runs_with_any_pressure,
             },

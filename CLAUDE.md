@@ -468,9 +468,14 @@ new event variants; just a new phase that consumes the existing
   helpers: `is_active_supply_network(net)` (true iff
   `kind` matches `"supply"` case-insensitively *and* `owner` is
   `Some`), and `supply_pressure_for_faction(scenario, state, faction)`
-  returning the multiplier in `[0, 1]`. Pure functions of
-  `(scenario, state)` — no RNG, no `HashMap`, no allocation in the
-  hot path; iteration is `BTreeMap`-ordered.
+  returning `(pressure ∈ [0, 1], sampled: bool)`. The `sampled` bit
+  is what the attrition phase keys per-faction reporting on — it's
+  `true` iff at least one non-degenerate owned supply network
+  contributed to the product, so a faction whose only supply networks
+  have zero baseline capacity doesn't get phantom "supply intact"
+  samples. Pure functions of `(scenario, state)` — no RNG, no
+  `HashMap`, no allocation in the hot path; iteration is
+  `BTreeMap`-ordered.
 - Pressure formula: for each owned supply network,
   `pressure_n = (residual_capacity / baseline_capacity).clamp(0, 1)`;
   per-faction pressure is the product across all owned supply
