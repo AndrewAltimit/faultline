@@ -201,10 +201,11 @@ pub struct HistoricalObservation {
 
 /// What kind of historical observation is being made.
 ///
-/// New variants must be additive — the calibration module dispatches on
-/// this enum and a missing variant surfaces as `unknown` in the report,
-/// not as a panic. New metrics that need new MC reduction logic must
-/// also extend `faultline_stats::calibration`.
+/// Adding a new variant requires updating
+/// `faultline_stats::calibration::evaluate_observation` — the match is
+/// exhaustive and will fail to compile otherwise. That's the intended
+/// failure mode: a new metric without MC reduction logic would silently
+/// produce no calibration verdict, which defeats the section's purpose.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HistoricalMetric {

@@ -107,10 +107,17 @@ pub fn compute_calibration(
 /// largest `FactionId` wins on a tie because `Iterator::max_by` keeps
 /// the *last* maximum). Returns `None` when no faction ever won (every
 /// MC run was a stalemate).
+///
+/// NaN handling: any NaN win rate compares as `Less` than every finite
+/// value, so a NaN entry can never become the modal winner. Win rates
+/// are produced by integer-count division upstream and should never be
+/// NaN in practice; this guard exists so a future producer-side bug
+/// can't silently flip the modal-winner verdict to an arbitrary
+/// last-iterated faction.
 fn compute_modal_winner(win_rates: &BTreeMap<FactionId, f64>) -> Option<FactionId> {
     win_rates
         .iter()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Less))
         .map(|(fid, _)| fid.clone())
 }
 
@@ -264,10 +271,10 @@ fn evaluate_duration(
     let coverage = f64::from(in_range) / n;
     let mean = sum as f64 / n;
     let variance = if runs.len() > 1 {
-        // Population variance over the MC sample, computed from the
-        // running sums to avoid a second pass. This matches the
-        // distribution-stats convention used in compute_distribution_inner
-        // (sample variance with n-1 denominator).
+        // Sample variance (n-1 denominator) over the MC run set,
+        // computed from the running sums to avoid a second pass.
+        // Matches the distribution-stats convention used in
+        // compute_distribution_inner.
         let sum_sq_f = sum_sq as f64;
         let mean_sq_n = mean * mean * n;
         ((sum_sq_f - mean_sq_n) / (n - 1.0)).max(0.0)
