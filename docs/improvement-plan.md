@@ -24,12 +24,16 @@ The five highest-leverage open items, in order:
    internally consistent but externally unjustified, and every new
    epic that produces more outputs (J, M, D-round-three) compounds
    the trust gap.
-2. **R3-5 property tests.** Determinism + seeded RNG = ideal
+2. ~~**R3-5 property tests.** Determinism + seeded RNG = ideal
    substrate. "For any seed, no faction strength goes negative" /
    "Wilson CI bounds always contain the point estimate" /
    "post-disruption residual capacity ≤ pre-disruption" are
    high-value invariants the seeded fixture tests miss. Cheap to
-   start; compounds with every later epic.
+   start; compounds with every later epic.~~ **Shipped May 2026** —
+   see closed-epics list. All three pinned invariants (engine
+   strength non-negative, Wilson bounds contain point estimate,
+   post-disruption max-flow ≤ pre-disruption) plus determinism
+   properties on engine / search now have `proptest` coverage.
 3. ~~**Epic P — `faultline-cli explain` subset.** Cheap, decouples
    from the larger Monaco editor work, and forces every scenario
    to answer "which parameters does this scenario actually move?"
@@ -55,7 +59,9 @@ Epic P explain subset shipped after the May 2026 refresh; its slot
 in the list above is struck through rather than re-numbered so the
 priority context (why this item, in this order, ahead of what)
 remains visible to a future reader who wants to see how the list
-was reasoned about.
+was reasoned about. R3-5 (property tests) shipped after Epic P
+explain — same reasoning for striking through rather than
+re-numbering.
 
 ---
 
@@ -136,7 +142,7 @@ work.
 
 ## Status snapshot
 
-**Closed (17):** A (uncertainty), B (counterfactual), C (time +
+**Closed (18):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), G (reference sanitization), H round-one
@@ -146,7 +152,9 @@ analysis), K (defender capacity / queue dynamics), L (network
 primitives), O (schema versioning), P sub-item (`faultline-cli
 explain` — pure-schema "what does this scenario actually model?"
 view), Q (manifest replay), R3-2 round-one (unread-parameter audit,
-three highest-leverage parameters), R3-3 (decompose `report.rs`).
+three highest-leverage parameters), R3-3 (decompose `report.rs`),
+R3-5 (property tests — `proptest` coverage of engine / search /
+uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** D round-three (4 remaining items), E (UI
 polish), F (scenario library + tech rebalance), J (adaptive AI), M
@@ -154,7 +162,7 @@ polish), F (scenario library + tech rebalance), J (adaptive AI), M
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
 round-two (audit follow-up), R3-4 (generalize leadership morale
-cap), R3-5 (property tests), R3-6 (decompose `Scenario`).
+cap), R3-6 (decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -370,7 +378,7 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
   (alongside `morale`) would generalize cleanly when round-three
   Epic D adds more command-degrading effects. Worth refactoring
   before the next D stack lands.
-- **R3-5: property tests.** Every test today is integration-against-
+- **R3-5: property tests.** ~~Every test today is integration-against-
   fixed-seed. Determinism plus the workspace's seeded RNG policy
   makes property invariants high-value and low-friction with
   `proptest` or `quickcheck`. Acceptance: a `proptest` dev-dep, at
@@ -378,8 +386,12 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
   network_metrics). Examples worth pinning: "for any seed, no
   faction strength goes negative", "Wilson CI bounds always
   contain the point estimate", "post-disruption network samples
-  never have a larger residual capacity than pre-disruption ones".
-  **Promoted to top-five priority** by the May 2026 review.
+  never have a larger residual capacity than pre-disruption ones".~~
+  **Shipped May 2026.** All three pinned invariants plus determinism
+  / bounds properties now run against the engine, search, uncertainty,
+  and network_metrics modules. See the "Property tests (R3-5)"
+  section in `CLAUDE.md` for module layout. Tests in
+  `crates/faultline-{engine,stats}/tests/property_*.rs`.
 - **R3-6: decompose `Scenario`.** With Epic L landed, `Scenario` has
   14 top-level fields and is approaching the "hard to reason about"
   ceiling. Sub-modules or grouped extension blocks
