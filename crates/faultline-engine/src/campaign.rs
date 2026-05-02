@@ -914,6 +914,30 @@ fn enqueue_with_overflow_inner(
         .get(faction)
         .and_then(|f| f.defender_capacities.get(role))
     else {
+        // Defense in depth: validation rejects unknown roles at
+        // scenario load, so this branch is reachable only via
+        // hand-built fixtures that bypass the loader. When this is a
+        // spillover call, the upstream caller already incremented its
+        // `spillover_out`; silently returning would leave the
+        // chain-conservation invariant `parent.spillover_out ==
+        // child.spillover_in` broken with no diagnostic. Best-effort:
+        // if the queue exists, charge `spillover_in` (closing the
+        // chain link) and `total_dropped` (we have no cap to route
+        // under). Otherwise, log so the loss is visible.
+        if is_spillover {
+            if let Some(q) = queue_mut(state, faction, role) {
+                q.spillover_in += u64::from(count);
+                q.total_dropped += u64::from(count);
+            } else {
+                tracing::warn!(
+                    faction = %faction,
+                    role = %role,
+                    count,
+                    "spillover target has no defender_capacity entry and no queue in state — \
+                     malformed fixture bypassed scenario validation; chain-conservation invariant broken"
+                );
+            }
+        }
         return;
     };
     let policy = cap.overflow;
@@ -927,6 +951,20 @@ fn enqueue_with_overflow_inner(
 
     let spillover = {
         let Some(q) = queue_mut(state, faction, role) else {
+            // Defense in depth: cap exists but queue is missing —
+            // only reachable via hand-built fixtures. Mirrors the
+            // depth-guard fix: warn on the spillover path so the
+            // broken `parent.spillover_out == child.spillover_in`
+            // invariant is visible rather than silent.
+            if is_spillover {
+                tracing::warn!(
+                    faction = %faction,
+                    role = %role,
+                    count,
+                    "spillover target queue missing despite defender_capacity declaration — \
+                     malformed fixture bypassed scenario validation; chain-conservation invariant broken"
+                );
+            }
             return;
         };
         // `spillover_in` tracks the chain link from upstream — it's
@@ -946,7 +984,10 @@ fn enqueue_with_overflow_inner(
             // would spill *at* half. The clamp ensures we never read
             // below the current depth (saturation is sticky once
             // reached, even if the queue has drained to under the
-            // threshold this same tick).
+            // threshold this same tick). `threshold = 0.0` is a
+            // legitimate authoring choice meaning "spill 100% of
+            // arrivals from the start"; ceil(0.0) = 0 yields zero
+            // headroom, so every item routes to spillover immediately.
             let threshold_depth =
                 ((f64::from(queue_depth_cap) * threshold).ceil() as u32).min(queue_depth_cap);
             let headroom = threshold_depth.saturating_sub(q.depth);

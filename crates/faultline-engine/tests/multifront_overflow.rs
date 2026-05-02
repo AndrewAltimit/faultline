@@ -40,8 +40,7 @@ fn region(id: &str) -> Region {
     }
 }
 
-fn force(id: &str, region: &str, faction: &str, strength: f64) -> ForceUnit {
-    let _ = faction;
+fn force(id: &str, region: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
@@ -79,7 +78,7 @@ fn capacity(
 
 fn faction(id: &str, capacities: Vec<DefenderCapacity>) -> Faction {
     let mut forces = BTreeMap::new();
-    forces.insert(ForceId::from(id), force(id, "r1", id, 50.0));
+    forces.insert(ForceId::from(id), force(id, "r1", 50.0));
     let mut caps = BTreeMap::new();
     for cap in capacities {
         caps.insert(cap.id.clone(), cap);
