@@ -285,6 +285,14 @@ fn evaluate_attack_actions(
                 continue;
             }
 
+            // Draw the noise unconditionally per enemy-controlled
+            // neighbor *before* consulting diplomacy. Adding an
+            // `Allied` declaration to a pre-existing scenario must
+            // not shift the RNG sequence for the remaining neighbors
+            // in this loop iteration — that would break
+            // bit-identical replay against legacy seeds.
+            let noise: f64 = rng.r#gen::<f64>() * 0.1;
+
             let priority_multiplier = controller
                 .map(|ctrl| {
                     crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, ctrl)
@@ -295,14 +303,6 @@ fn evaluate_attack_actions(
             }
 
             let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
-
-            // Small random factor for variety. Note: the RNG is
-            // consumed unconditionally per neighbor regardless of
-            // diplomacy multiplier so adding diplomatic state to a
-            // pre-existing scenario doesn't change the RNG sequence
-            // for un-affected pairs (preserves bit-identical replay
-            // across legacy seeds).
-            let noise: f64 = rng.r#gen::<f64>() * 0.1;
 
             let score = (weights.objective_weight * strategic_value * 0.1
                 + weights.opportunity_weight * 0.3
@@ -623,6 +623,12 @@ fn evaluate_attack_actions_fog(
                 continue;
             }
 
+            // Draw the noise unconditionally per enemy-controlled
+            // neighbor *before* consulting diplomacy — see the
+            // ground-truth `evaluate_attack_actions` for the
+            // determinism rationale.
+            let noise: f64 = rng.r#gen::<f64>() * 0.1;
+
             let priority_multiplier = controller
                 .map(|ctrl| {
                     crate::diplomacy::ai_threat_multiplier(state, scenario, faction_id, ctrl)
@@ -633,7 +639,6 @@ fn evaluate_attack_actions_fog(
             }
 
             let strategic_value = map.regions.get(neighbor).map_or(1.0, |r| r.strategic_value);
-            let noise: f64 = rng.r#gen::<f64>() * 0.1;
 
             let score = (weights.objective_weight * strategic_value * 0.1
                 + weights.opportunity_weight * 0.3

@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
+use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use faultline_types::faction::{ForceUnit, UnitType};
+use faultline_types::faction::{Diplomacy, DiplomaticStance, ForceUnit, UnitType};
 use faultline_types::ids::{FactionId, ForceId, RegionId};
 use faultline_types::strategy::{Doctrine, FactionAction};
 
@@ -348,5 +349,137 @@ fn ai_evaluates_attack_for_weak_enemy() {
         "alpha should generate an attack action toward weak enemy in \
          adjacent region, got: {:?}",
         actions.iter().map(|a| &a.action).collect::<Vec<_>>(),
+    );
+}
+
+/// Regression: an `Allied` declaration toward one neighbor must not
+/// shift the RNG sequence consumed by `evaluate_attack_actions` for
+/// the remaining neighbors in the same loop iteration. The early
+/// `continue` on `priority_multiplier == 0.0` previously fired
+/// *before* the per-neighbor noise draw, desyncing replay for any
+/// scenario that gained an `Allied` declaration. The fix moves the
+/// draw above the multiplier check; this test pins it.
+#[test]
+fn allied_neighbor_preserves_downstream_rng_state() {
+    use faultline_types::scenario::Scenario;
+    let alpha = FactionId::from("alpha");
+    let bravo = FactionId::from("bravo");
+    let charlie = FactionId::from("charlie");
+    let sw = RegionId::from("sw");
+
+    // Two scenarios that differ only in alpha's diplomacy toward
+    // bravo. Both have alpha facing two enemy-controlled neighbors
+    // (ne controlled by bravo, sw controlled by charlie). Under the
+    // fix, the RNG draw for the bravo neighbor still happens before
+    // the multiplier-zero early-continue, so the next f64 sampled
+    // off the RNG matches across arms.
+    let mut neutral_scenario = minimal_scenario();
+    neutral_scenario.factions.insert(
+        alpha.clone(),
+        faultline_types::faction::Faction {
+            id: alpha.clone(),
+            name: "Alpha".into(),
+            faction_type: faultline_types::faction::FactionType::Military {
+                branch: faultline_types::faction::MilitaryBranch::Army,
+            },
+            description: String::new(),
+            color: "#000000".into(),
+            forces: BTreeMap::new(),
+            tech_access: vec![],
+            initial_morale: 0.8,
+            logistics_capacity: 50.0,
+            initial_resources: 1_000.0,
+            resource_rate: 10.0,
+            recruitment: None,
+            command_resilience: 0.0,
+            intelligence: 0.5,
+            diplomacy: vec![],
+            doctrine: Doctrine::Conventional,
+            escalation_rules: None,
+            defender_capacities: BTreeMap::new(),
+            leadership: None,
+            alliance_fracture: None,
+        },
+    );
+    let alpha_def = neutral_scenario
+        .factions
+        .get(&alpha)
+        .cloned()
+        .expect("alpha was just inserted");
+    let mut bravo_def = alpha_def.clone();
+    bravo_def.id = bravo.clone();
+    bravo_def.name = "Bravo".into();
+    let mut charlie_def = alpha_def.clone();
+    charlie_def.id = charlie.clone();
+    charlie_def.name = "Charlie".into();
+    neutral_scenario.factions.insert(bravo.clone(), bravo_def);
+    neutral_scenario
+        .factions
+        .insert(charlie.clone(), charlie_def);
+
+    let mut allied_scenario: Scenario = neutral_scenario.clone();
+    allied_scenario
+        .factions
+        .get_mut(&alpha)
+        .expect("alpha")
+        .diplomacy = vec![DiplomaticStance {
+        target_faction: bravo.clone(),
+        stance: Diplomacy::Allied,
+    }];
+
+    // State: alpha controls nw, bravo controls ne (alpha's neighbor),
+    // charlie controls sw (alpha's other neighbor). Two
+    // enemy-controlled neighbors per loop iteration.
+    let mut state = make_ai_test_state();
+    state.faction_states.insert(charlie.clone(), {
+        let mut fs = state
+            .faction_states
+            .get(&bravo)
+            .cloned()
+            .expect("bravo state exists");
+        fs.faction_id = charlie.clone();
+        fs.controlled_regions = vec![sw.clone()];
+        fs.forces = BTreeMap::new();
+        fs.forces.insert(
+            ForceId::from("charlie_inf"),
+            ForceUnit {
+                id: ForceId::from("charlie_inf"),
+                name: "Charlie Infantry".into(),
+                unit_type: UnitType::Infantry,
+                region: sw.clone(),
+                strength: 50.0,
+                mobility: 1.0,
+                force_projection: None,
+                upkeep: 1.0,
+                morale_modifier: 0.0,
+                capabilities: vec![],
+            },
+        );
+        fs
+    });
+    state
+        .region_control
+        .insert(RegionId::from("ne"), Some(bravo));
+    state.region_control.insert(sw.clone(), Some(charlie));
+
+    let map = make_ai_test_map();
+
+    // Same seed, same loop body, two scenario arms. Drain the AI
+    // call, then sample one more f64 — under the fix the post-call
+    // RNG state is identical across arms.
+    let mut rng_neutral = ChaCha8Rng::seed_from_u64(7);
+    let _ = ai::evaluate_actions(&alpha, &state, &neutral_scenario, &map, &mut rng_neutral);
+    let next_neutral: f64 = rng_neutral.r#gen();
+
+    let mut rng_allied = ChaCha8Rng::seed_from_u64(7);
+    let _ = ai::evaluate_actions(&alpha, &state, &allied_scenario, &map, &mut rng_allied);
+    let next_allied: f64 = rng_allied.r#gen();
+
+    assert_eq!(
+        next_neutral, next_allied,
+        "Allied declaration toward one neighbor must not shift the RNG \
+         sequence for un-affected neighbors. If this test fails, the \
+         RNG draw in evaluate_attack_actions has drifted back below \
+         the priority_multiplier == 0.0 early-continue."
     );
 }
