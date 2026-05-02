@@ -77,6 +77,14 @@ proptest! {
         }
         // Every snapshot in between (when collect_snapshots is on for
         // the bundled scenario, the run honors the snapshot_interval).
+        // Assert non-empty so that if a future fixture change disables
+        // snapshot collection (e.g. snapshot_interval = 0), the
+        // intermediate-tick check doesn't silently degenerate to a
+        // vacuous pass.
+        prop_assert!(
+            !result.snapshots.is_empty(),
+            "expected snapshots from fixture for intermediate-tick checks"
+        );
         for snap in &result.snapshots {
             for (fid, state) in &snap.faction_states {
                 prop_assert!(

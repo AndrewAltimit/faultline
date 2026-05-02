@@ -41,6 +41,12 @@ use faultline_types::strategy_space::{DecisionVariable, Domain, SearchObjective,
 use faultline_types::victory::{VictoryCondition, VictoryType};
 use proptest::prelude::*;
 
+/// Steps for the lone continuous decision variable in the property-test
+/// fixture. Centralized here so `minimal_search_scenario` and the grid
+/// assertion in `grid_trial_assignments_match_enumerated_levels` cannot
+/// drift apart — if this changes, both sites update together.
+const FIXTURE_STEPS: u32 = 4;
+
 /// Minimal scenario with two factions and a single decision variable
 /// over `faction.alpha.initial_morale`. Tuned for property-test speed:
 /// 30 ticks max, two-region grid, no kill chains or networks. Exposed
@@ -215,7 +221,7 @@ fn minimal_search_scenario(low: f64, high: f64) -> Scenario {
                 domain: Domain::Continuous {
                     low,
                     high,
-                    steps: 4,
+                    steps: FIXTURE_STEPS,
                 },
             }],
             objectives: vec![],
@@ -319,14 +325,17 @@ proptest! {
         let low = f64::from(low_thousandths) / 1_000.0;
         let high = low + f64::from(span_thousandths) / 1_000.0;
         let scenario = minimal_search_scenario(low, high);
-        let cfg = search_config(SearchMethod::Grid, search_seed, 4);
+        let cfg = search_config(SearchMethod::Grid, search_seed, FIXTURE_STEPS);
         let result = run_search(&scenario, &cfg).expect("search runs");
-        // The fixture declares `steps: 4`, so the enumerated levels
-        // are at t in {0, 1/3, 2/3, 1}. Build the same set here and
-        // require every assignment to match one to within fp drift.
-        let levels: Vec<f64> = (0..4)
+        // The fixture declares `steps: FIXTURE_STEPS`, so the
+        // enumerated levels are at t in {i/(steps-1)} for
+        // i in 0..steps inclusive of both endpoints. Build the same
+        // set here and require every assignment to match one to
+        // within fp drift.
+        let denom = f64::from(FIXTURE_STEPS - 1);
+        let levels: Vec<f64> = (0..FIXTURE_STEPS)
             .map(|i| {
-                let t = f64::from(i) / 3.0;
+                let t = f64::from(i) / denom;
                 low + (high - low) * t
             })
             .collect();

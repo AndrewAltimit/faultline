@@ -34,6 +34,14 @@ use proptest::prelude::*;
 /// by giving each a unique `EdgeId`. Parallel edges are *not* deduped
 /// for the purpose of capacity — `max_flow` sums parallel capacities,
 /// which is the correct semantics.
+///
+/// To keep the disruption invariant non-trivially exercised, the
+/// generator first lays down a directed spanning chain `n0 → n1 → … →
+/// n{n-1}` so an `n0 → n1` flow is *always* feasible at baseline. The
+/// random extra edges then layer additional structure on top. Without
+/// the chain, sparse graphs (≤ 3 random edges over 20 nodes) very
+/// rarely contain any `n0 → n1` path and the disruption invariant
+/// passes vacuously at `0.0 ≤ 0.0`.
 fn build_network(n_nodes: usize, edges: &[(usize, usize, f64)]) -> Network {
     let mut nodes = BTreeMap::new();
     for i in 0..n_nodes {
@@ -48,11 +56,23 @@ fn build_network(n_nodes: usize, edges: &[(usize, usize, f64)]) -> Network {
         );
     }
     let mut net_edges = BTreeMap::new();
+    // Spanning chain n0 → n1 → ... → n{n-1} (capacity 1.0 each) so the
+    // baseline n0→n1 flow is at least 1.0.
+    for i in 0..n_nodes.saturating_sub(1) {
+        let eid = EdgeId::from(format!("chain{i}").as_str());
+        net_edges.insert(
+            eid.clone(),
+            NetworkEdge {
+                id: eid,
+                from: NodeId::from(format!("n{i}").as_str()),
+                to: NodeId::from(format!("n{}", i + 1).as_str()),
+                capacity: 1.0,
+                ..Default::default()
+            },
+        );
+    }
     for (i, &(u, v, cap)) in edges.iter().enumerate() {
         if u == v {
-            continue;
-        }
-        if u >= n_nodes || v >= n_nodes {
             continue;
         }
         let eid = EdgeId::from(format!("e{i}").as_str());
@@ -76,7 +96,8 @@ fn build_network(n_nodes: usize, edges: &[(usize, usize, f64)]) -> Network {
     }
 }
 
-/// Strategy: a small random graph.
+/// Strategy: a small random graph layered on top of an n0→…→n{n-1}
+/// spanning chain (added in `build_network`).
 fn arb_network() -> impl Strategy<Value = Network> {
     (3usize..=20)
         .prop_flat_map(|n| {
@@ -112,6 +133,14 @@ proptest! {
             &BTreeSet::new(),
         )
         .expect("source / sink defined");
+
+        // Skip vacuous cases. `arb_network` lays down a spanning chain
+        // so `baseline.flow` should be ≥ 1.0 in practice, but if a
+        // future generator change breaks that assumption we want the
+        // failure to surface as a *missing* signal (proptest reports
+        // "filtered all generated values") rather than as the
+        // invariant `0.0 <= 0.0` quietly always passing.
+        prop_assume!(baseline.flow > 1e-9);
 
         // Disrupt the next-N nodes after source/sink. Skipping the
         // endpoints themselves keeps the comparison meaningful: if we
