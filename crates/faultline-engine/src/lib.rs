@@ -1426,6 +1426,21 @@ fn validate_intelligence_payload(
                     "event `{eid}` declares an `IntelligenceShare::ForceObservation` with empty force id."
                 )));
             }
+            // Intel-share semantics require the force to actually exist in
+            // ground truth — a non-existent force id silently no-ops at
+            // runtime (`lookup_force` returns `None`), which contradicts
+            // the load-time-fail-loud pattern. Unlike DeceptionOp (which
+            // can plant fictional forces), IntelShare reads truth.
+            let force_exists = scenario
+                .factions
+                .values()
+                .any(|f| f.forces.contains_key(force));
+            if !force_exists {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares an `IntelligenceShare::ForceObservation` referencing \
+                     unknown force `{force}`. Reference a force declared on some faction."
+                )));
+            }
         },
         IntelligencePayload::RegionControl { region } => {
             if !scenario.map.regions.contains_key(region) {

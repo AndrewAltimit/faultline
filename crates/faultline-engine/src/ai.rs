@@ -505,31 +505,16 @@ fn evaluate_recruit_actions(
 // Fog of war
 // -----------------------------------------------------------------------
 
-/// Build a `FactionWorldView` from the full simulation state.
+/// Compute the set of regions visible to a faction this tick.
 ///
-/// Visible regions are: regions with own forces, own controlled regions,
-/// regions adjacent to owned forces, and regions within recon range of
-/// units with `Recon` capability.
-///
-/// Enemy forces in visible regions are detected with strength estimates
-/// scaled by the faction's intelligence stat.
-pub fn build_world_view(
-    faction_id: &FactionId,
-    state: &SimulationState,
-    scenario: &Scenario,
+/// Visibility = own controlled regions + own forces' regions + their
+/// adjacent regions + Recon-extended hops. Shared between
+/// `build_world_view` and `crate::belief::observe_into_belief` so the
+/// belief-derived world view matches what fog-of-war would produce.
+pub(crate) fn compute_visible_regions(
+    faction_state: &RuntimeFactionState,
     map: &GameMap,
-) -> FactionWorldView {
-    let faction_state = state
-        .faction_states
-        .get(faction_id)
-        .expect("faction must exist when building world view");
-
-    let intelligence = scenario
-        .factions
-        .get(faction_id)
-        .map_or(0.5, |f| f.intelligence);
-
-    // Compute visible regions.
+) -> BTreeSet<RegionId> {
     let mut visible: BTreeSet<RegionId> = BTreeSet::new();
 
     // Own controlled regions are always visible.
@@ -567,6 +552,36 @@ pub fn build_world_view(
             }
         }
     }
+    visible
+}
+
+/// Build a `FactionWorldView` from the full simulation state.
+///
+/// Visible regions are: regions with own forces, own controlled regions,
+/// regions adjacent to owned forces, and regions within recon range of
+/// units with `Recon` capability.
+///
+/// Enemy forces in visible regions are detected with strength estimates
+/// scaled by the faction's intelligence stat.
+pub fn build_world_view(
+    faction_id: &FactionId,
+    state: &SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+) -> FactionWorldView {
+    let faction_state = state
+        .faction_states
+        .get(faction_id)
+        .expect("faction must exist when building world view");
+
+    let intelligence = scenario
+        .factions
+        .get(faction_id)
+        .map_or(0.5, |f| f.intelligence);
+
+    // Compute visible regions via the shared helper so the
+    // belief phase and the AI fog-of-war evaluator never disagree.
+    let visible: BTreeSet<RegionId> = compute_visible_regions(faction_state, map);
 
     // Build known_regions: only visible ones, with control info.
     let known_regions: BTreeMap<RegionId, Option<FactionId>> = visible

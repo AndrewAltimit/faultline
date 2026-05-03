@@ -38,20 +38,20 @@
 //! stay empty, and the AI consumes ground truth as it has since
 //! pre-Epic-M.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use faultline_geo::{GameMap, adjacent_regions};
+use faultline_geo::GameMap;
 use faultline_types::belief::{
     BeliefForce, BeliefModelConfig, BeliefRegion, BeliefScalar, BeliefSource, DeceptionPayload,
     FactionBelief, IntelligencePayload,
 };
-use faultline_types::faction::UnitCapability;
 use faultline_types::ids::{FactionId, ForceId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::BeliefSnapshot;
 use faultline_types::strategy::{DetectedForce, FactionWorldView, PoliticalClimateView};
 
-use crate::state::{BeliefRunCounters, RuntimeFactionState, SimulationState};
+use crate::ai::compute_visible_regions;
+use crate::state::{BeliefRunCounters, SimulationState};
 
 /// True iff the scenario opts into the belief model with
 /// `enabled = true`.
@@ -400,43 +400,6 @@ fn observe_into_belief(
     }
 }
 
-/// Compute the set of regions visible to a faction this tick. Mirrors
-/// the visibility computation in `ai::build_world_view` so the
-/// belief-derived view matches what fog-of-war would produce.
-fn compute_visible_regions(self_state: &RuntimeFactionState, map: &GameMap) -> BTreeSet<RegionId> {
-    let mut visible = BTreeSet::new();
-    for r in &self_state.controlled_regions {
-        visible.insert(r.clone());
-    }
-    for force in self_state.forces.values() {
-        visible.insert(force.region.clone());
-        for neighbor in adjacent_regions(&force.region, map) {
-            visible.insert(neighbor);
-        }
-        for cap in &force.capabilities {
-            if let UnitCapability::Recon { range, .. } = cap {
-                let mut frontier = vec![force.region.clone()];
-                let mut seen = BTreeSet::new();
-                seen.insert(force.region.clone());
-                let hops = (*range as u32).min(3);
-                for _ in 0..hops {
-                    let mut next_frontier = Vec::new();
-                    for r in &frontier {
-                        for neighbor in adjacent_regions(r, map) {
-                            if seen.insert(neighbor.clone()) {
-                                next_frontier.push(neighbor.clone());
-                                visible.insert(neighbor);
-                            }
-                        }
-                    }
-                    frontier = next_frontier;
-                }
-            }
-        }
-    }
-    visible
-}
-
 /// Apply a `DeceptionOp` event-effect to the target faction's belief.
 ///
 /// Inserts (or overwrites) a single entry tagged
@@ -536,15 +499,11 @@ pub fn apply_deception_op(
         },
     }
     belief.deception_events_received = belief.deception_events_received.saturating_add(1);
-    state
+    let counter = state
         .belief_counters
         .entry(target_faction.clone())
-        .or_default()
-        .deception_events_received = state
-        .belief_counters
-        .get(target_faction)
-        .map(|c| c.deception_events_received.saturating_add(1))
-        .unwrap_or(1);
+        .or_default();
+    counter.deception_events_received = counter.deception_events_received.saturating_add(1);
 }
 
 /// Apply an `IntelligenceShare` event-effect — overwrite the target's
@@ -580,7 +539,7 @@ pub fn apply_intelligence_share(
                                 None
                             }
                         })
-                        .unwrap_or_else(|| FactionId::from(""));
+                        .expect("force found by lookup_force must have an owner");
                     IntelGroundTruth::Force {
                         force: force_id,
                         owner,
@@ -661,15 +620,11 @@ pub fn apply_intelligence_share(
                 .insert(faction, BeliefScalar::fresh(value, tick));
         },
     }
-    state
+    let counter = state
         .belief_counters
         .entry(target_faction.clone())
-        .or_default()
-        .intel_shares_received = state
-        .belief_counters
-        .get(target_faction)
-        .map(|c| c.intel_shares_received.saturating_add(1))
-        .unwrap_or(1);
+        .or_default();
+    counter.intel_shares_received = counter.intel_shares_received.saturating_add(1);
 }
 
 /// Construct a [`FactionWorldView`] from a persistent

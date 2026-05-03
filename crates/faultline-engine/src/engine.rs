@@ -194,15 +194,19 @@ impl Engine {
         // No-op for scenarios with no `[networks.*]` declarations.
         network_phase::capture_samples(&mut self.state, &self.scenario);
 
+        // Update region control after all modifications.
+        tick::update_region_control(&mut self.state, &self.scenario);
+
         // Phase 7f: Belief asymmetry update (Epic M round-one).
         // Decays unobserved beliefs, refreshes visible ones, prunes
         // pruned-out entries, and updates the per-faction accuracy
         // counters. Short-circuits in O(1) when the scenario does
-        // not enable `simulation.belief_model.enabled`.
+        // not enable `simulation.belief_model.enabled`. Runs *after*
+        // `update_region_control` so `observe_into_belief` reads the
+        // post-combat region control map — beliefs about region
+        // attribution reflect what combat actually resolved this tick,
+        // not the prior tick's stale state.
         crate::belief::belief_phase(&mut self.state, &self.scenario, &self.map);
-
-        // Update region control after all modifications.
-        tick::update_region_control(&mut self.state, &self.scenario);
 
         // Take snapshot if interval is hit.
         let interval = self.scenario.simulation.snapshot_interval;
