@@ -151,8 +151,7 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
     let faction_ids: Vec<FactionId> = scenario.factions.keys().cloned().collect();
     let mut new_snapshots: Vec<(FactionId, BeliefSnapshot)> = Vec::new();
     let snapshot_interval = cfg.snapshot_interval;
-    let take_snapshot_this_tick =
-        snapshot_interval > 0 && (tick.is_multiple_of(snapshot_interval) || tick == 0);
+    let take_snapshot_this_tick = snapshot_interval > 0 && tick.is_multiple_of(snapshot_interval);
 
     // Pre-compute the per-tick error contributions while only
     // immutably borrowing state. Then apply mutations.
@@ -341,6 +340,9 @@ fn observe_into_belief(
     belief: &mut FactionBelief,
     faction_id: &FactionId,
     state: &SimulationState,
+    // TODO(round-two): consume scenario for intelligence-stat-driven
+    // estimation noise — pre-wired so the call sites don't need to
+    // change when round-two lands.
     _scenario: &Scenario,
     map: &GameMap,
     tick: u32,
