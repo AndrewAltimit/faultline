@@ -201,7 +201,11 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
         }
         if region_n > 0 {
             counter.region_belief_ticks += 1;
-            counter.region_accuracy_sum += region_sum / f64::from(region_n);
+            // `region_sum` is already the per-tick fraction
+            // (correct/region_n) returned by compute_accuracy_contribution.
+            // The downstream consumer divides by `region_belief_ticks`
+            // to get the cross-tick mean, so we must not re-normalize.
+            counter.region_accuracy_sum += region_sum;
         }
     }
 
@@ -897,6 +901,119 @@ mod tests {
         assert_eq!(snap.force_belief_count, 0);
         assert_eq!(snap.region_belief_count, 0);
         assert_eq!(snap.mean_force_confidence, 0.0);
+    }
+
+    /// Pin the contract that `compute_accuracy_contribution` returns
+    /// the per-tick region-accuracy as an already-normalized fraction
+    /// (`correct / region_n`). Pairs with the matching invariant in
+    /// `belief_phase` that adds the value directly to
+    /// `region_accuracy_sum` without re-dividing.
+    #[test]
+    fn region_accuracy_sum_not_double_divided() {
+        use crate::state::RuntimeFactionState;
+        let red = FactionId::from("red");
+        let blue = FactionId::from("blue");
+        let r1 = RegionId::from("r1");
+        let r2 = RegionId::from("r2");
+
+        let mut belief = FactionBelief::default();
+        belief.regions.insert(
+            r1.clone(),
+            BeliefRegion {
+                controller: Some(red.clone()),
+                confidence: 1.0,
+                last_observed_tick: 0,
+                source: BeliefSource::DirectObservation,
+            },
+        );
+        belief.regions.insert(
+            r2.clone(),
+            BeliefRegion {
+                controller: Some(blue.clone()),
+                confidence: 1.0,
+                last_observed_tick: 0,
+                source: BeliefSource::DirectObservation,
+            },
+        );
+
+        let mut faction_states = BTreeMap::new();
+        for fid in [red.clone(), blue.clone()] {
+            faction_states.insert(
+                fid.clone(),
+                RuntimeFactionState {
+                    faction_id: fid.clone(),
+                    total_strength: 0.0,
+                    morale: 0.5,
+                    resources: 0.0,
+                    resource_rate: 0.0,
+                    logistics_capacity: 0.0,
+                    controlled_regions: vec![],
+                    forces: BTreeMap::new(),
+                    tech_deployed: vec![],
+                    region_hold_ticks: BTreeMap::new(),
+                    eliminated: false,
+                    current_leadership_rank: 0,
+                    last_decapitation_tick: None,
+                    leadership_decapitations: 0,
+                    command_effectiveness: 1.0,
+                    current_supply_pressure: 1.0,
+                    supply_pressure_sum: 0.0,
+                    supply_pressure_samples: 0,
+                    supply_pressure_min: 1.0,
+                    supply_pressure_pressured_ticks: 0,
+                    tech_denied_at_deployment: Vec::new(),
+                    tech_decommissioned: Vec::new(),
+                    tech_deployment_spend: 0.0,
+                    tech_maintenance_spend: 0.0,
+                    tech_coverage_used: BTreeMap::new(),
+                },
+            );
+        }
+        let mut region_control = BTreeMap::new();
+        region_control.insert(r1, Some(red.clone()));
+        region_control.insert(r2, Some(blue.clone()));
+
+        let state = SimulationState {
+            tick: 0,
+            faction_states,
+            region_control,
+            infra_status: BTreeMap::new(),
+            institution_loyalty: BTreeMap::new(),
+            political_climate: faultline_types::politics::PoliticalClimate::default(),
+            events_fired: Default::default(),
+            events_fired_this_tick: vec![],
+            snapshots: vec![],
+            non_kinetic: Default::default(),
+            metric_history: vec![],
+            defender_queues: BTreeMap::new(),
+            network_states: BTreeMap::new(),
+            defender_over_budget_tick: None,
+            diplomacy_overrides: BTreeMap::new(),
+            fired_fractures: Default::default(),
+            initial_faction_strengths: BTreeMap::new(),
+            fracture_events: vec![],
+            civilian_activations: vec![],
+            narratives: BTreeMap::new(),
+            narrative_events: vec![],
+            narrative_dominance_ticks: BTreeMap::new(),
+            narrative_peak_dominance: BTreeMap::new(),
+            displacement: BTreeMap::new(),
+            utility_decisions: BTreeMap::new(),
+            belief_states: BTreeMap::new(),
+            belief_counters: BTreeMap::new(),
+            belief_snapshots: BTreeMap::new(),
+        };
+
+        let observer = FactionId::from("observer");
+        let (_, _, region_n, region_sum) =
+            compute_accuracy_contribution(&belief, &observer, &state);
+        assert_eq!(region_n, 2);
+        // 2 regions, 2 correct → fraction is 1.0 (not 0.5, which would
+        // indicate a double-division regression).
+        assert!(
+            (region_sum - 1.0).abs() < 1e-9,
+            "region_sum={region_sum} expected 1.0"
+        );
     }
 
     #[test]
