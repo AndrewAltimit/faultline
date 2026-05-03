@@ -23,6 +23,7 @@ use faultline_types::stats::MonteCarloSummary;
 mod util;
 
 mod alliance_dynamics;
+mod belief_asymmetry;
 mod calibration;
 mod civilian_activations;
 mod continuous_metrics;
@@ -89,7 +90,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 26] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 27] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -124,6 +125,11 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 26] {
         // per-mechanic data presence (no `[utility]` declared = empty
         // summary map = no section).
         &utility_decomposition::UtilityDecomposition,
+        // Belief Asymmetry (Epic M round-one) sits next to Utility
+        // Decomposition — both describe AI-shape signals. Gates on
+        // `summary.belief_summaries` non-empty, which equals "the
+        // scenario opted into the belief model".
+        &belief_asymmetry::BeliefAsymmetry,
         // Calibration sits just before Methodology so the verdict and
         // the methodology appendix are next to each other in the
         // rendered report — the reader sees the calibration claim,
@@ -257,7 +263,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 26);
+        assert_eq!(monte_carlo_sections().len(), 27);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -354,10 +360,10 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 24 = Calibration (index shifted by Epic J
-        // round-one inserting UtilityDecomposition before Calibration),
-        // 25 = Methodology (last entry).
-        let unconditional_indices = [0usize, 24, 25];
+        // 0 = Header, 25 = Calibration (index shifted by Epic M
+        // round-one inserting BeliefAsymmetry before Calibration),
+        // 26 = Methodology (last entry).
+        let unconditional_indices = [0usize, 25, 26];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

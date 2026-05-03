@@ -256,6 +256,8 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: BTreeMap::new(),
             utility_decisions: udecisions,
+            belief_accuracy: ::std::collections::BTreeMap::new(),
+            belief_snapshots: ::std::collections::BTreeMap::new(),
         }
     }
 

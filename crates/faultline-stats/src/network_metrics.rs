@@ -951,6 +951,8 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
             utility_decisions: BTreeMap::new(),
+            belief_accuracy: ::std::collections::BTreeMap::new(),
+            belief_snapshots: ::std::collections::BTreeMap::new(),
         };
         let runs = vec![make_run(0, report1), make_run(1, report2)];
 

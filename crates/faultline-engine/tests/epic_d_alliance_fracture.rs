@@ -142,6 +142,7 @@ fn three_faction_scenario() -> Scenario {
             monte_carlo_runs: 1,
             fog_of_war: false,
             snapshot_interval: 0,
+            belief_model: None,
             seed: Some(42),
             tick_duration: TickDuration::Days(1),
             attrition_model: AttritionModel::Stochastic { noise: 0.0 },

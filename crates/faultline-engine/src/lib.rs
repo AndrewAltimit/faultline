@@ -8,6 +8,7 @@
 //! RNG seed, the output is fully deterministic.
 
 pub mod ai;
+pub mod belief;
 pub mod campaign;
 pub mod combat;
 pub mod diplomacy;
@@ -989,6 +990,15 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
+    // Belief-asymmetry config (Epic M round-one). Validates the decay
+    // rates / prune threshold even when `enabled = false` so a typo
+    // in a disabled-but-authored config is caught at load time —
+    // the analyst likely intends to flip the toggle later and would
+    // be surprised by silent clamping.
+    if let Some(cfg) = &scenario.simulation.belief_model {
+        faultline_types::belief::validate_belief_model(cfg).map_err(ScenarioError::Custom)?;
+    }
+
     // Media landscape. The three media-amplification fields are
     // load-bearing on `update_civilian_segments` and
     // `information_phase`. All five fields are documented as `[0, 1]`
@@ -1260,7 +1270,177 @@ fn validate_event_effect(
                 )));
             }
         },
+        EventEffect::DeceptionOp {
+            source_faction,
+            target_faction,
+            payload,
+        } => {
+            // Epic M round-one — belief asymmetry. Reject every silent-no-op
+            // shape at load time: unknown source / target faction, self-targeting
+            // (the deception lands on the planter — author confusion), and
+            // unknown referenced entities in the payload.
+            if !scenario.factions.contains_key(source_faction) {
+                return Err(ScenarioError::UnknownFaction(source_faction.clone()));
+            }
+            if !scenario.factions.contains_key(target_faction) {
+                return Err(ScenarioError::UnknownFaction(target_faction.clone()));
+            }
+            if source_faction == target_faction {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `DeceptionOp` with `source_faction == target_faction = `{source_faction}`; \
+                     a faction cannot deceive itself. Either change one of the two or remove the effect."
+                )));
+            }
+            validate_deception_payload(scenario, eid, payload)?;
+        },
+        EventEffect::IntelligenceShare {
+            source_faction,
+            target_faction,
+            payload,
+        } => {
+            // Epic M round-one — same shape as DeceptionOp validation
+            // (same silent-no-op risks).
+            if !scenario.factions.contains_key(source_faction) {
+                return Err(ScenarioError::UnknownFaction(source_faction.clone()));
+            }
+            if !scenario.factions.contains_key(target_faction) {
+                return Err(ScenarioError::UnknownFaction(target_faction.clone()));
+            }
+            if source_faction == target_faction {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares an `IntelligenceShare` with `source_faction == target_faction = `{source_faction}`; \
+                     sharing intel with yourself is a no-op. Either change one of the two or remove the effect."
+                )));
+            }
+            validate_intelligence_payload(scenario, eid, payload)?;
+        },
         _ => {},
+    }
+    Ok(())
+}
+
+fn validate_deception_payload(
+    scenario: &Scenario,
+    eid: &faultline_types::ids::EventId,
+    payload: &faultline_types::belief::DeceptionPayload,
+) -> Result<(), ScenarioError> {
+    use faultline_types::belief::DeceptionPayload;
+    match payload {
+        DeceptionPayload::FalseForceStrength {
+            force,
+            owner,
+            region,
+            false_strength,
+        } => {
+            if !scenario.factions.contains_key(owner) {
+                return Err(ScenarioError::UnknownFaction(owner.clone()));
+            }
+            if !scenario.map.regions.contains_key(region) {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `DeceptionOp::FalseForceStrength` referencing \
+                     unknown region `{region}`. Reference a declared region."
+                )));
+            }
+            // Force ID is allowed to be a previously-unknown id at scenario
+            // load — round-one allows planting fictional forces. We do
+            // require it be a non-empty string so the runtime can key it.
+            if force.0.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `DeceptionOp::FalseForceStrength` with empty force id."
+                )));
+            }
+            if !false_strength.is_finite() || *false_strength < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "event {eid} DeceptionOp::FalseForceStrength({force}) false_strength"
+                    ),
+                    value: *false_strength,
+                    expected: "non-negative and finite".into(),
+                });
+            }
+        },
+        DeceptionPayload::FalseRegionControl {
+            region,
+            false_controller,
+        } => {
+            if !scenario.map.regions.contains_key(region) {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `DeceptionOp::FalseRegionControl` referencing \
+                     unknown region `{region}`."
+                )));
+            }
+            if let Some(fid) = false_controller
+                && !scenario.factions.contains_key(fid)
+            {
+                return Err(ScenarioError::UnknownFaction(fid.clone()));
+            }
+        },
+        DeceptionPayload::FalseFactionMorale {
+            faction,
+            false_morale,
+        } => {
+            if !scenario.factions.contains_key(faction) {
+                return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+            if !false_morale.is_finite() || !(0.0..=1.0).contains(false_morale) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "event {eid} DeceptionOp::FalseFactionMorale({faction}) false_morale"
+                    ),
+                    value: *false_morale,
+                    expected: "[0.0, 1.0] and finite".into(),
+                });
+            }
+        },
+        DeceptionPayload::FalseFactionResources {
+            faction,
+            false_resources,
+        } => {
+            if !scenario.factions.contains_key(faction) {
+                return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+            if !false_resources.is_finite() || *false_resources < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "event {eid} DeceptionOp::FalseFactionResources({faction}) false_resources"
+                    ),
+                    value: *false_resources,
+                    expected: "non-negative and finite".into(),
+                });
+            }
+        },
+    }
+    Ok(())
+}
+
+fn validate_intelligence_payload(
+    scenario: &Scenario,
+    eid: &faultline_types::ids::EventId,
+    payload: &faultline_types::belief::IntelligencePayload,
+) -> Result<(), ScenarioError> {
+    use faultline_types::belief::IntelligencePayload;
+    match payload {
+        IntelligencePayload::ForceObservation { force } => {
+            if force.0.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares an `IntelligenceShare::ForceObservation` with empty force id."
+                )));
+            }
+        },
+        IntelligencePayload::RegionControl { region } => {
+            if !scenario.map.regions.contains_key(region) {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares an `IntelligenceShare::RegionControl` referencing \
+                     unknown region `{region}`."
+                )));
+            }
+        },
+        IntelligencePayload::FactionMorale { faction }
+        | IntelligencePayload::FactionResources { faction } => {
+            if !scenario.factions.contains_key(faction) {
+                return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+        },
     }
     Ok(())
 }
@@ -1747,6 +1927,7 @@ mod tests {
                 fog_of_war: false,
                 attrition_model: AttritionModel::LanchesterLinear,
                 snapshot_interval: 10,
+                belief_model: None,
             },
             victory_conditions,
             kill_chains: BTreeMap::new(),
@@ -3197,5 +3378,310 @@ mod tests {
         let err = validate_scenario(&s).expect_err("NaN multiplier should fail");
         let msg = format!("{err}");
         assert!(msg.contains("trigger"), "got: {msg}");
+    }
+
+    // ---------------------------------------------------------------
+    // Epic M round-one — belief asymmetry validation tests
+    // ---------------------------------------------------------------
+
+    /// Add a second faction so deception / intel-share scenarios have
+    /// distinct source / target pairs to reference.
+    fn ensure_two_factions(scenario: &mut Scenario) {
+        let blue = FactionId::from("insurgent");
+        if scenario.factions.contains_key(&blue) {
+            return;
+        }
+        let template = scenario
+            .factions
+            .values()
+            .next()
+            .expect("scenario has at least one faction")
+            .clone();
+        scenario.factions.insert(
+            blue.clone(),
+            Faction {
+                id: blue,
+                name: "Insurgent".into(),
+                ..template
+            },
+        );
+    }
+
+    fn add_event_with_effect(
+        scenario: &mut Scenario,
+        eid_str: &str,
+        effect: faultline_types::events::EventEffect,
+    ) {
+        use faultline_types::events::EventDefinition;
+        use faultline_types::ids::EventId;
+        let eid = EventId::from(eid_str);
+        scenario.events.insert(
+            eid.clone(),
+            EventDefinition {
+                id: eid,
+                name: eid_str.into(),
+                description: String::new(),
+                earliest_tick: None,
+                latest_tick: None,
+                conditions: vec![],
+                probability: 1.0,
+                repeatable: false,
+                effects: vec![effect],
+                chain: None,
+                defender_options: vec![],
+            },
+        );
+    }
+
+    #[test]
+    fn validate_passes_for_well_formed_deception() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::ForceId;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        // gov + insurgent are the two factions in `minimal_scenario()`.
+        add_event_with_effect(
+            &mut s,
+            "deception_op",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from("phantom_unit"),
+                    owner: FactionId::from("gov"),
+                    region: minimal_scenario_region(),
+                    false_strength: 250.0,
+                },
+            },
+        );
+        validate_scenario(&s).expect("well-formed deception passes");
+    }
+
+    fn minimal_scenario_region() -> faultline_types::ids::RegionId {
+        // The minimal_scenario() helper builds a 2-region map; just
+        // grab the first region id from a fresh scenario.
+        let s = minimal_scenario();
+        s.map
+            .regions
+            .keys()
+            .next()
+            .expect("at least one region")
+            .clone()
+    }
+
+    #[test]
+    fn validate_rejects_deception_unknown_source() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::ForceId;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "bad_deception",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("ghost"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from("phantom"),
+                    owner: FactionId::from("gov"),
+                    region: minimal_scenario_region(),
+                    false_strength: 100.0,
+                },
+            },
+        );
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("ghost"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_deception_self_targeting() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::ForceId;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "self_deception",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("gov"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from("phantom"),
+                    owner: FactionId::from("gov"),
+                    region: minimal_scenario_region(),
+                    false_strength: 100.0,
+                },
+            },
+        );
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("cannot deceive itself"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_deception_unknown_region() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::{ForceId, RegionId};
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "bad_region",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from("phantom"),
+                    owner: FactionId::from("gov"),
+                    region: RegionId::from("nowhere"),
+                    false_strength: 100.0,
+                },
+            },
+        );
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("nowhere"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_deception_empty_force_id() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::ForceId;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "empty_force",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from(""),
+                    owner: FactionId::from("gov"),
+                    region: minimal_scenario_region(),
+                    false_strength: 100.0,
+                },
+            },
+        );
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("empty force id"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_deception_negative_strength() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        use faultline_types::ids::ForceId;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "neg_strength",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseForceStrength {
+                    force: ForceId::from("phantom"),
+                    owner: FactionId::from("gov"),
+                    region: minimal_scenario_region(),
+                    false_strength: -1.0,
+                },
+            },
+        );
+        assert!(validate_scenario(&s).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_deception_morale_out_of_range() {
+        use faultline_types::belief::DeceptionPayload;
+        use faultline_types::events::EventEffect;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "bad_morale",
+            EventEffect::DeceptionOp {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("insurgent"),
+                payload: DeceptionPayload::FalseFactionMorale {
+                    faction: FactionId::from("insurgent"),
+                    false_morale: 1.5,
+                },
+            },
+        );
+        assert!(validate_scenario(&s).is_err());
+    }
+
+    #[test]
+    fn validate_rejects_intelligence_share_self_targeting() {
+        use faultline_types::belief::IntelligencePayload;
+        use faultline_types::events::EventEffect;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        add_event_with_effect(
+            &mut s,
+            "self_intel",
+            EventEffect::IntelligenceShare {
+                source_faction: FactionId::from("gov"),
+                target_faction: FactionId::from("gov"),
+                payload: IntelligencePayload::FactionMorale {
+                    faction: FactionId::from("insurgent"),
+                },
+            },
+        );
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("with yourself"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_belief_model_decay_above_one() {
+        use faultline_types::belief::BeliefModelConfig;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        s.simulation.belief_model = Some(BeliefModelConfig {
+            enabled: true,
+            force_decay_per_tick: 1.5,
+            ..Default::default()
+        });
+        let err = validate_scenario(&s).expect_err("validation should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("force_decay_per_tick"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_belief_model_nan_decay() {
+        use faultline_types::belief::BeliefModelConfig;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        s.simulation.belief_model = Some(BeliefModelConfig {
+            enabled: true,
+            scalar_decay_per_tick: f64::NAN,
+            ..Default::default()
+        });
+        assert!(validate_scenario(&s).is_err());
+    }
+
+    #[test]
+    fn validate_belief_model_disabled_still_validates_fields() {
+        use faultline_types::belief::BeliefModelConfig;
+        let mut s = minimal_scenario();
+        ensure_two_factions(&mut s);
+        // Even with `enabled = false`, a typo in decay rates is
+        // a load-time failure — the analyst will most likely flip the
+        // toggle later and would be surprised by silent clamping.
+        s.simulation.belief_model = Some(BeliefModelConfig {
+            enabled: false,
+            region_decay_per_tick: -0.5,
+            ..Default::default()
+        });
+        assert!(validate_scenario(&s).is_err());
     }
 }

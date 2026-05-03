@@ -38,6 +38,7 @@ pub struct TickResult {
 /// effects to the simulation state.
 pub fn event_phase(
     state: &mut SimulationState,
+    scenario: &Scenario,
     evaluator: &EventEvaluator,
     rng: &mut impl Rng,
 ) -> Vec<String> {
@@ -59,7 +60,7 @@ pub fn event_phase(
 
         if let Some(effects) = faultline_events::fire_event(def, rng) {
             tracing::info!(event = %eid, "event fired");
-            apply_event_effects(state, &effects);
+            apply_event_effects(state, scenario, &effects);
             fired.push(def.name.clone());
             state.events_fired_this_tick.push(eid.clone());
 
@@ -70,7 +71,7 @@ pub fn event_phase(
             // Follow event chain (depth limit is defense-in-depth for
             // non-repeatable chains; cycles are prevented by DFS in
             // EventEvaluator::new).
-            fire_event_chain(state, evaluator, rng, def, &mut fired, 10);
+            fire_event_chain(state, scenario, evaluator, rng, def, &mut fired, 10);
         }
     }
 
@@ -80,6 +81,7 @@ pub fn event_phase(
 /// Follow an event's chain, firing chained events if their conditions are met.
 fn fire_event_chain(
     state: &mut SimulationState,
+    scenario: &Scenario,
     evaluator: &EventEvaluator,
     rng: &mut impl Rng,
     parent: &faultline_types::events::EventDefinition,
@@ -111,7 +113,7 @@ fn fire_event_chain(
 
         if let Some(effects) = faultline_events::fire_event(&chained_def, rng) {
             tracing::info!(event = %chain_id, "chained event fired");
-            apply_event_effects(state, &effects);
+            apply_event_effects(state, scenario, &effects);
             fired.push(chained_def.name.clone());
             state.events_fired_this_tick.push(chain_id.clone());
 
@@ -155,7 +157,7 @@ fn build_sim_state(state: &SimulationState) -> SimState {
 }
 
 /// Apply a list of event effects to the simulation state.
-fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
+fn apply_event_effects(state: &mut SimulationState, scenario: &Scenario, effects: &[EventEffect]) {
     for effect in effects {
         match effect {
             EventEffect::TensionShift { delta } => {
@@ -385,6 +387,24 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
                     entry.peak_displaced = entry.current_displaced;
                 }
             },
+            EventEffect::DeceptionOp {
+                source_faction: _,
+                target_faction,
+                payload,
+            } => {
+                // Belief-asymmetry hook (Epic M round-one). The
+                // belief module short-circuits when the model is
+                // disabled, so legacy scenarios pay zero overhead
+                // beyond the match arm dispatch.
+                crate::belief::apply_deception_op(state, scenario, target_faction, payload);
+            },
+            EventEffect::IntelligenceShare {
+                source_faction: _,
+                target_faction,
+                payload,
+            } => {
+                crate::belief::apply_intelligence_share(state, scenario, target_faction, payload);
+            },
             // Effects that require more complex handling are logged
             // but not fully resolved in this skeleton.
             EventEffect::InstitutionDefection { .. }
@@ -417,11 +437,28 @@ pub fn decision_phase(
 ) -> BTreeMap<FactionId, Vec<FactionAction>> {
     let faction_ids: Vec<FactionId> = state.faction_states.keys().cloned().collect();
     let fog_of_war = scenario.simulation.fog_of_war;
+    let belief_active = crate::belief::belief_enabled(scenario);
 
     let mut all_actions = BTreeMap::new();
 
     for fid in &faction_ids {
-        let evaluation = if fog_of_war {
+        let evaluation = if belief_active {
+            // Epic M round-one: when belief mode is enabled, build the
+            // world view from the faction's persistent belief state
+            // rather than from a fresh visibility filter on ground
+            // truth. The belief carries staleness, prior observations
+            // that aren't currently visible, and any deception entries
+            // — all of which propagate into AI decisioning through the
+            // existing fog-of-war evaluator.
+            let belief = state.belief_states.get(fid).cloned().unwrap_or_else(|| {
+                faultline_types::belief::FactionBelief {
+                    faction: fid.clone(),
+                    ..Default::default()
+                }
+            });
+            let world_view = crate::belief::world_view_from_belief(&belief, state, state.tick);
+            ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, campaigns, rng)
+        } else if fog_of_war {
             let world_view = ai::build_world_view(fid, state, scenario, map);
             ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, campaigns, rng)
         } else {
