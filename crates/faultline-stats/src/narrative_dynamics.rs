@@ -1,20 +1,15 @@
 //! Cross-run narrative-competition analytics (Epic D round-three item 4).
 //!
-//! Pure post-processing of [`RunResult.narrative_events`]: walks every
-//! run's narrative log to count firings, capture peak strengths, and
-//! identify the modal `favors` faction per narrative key. Per-faction
-//! dominance ticks aren't carried on `RunResult` (they're an aggregate
-//! of how many ticks the narrative phase attributed
-//! information-dominance to each faction over the run); this module
-//! re-derives them from the event log + `final_state.tension` is *not*
-//! used — instead, the per-run dominance counter lives on
-//! `SimulationState.narrative_dominance_ticks`. To keep `RunResult`
-//! schema-stable for now, we approximate dominance ticks here by
-//! counting events where the favored faction was the leader (highest
-//! `strength_after × credibility` among events visible up to that
-//! tick). That's an *approximation*; the engine's actual per-tick
-//! attribution uses live narrative state. For the report's purposes,
-//! the counter remains directionally correct.
+//! Pure post-processing of [`RunResult.narrative_events`] plus the
+//! engine's ground-truth per-faction dominance counters carried on
+//! [`RunResult.narrative_dominance_ticks`] /
+//! [`RunResult.narrative_peak_dominance`]. The engine's narrative phase
+//! attributes information-dominance after applying decay each tick, so
+//! the live counter reflects the post-decay leader. This module reads
+//! those counters directly rather than re-deriving them from the event
+//! log; the prior event-log approximation over-attributed to early
+//! reinforcers because their stale pressure never decayed in the
+//! stream-level scan.
 
 use std::collections::BTreeMap;
 
@@ -87,39 +82,6 @@ pub fn compute_narrative_dynamics(runs: &[RunResult]) -> Option<NarrativeDynamic
             }
         }
 
-        // Derive per-faction "dominance ticks" proxy: the number of
-        // events for which this faction had the highest cumulative
-        // (strength × credibility) in the event stream up to that tick.
-        // It's a stream-level approximation, not the engine's live
-        // attribution, but produces the right ranking for the report.
-        let mut leader_counter: BTreeMap<FactionId, f64> = BTreeMap::new();
-        let mut tick_dominance: BTreeMap<FactionId, u32> = BTreeMap::new();
-        let mut peak_dominance: BTreeMap<FactionId, f64> = BTreeMap::new();
-        for ev in &run.narrative_events {
-            if let Some(fid) = &ev.favors {
-                let pressure = ev.strength_after * ev.credibility;
-                let acc = leader_counter.entry(fid.clone()).or_insert(0.0);
-                if pressure > *acc {
-                    *acc = pressure;
-                }
-                let leader = leader_counter
-                    .iter()
-                    .max_by(|a, b| {
-                        a.1.partial_cmp(b.1)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| b.0.cmp(a.0))
-                    })
-                    .map(|(fid, _)| fid.clone());
-                if let Some(lead) = leader {
-                    *tick_dominance.entry(lead.clone()).or_insert(0) += 1;
-                    let p = peak_dominance.entry(lead).or_insert(0.0);
-                    if pressure > *p {
-                        *p = pressure.min(1.0);
-                    }
-                }
-            }
-        }
-
         // Roll into per-narrative cross-run aggregator.
         for (narr_key, rn) in run_narrs {
             let agg = per_narrative
@@ -140,8 +102,12 @@ pub fn compute_narrative_dynamics(runs: &[RunResult]) -> Option<NarrativeDynamic
             *agg.favor_counts.entry(rn.modal_favors).or_insert(0) += 1;
         }
 
-        // Roll into per-faction cross-run aggregator.
-        for (fid, ticks) in tick_dominance {
+        // Per-faction dominance: consume the engine's ground-truth
+        // counters directly. The engine's narrative phase applies decay
+        // before attribution each tick, so this captures the post-decay
+        // leader (events from earlier ticks whose narratives have since
+        // decayed below threshold are correctly excluded).
+        for (fid, ticks) in &run.narrative_dominance_ticks {
             let agg = per_faction
                 .entry(fid.clone())
                 .or_insert_with(|| PerFactionAgg {
@@ -151,14 +117,23 @@ pub fn compute_narrative_dynamics(runs: &[RunResult]) -> Option<NarrativeDynamic
                     peak_dominance_runs: 0,
                     total_firings: 0,
                 });
-            agg.dominance_ticks_sum += u64::from(ticks);
-            if ticks > agg.max_dominance_ticks {
-                agg.max_dominance_ticks = ticks;
+            agg.dominance_ticks_sum += u64::from(*ticks);
+            if *ticks > agg.max_dominance_ticks {
+                agg.max_dominance_ticks = *ticks;
             }
-            if let Some(peak) = peak_dominance.get(&fid) {
-                agg.peak_dominance_sum += *peak;
-                agg.peak_dominance_runs += 1;
-            }
+        }
+        for (fid, peak) in &run.narrative_peak_dominance {
+            let agg = per_faction
+                .entry(fid.clone())
+                .or_insert_with(|| PerFactionAgg {
+                    dominance_ticks_sum: 0,
+                    max_dominance_ticks: 0,
+                    peak_dominance_sum: 0.0,
+                    peak_dominance_runs: 0,
+                    total_firings: 0,
+                });
+            agg.peak_dominance_sum += peak.clamp(0.0, 1.0);
+            agg.peak_dominance_runs += 1;
         }
         for (fid, count) in run_faction_firings {
             let agg = per_faction.entry(fid).or_insert_with(|| PerFactionAgg {
@@ -279,6 +254,8 @@ mod tests {
             civilian_activations: vec![],
             tech_costs: BTreeMap::new(),
             narrative_events: vec![],
+            narrative_dominance_ticks: BTreeMap::new(),
+            narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: BTreeMap::new(),
         }
     }
@@ -311,6 +288,10 @@ mod tests {
             strength_after: 0.7,
             was_new: false,
         });
+        // Ground-truth dominance from the engine (would be set by
+        // narrative_phase): alpha led for 4 ticks with peak 0.56.
+        run.narrative_dominance_ticks.insert(alpha.clone(), 4);
+        run.narrative_peak_dominance.insert(alpha.clone(), 0.56);
 
         let summary = compute_narrative_dynamics(&[run]).expect("non-empty");
         assert_eq!(summary.n_runs, 1);
@@ -329,5 +310,8 @@ mod tests {
             .get(&alpha)
             .expect("alpha present");
         assert_eq!(faction_summary.total_firings, 2);
+        assert!((faction_summary.mean_dominance_ticks - 4.0).abs() < f64::EPSILON);
+        assert_eq!(faction_summary.max_dominance_ticks, 4);
+        assert!((faction_summary.mean_peak_information_dominance - 0.56).abs() < f64::EPSILON);
     }
 }

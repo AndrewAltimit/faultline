@@ -326,6 +326,8 @@ fn make_run(
         civilian_activations: Vec::new(),
         tech_costs: ::std::collections::BTreeMap::new(),
         narrative_events: Vec::new(),
+        narrative_dominance_ticks: BTreeMap::new(),
+        narrative_peak_dominance: BTreeMap::new(),
         displacement_reports: ::std::collections::BTreeMap::new(),
     }
 }

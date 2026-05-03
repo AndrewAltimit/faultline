@@ -114,6 +114,22 @@ pub struct RunResult {
     /// ever fires.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub narrative_events: Vec<NarrativeEvent>,
+    /// Per-faction live dominance-tick counter from the engine's
+    /// narrative phase — the number of ticks where this faction owned
+    /// the strongest `strength × credibility` aggregate across the
+    /// active narrative store. This is the engine's *ground truth*,
+    /// captured each tick after decay; the cross-run aggregator should
+    /// consume this rather than re-deriving from the event log (which
+    /// can't see decay between firings). Empty when no narrative ever
+    /// fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_dominance_ticks: BTreeMap<FactionId, u32>,
+    /// Per-faction live peak of the narrative phase's
+    /// information-dominance attribution (in `[0, 1]`). Captured at the
+    /// tick the faction was leading; the post-decay value the engine
+    /// actually used. Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_peak_dominance: BTreeMap<FactionId, f64>,
     /// Per-region displacement summary for this run (Epic D round-three
     /// item 4 — refugee / displacement flows). Only populated for regions
     /// that had a non-zero displaced fraction at any tick. Keyed by
@@ -397,6 +413,13 @@ pub struct DisplacementSummary {
     pub mean_total_inflow: f64,
     /// Mean of per-run `total_outflow` across the batch.
     pub mean_total_outflow: f64,
+    /// Mean of per-run `total_absorbed` across the batch. Lets the
+    /// analyst verify the conservation identity
+    /// `inflow ≈ outflow + (terminal − initial) + absorbed` at the
+    /// summary level — distinguishing "assimilated back into the
+    /// resident population" from "propagated onward to a neighbor".
+    #[serde(default)]
+    pub mean_total_absorbed: f64,
 }
 
 /// End-of-run snapshot of one network's resilience trajectory.
@@ -1400,6 +1423,14 @@ pub struct DeltaEncodedRun {
     /// scenario authors no `MediaEvent` effects or none ever fire.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub narrative_events: Vec<NarrativeEvent>,
+    /// Per-faction live dominance-tick counter — preserved verbatim.
+    /// Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_dominance_ticks: BTreeMap<FactionId, u32>,
+    /// Per-faction live peak information dominance — preserved verbatim.
+    /// Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_peak_dominance: BTreeMap<FactionId, f64>,
     /// Per-region displacement summary — preserved verbatim. Empty
     /// when no region had non-zero displaced fraction during the run.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

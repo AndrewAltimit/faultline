@@ -1360,21 +1360,14 @@ pub fn narrative_phase(state: &mut SimulationState, scenario: &Scenario) {
         return;
     }
 
-    // Step 1: decay + drop. Iterate keys via clone to avoid the
-    // borrow conflict on `state.narratives`.
-    let keys: Vec<String> = state.narratives.keys().cloned().collect();
-    for k in &keys {
-        let drop = if let Some(entry) = state.narratives.get_mut(k) {
-            let decay = BASE_NARRATIVE_DECAY * (1.0 - 0.5 * entry.reach.clamp(0.0, 1.0));
-            entry.strength = (entry.strength - decay).max(0.0);
-            entry.strength < NARRATIVE_DROP_EPSILON
-        } else {
-            false
-        };
-        if drop {
-            state.narratives.remove(k);
-        }
-    }
+    // Step 1: decay + drop. `BTreeMap::retain` avoids the prior
+    // `Vec<String>` key-clone allocation; iteration order is still
+    // ascending, which is what the rest of the phase assumes.
+    state.narratives.retain(|_, entry| {
+        let decay = BASE_NARRATIVE_DECAY * (1.0 - 0.5 * entry.reach.clamp(0.0, 1.0));
+        entry.strength = (entry.strength - decay).max(0.0);
+        entry.strength >= NARRATIVE_DROP_EPSILON
+    });
 
     if state.narratives.is_empty() {
         state.non_kinetic.information_dominance = 0.0;
@@ -1394,8 +1387,11 @@ pub fn narrative_phase(state: &mut SimulationState, scenario: &Scenario) {
         }
     }
 
-    // Leading faction = max score; ties broken lexicographically by
-    // `FactionId` (the first match in `BTreeMap` order).
+    // Leading faction = max score; on score tie, the lexicographically
+    // *largest* `FactionId` wins (the `then_with(|| b.0.cmp(a.0))`
+    // inversion). The same direction is used by
+    // `narrative_dynamics::compute_narrative_dynamics`, so cross-report
+    // attribution stays coherent.
     let leading: Option<(FactionId, f64)> = faction_scores
         .iter()
         .max_by(|a, b| {
@@ -1584,7 +1580,10 @@ pub fn displacement_phase(state: &mut SimulationState, scenario: &Scenario) {
     }
 
     // Stress-tick counter and tension delta. Region count is bounded
-    // by scenario.map.regions, so summation is O(R).
+    // by scenario.map.regions, so summation is O(R). Peak is already
+    // updated everywhere current_displaced grows (event effects, flee
+    // sources, propagation inflows); regions only lose mass in this
+    // phase, so no peak update is needed here.
     let mut sum_displaced: f64 = 0.0;
     let mut nonzero_regions: u32 = 0;
     for st in state.displacement.values_mut() {
@@ -1592,9 +1591,6 @@ pub fn displacement_phase(state: &mut SimulationState, scenario: &Scenario) {
             st.stressed_ticks += 1;
             sum_displaced += st.current_displaced;
             nonzero_regions += 1;
-        }
-        if st.current_displaced > st.peak_displaced {
-            st.peak_displaced = st.current_displaced;
         }
     }
 

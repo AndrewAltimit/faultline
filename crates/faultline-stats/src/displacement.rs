@@ -25,7 +25,7 @@ pub fn compute_displacement_summaries(
     let n_runs = runs.len() as u32;
     let n_runs_f = f64::from(n_runs.max(1));
 
-    // Aggregator: peak / max-peak / terminal / inflow / outflow accumulators.
+    // Aggregator: peak / max-peak / terminal / inflow / outflow / absorbed accumulators.
     struct Agg {
         stressed_runs: u32,
         peak_sum: f64,
@@ -33,6 +33,7 @@ pub fn compute_displacement_summaries(
         terminal_sum: f64,
         inflow_sum: f64,
         outflow_sum: f64,
+        absorbed_sum: f64,
     }
     let mut per_region: BTreeMap<RegionId, Agg> = BTreeMap::new();
 
@@ -48,6 +49,7 @@ pub fn compute_displacement_summaries(
                 terminal_sum: 0.0,
                 inflow_sum: 0.0,
                 outflow_sum: 0.0,
+                absorbed_sum: 0.0,
             });
             agg.stressed_runs += 1;
             agg.peak_sum += report.peak_displaced;
@@ -57,6 +59,7 @@ pub fn compute_displacement_summaries(
             agg.terminal_sum += report.terminal_displaced;
             agg.inflow_sum += report.total_inflow;
             agg.outflow_sum += report.total_outflow;
+            agg.absorbed_sum += report.total_absorbed;
         }
     }
 
@@ -72,6 +75,7 @@ pub fn compute_displacement_summaries(
                 mean_terminal: agg.terminal_sum / n_runs_f,
                 mean_total_inflow: agg.inflow_sum / n_runs_f,
                 mean_total_outflow: agg.outflow_sum / n_runs_f,
+                mean_total_absorbed: agg.absorbed_sum / n_runs_f,
             },
         );
     }
@@ -117,6 +121,8 @@ mod tests {
             civilian_activations: vec![],
             tech_costs: BTreeMap::new(),
             narrative_events: vec![],
+            narrative_dominance_ticks: BTreeMap::new(),
+            narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: BTreeMap::new(),
         }
     }
@@ -166,5 +172,6 @@ mod tests {
         assert!((row.mean_terminal - 0.15).abs() < 1e-9);
         assert!((row.mean_total_inflow - 0.4).abs() < 1e-9);
         assert!((row.mean_total_outflow - 0.075).abs() < 1e-9);
+        assert!((row.mean_total_absorbed - 0.175).abs() < 1e-9);
     }
 }

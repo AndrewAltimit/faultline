@@ -36,13 +36,13 @@ impl ReportSection for Displacement {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "| Region | Stressed runs | Mean peak | Max peak | Mean terminal | Mean total inflow | Mean total outflow |"
+            "| Region | Stressed runs | Mean peak | Max peak | Mean terminal | Mean total inflow | Mean total outflow | Mean total absorbed |"
         );
-        let _ = writeln!(out, "|---|---|---|---|---|---|---|");
+        let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
         for row in summary.displacement_summaries.values() {
             let _ = writeln!(
                 out,
-                "| `{}` | {}/{} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |",
+                "| `{}` | {}/{} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |",
                 escape_md_cell(&row.region.0),
                 row.stressed_runs,
                 row.n_runs,
@@ -51,6 +51,7 @@ impl ReportSection for Displacement {
                 row.mean_terminal,
                 row.mean_total_inflow,
                 row.mean_total_outflow,
+                row.mean_total_absorbed,
             );
         }
         let _ = writeln!(out);
@@ -88,6 +89,7 @@ mod tests {
                 mean_terminal: 0.10,
                 mean_total_inflow: 0.50,
                 mean_total_outflow: 0.30,
+                mean_total_absorbed: 0.15,
             },
         );
         let mut out = String::new();
@@ -112,6 +114,7 @@ mod tests {
                 mean_terminal: 0.5,
                 mean_total_inflow: 0.5,
                 mean_total_outflow: 0.0,
+                mean_total_absorbed: 0.0,
             },
         );
         let mut out = String::new();

@@ -237,6 +237,8 @@ impl Engine {
                     civilian_activations: self.state.civilian_activations.clone(),
                     tech_costs: collect_tech_cost_reports(&self.state),
                     narrative_events: self.state.narrative_events.clone(),
+                    narrative_dominance_ticks: self.state.narrative_dominance_ticks.clone(),
+                    narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
                 });
             }
@@ -264,6 +266,8 @@ impl Engine {
                     civilian_activations: self.state.civilian_activations.clone(),
                     tech_costs: collect_tech_cost_reports(&self.state),
                     narrative_events: self.state.narrative_events.clone(),
+                    narrative_dominance_ticks: self.state.narrative_dominance_ticks.clone(),
+                    narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
                 });
             }
