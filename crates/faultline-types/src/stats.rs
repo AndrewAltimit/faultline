@@ -336,6 +336,14 @@ pub struct FactionNarrativeSummary {
     pub max_dominance_ticks: u32,
     /// Mean of the per-run peak strength × credibility this faction
     /// achieved (`information_dominance` peak, in `[0, 1]`).
+    ///
+    /// Denominator is the count of runs where this faction led at any
+    /// tick (i.e. has a peak to mean), *not* `n_runs`. Reads as
+    /// "average peak when leading happened" rather than "average peak
+    /// across all runs"; runs where the faction never led don't drag
+    /// the mean toward zero. `mean_dominance_ticks` above uses
+    /// `n_runs` instead because zero-tick runs are meaningful there
+    /// (they're how often this faction simply didn't dominate).
     pub mean_peak_information_dominance: f64,
     /// Total firings of narratives that favored this faction across
     /// the batch — sum of `narrative_events` rows where `favors == Some(faction)`.

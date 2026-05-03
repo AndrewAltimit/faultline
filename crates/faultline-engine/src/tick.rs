@@ -1584,6 +1584,14 @@ pub fn displacement_phase(state: &mut SimulationState, scenario: &Scenario) {
     // updated everywhere current_displaced grows (event effects, flee
     // sources, propagation inflows); regions only lose mass in this
     // phase, so no peak update is needed here.
+    //
+    // Convention: `stressed_ticks` reads post-outflow/absorption, so a
+    // region that started the tick with displacement but drained to
+    // zero by end-of-phase does not accrue a stressed tick for that
+    // tick. Reads as "ticks the region ended with residual displaced
+    // mass" rather than "ticks the region carried any displaced mass
+    // at any point". The under-count is intentional and matches the
+    // single-pass propagation convention used elsewhere in this phase.
     let mut sum_displaced: f64 = 0.0;
     let mut nonzero_regions: u32 = 0;
     for st in state.displacement.values_mut() {
