@@ -139,12 +139,15 @@ impl Engine {
             );
         }
 
-        // Phase 7c: Leadership caps (decapitation recovery ramp).
-        // Applied after the campaign phase so a decapitation
-        // landed *this tick* takes effect on the morale read by the
-        // next tick's combat. No-op for scenarios without any faction
-        // declaring a `leadership` cadre.
-        tick::apply_leadership_caps(&mut self.state, &self.scenario);
+        // Phase 7c: Command-effectiveness recomputation (decapitation
+        // recovery ramp). Applied after the campaign phase so a
+        // decapitation landed *this tick* takes effect on the
+        // effective combat morale read by the next tick's combat.
+        // No-op for scenarios without any faction declaring a
+        // `leadership` cadre. Replaces the pre-R3-4 morale-clamp
+        // behavior — see `tick::update_command_effectiveness` and
+        // `tick::effective_combat_morale`.
+        tick::update_command_effectiveness(&mut self.state, &self.scenario);
 
         // Phase 7d: Alliance-fracture evaluation. Reads the post-
         // campaign attribution / morale / tension /
@@ -353,6 +356,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
                 current_leadership_rank: 0,
                 last_decapitation_tick: None,
                 leadership_decapitations: 0,
+                command_effectiveness: 1.0,
                 current_supply_pressure: 1.0,
                 supply_pressure_sum: 0.0,
                 supply_pressure_samples: 0,
@@ -693,6 +697,7 @@ fn take_snapshot(state: &SimulationState) -> StateSnapshot {
                     current_leadership_rank: rfs.current_leadership_rank,
                     leadership_decapitations: rfs.leadership_decapitations,
                     last_decapitation_tick: rfs.last_decapitation_tick,
+                    command_effectiveness: rfs.command_effectiveness,
                 },
             )
         })

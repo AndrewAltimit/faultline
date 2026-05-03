@@ -166,7 +166,7 @@ work.
 
 ## Status snapshot
 
-**Closed (25):** A (uncertainty), B (counterfactual), C (time +
+**Closed (26):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -198,6 +198,9 @@ activation events tracked end-to-end and surfaced in a new
 (`TechCard.deployment_cost` / `cost_per_tick` / `coverage_limit`
 wired into engine init, attrition, and combat phases respectively;
 per-faction tech-cost report added), R3-3 (decompose `report.rs`),
+R3-4 (generalize leadership morale cap into `command_effectiveness`
+multiplier, separating rank-and-file morale from chain-of-command
+capacity),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
@@ -210,8 +213,8 @@ framework round-one shipped), P (authoring depth).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
 round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
-still deferred: visualization metadata, `force_projection`), R3-4
-(generalize leadership morale cap), R3-6 (decompose `Scenario`).
+still deferred: visualization metadata, `force_projection`), R3-6
+(decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
 authoritative description of what currently ships) and in the merged
@@ -524,13 +527,33 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
   6. `ForceUnit.force_projection`. Declared but zero scenarios set
      it. Drop-or-wire decision; lean towards drop unless an epic
      calls for it.
-- **R3-4: generalize the leadership morale cap.** The Epic-D
+- ~~**R3-4: generalize the leadership morale cap.** The Epic-D
   leadership cadre couples decapitation to morale via a separate
   per-tick clamp step in `tick::apply_leadership_caps`. A
   `command_effectiveness` multiplier read directly by combat
   (alongside `morale`) would generalize cleanly when round-three
   Epic D adds more command-degrading effects. Worth refactoring
-  before the next D stack lands.
+  before the next D stack lands.~~ **Shipped May 2026.** Replaced
+  the morale-clamp implementation with a `command_effectiveness`
+  field on `RuntimeFactionState` (default `1.0`). Combat and AI
+  threat-scoring now read `morale × command_effectiveness` via
+  `tick::effective_combat_morale`; a new end-of-tick step
+  `tick::update_command_effectiveness` writes the leadership factor
+  into `command_effectiveness` instead of clamping morale. Splits
+  rank-and-file *will to fight* from chain-of-command *capacity*,
+  cleans up the morale signal that alliance-fracture / political
+  phases consume, and gives future command-degrading effects
+  (logistics-targeted strikes, command-jamming, supply-pressure tier
+  escalation) a clean composition surface. Two bundled scenarios
+  (`defender_robustness_demo.toml`,
+  `defender_posture_optimization.toml`) shifted their `output_hash`
+  to reflect the new semantics; the other 17 are unchanged.
+  Coverage:
+  `crates/faultline-engine/tests/integration.rs::r3_4_decapitation_does_not_pollute_raw_morale`
+  and `::r3_4_no_cadre_legacy_path_leaves_morale_and_command_unchanged`
+  pin the contract; the existing leadership tests were updated to
+  assert `command_effectiveness` instead of morale. See the
+  "Command effectiveness as a separate axis" section in `CLAUDE.md`.
 - **R3-5: property tests.** ~~Every test today is integration-against-
   fixed-seed. Determinism plus the workspace's seeded RNG policy
   makes property invariants high-value and low-friction with

@@ -1309,6 +1309,7 @@ mod tests {
             current_leadership_rank: 0,
             leadership_decapitations: 0,
             last_decapitation_tick: None,
+            command_effectiveness: 1.0,
         }
     }
 

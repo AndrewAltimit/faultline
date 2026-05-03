@@ -364,6 +364,28 @@ pub struct RuntimeFactionState {
     /// faction over the run. Surfaced by the report.
     #[serde(default)]
     pub leadership_decapitations: u32,
+    /// Effective command capacity in `[0, 1]` — multiplicative scalar
+    /// applied to `morale` at every read site (combat, AI threat
+    /// scoring) so degraded command surfaces as a separate axis from
+    /// rank-and-file will. Recomputed end-of-tick by
+    /// [`crate::tick::update_command_effectiveness`]. Defaults to
+    /// `1.0` (no degradation), so factions without a `leadership`
+    /// cadre and the first tick before the writer has run are
+    /// unaffected.
+    ///
+    /// Replaces the Epic D round-one morale-clamp behavior. The
+    /// previous implementation pushed leadership degradation into
+    /// `morale` directly, conflating "the rank-and-file's will to
+    /// fight" with "the chain of command's ability to use that will".
+    /// They're correlated but distinct: a leader being killed
+    /// degrades command authority without necessarily breaking morale,
+    /// and future command-degrading effects (logistics interdiction,
+    /// command-jamming, supply pressure tier escalation) can compose
+    /// multiplicatively into this field without colliding with
+    /// morale's other consumers (alliance-fracture `MoraleFloor`,
+    /// political phase, etc.).
+    #[serde(default = "one_f64_default")]
+    pub command_effectiveness: f64,
     /// Most recently observed supply pressure in `[0, 1]`. Updated
     /// at the top of
     /// [`crate::tick::attrition_phase`] for any faction that owns at
@@ -480,6 +502,7 @@ mod tests {
             current_leadership_rank: 0,
             last_decapitation_tick: None,
             leadership_decapitations: 0,
+            command_effectiveness: 1.0,
             current_supply_pressure: 1.0,
             supply_pressure_sum: 0.0,
             supply_pressure_samples: 0,

@@ -137,4 +137,25 @@ pub struct FactionState {
     /// Most recent decapitation tick, or `None` if never struck.
     #[serde(default)]
     pub last_decapitation_tick: Option<u32>,
+    /// Multiplicative scalar in `[0, 1]` describing the faction's
+    /// chain-of-command capacity to translate available morale into
+    /// effective combat performance. Combat and AI-targeting paths
+    /// read `morale * command_effectiveness` rather than raw morale.
+    /// Defaults to `1.0` (no degradation) for legacy snapshots and
+    /// factions without a leadership cadre — preserves bit-identical
+    /// output for scenarios that never declare one.
+    ///
+    /// Currently driven entirely by `LeadershipCadre` succession; the
+    /// field is exposed as a separate scalar (rather than folding the
+    /// degradation back into `morale`) so future command-degrading
+    /// effects (logistics-targeted strikes, command-jamming, supply
+    /// interdiction tier escalation) can compose multiplicatively
+    /// without conflating "rank-and-file will to fight" with "command
+    /// authority to use that will".
+    #[serde(default = "default_command_effectiveness")]
+    pub command_effectiveness: f64,
+}
+
+fn default_command_effectiveness() -> f64 {
+    1.0
 }

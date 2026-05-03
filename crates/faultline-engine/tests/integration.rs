@@ -3269,13 +3269,16 @@ fn leadership_decapitation_caps_target_morale() {
     assert_eq!(bravo_state.leadership_decapitations, 1);
     assert_eq!(bravo_state.current_leadership_rank, 1);
     assert_eq!(bravo_state.last_decapitation_tick, Some(2));
-    // Cap on morale at strike tick: deputy effectiveness 0.5 *
-    // succession_floor 0.4 = 0.20.
+    // Command effectiveness at strike tick: deputy effectiveness 0.5 *
+    // succession_floor 0.4 = 0.20. R3-4 split this from morale into a
+    // separate axis so combat reads `morale * command_effectiveness`
+    // without polluting the morale signal that political /
+    // alliance-fracture phases consume.
     assert!(
-        bravo_state.morale <= 0.20 + 1e-9,
-        "morale must be capped at deputy 0.5 × floor 0.4 = 0.20 \
+        bravo_state.command_effectiveness <= 0.20 + 1e-9,
+        "command_effectiveness must be capped at deputy 0.5 × floor 0.4 = 0.20 \
          immediately after strike, got {}",
-        bravo_state.morale
+        bravo_state.command_effectiveness
     );
 
     // Six more ticks let strikes 2 and 3 resolve (each pair: activate
@@ -3301,9 +3304,9 @@ fn leadership_decapitation_caps_target_morale() {
         "rank index must saturate at cadre length once the cadre is exhausted"
     );
     assert!(
-        bravo_state.morale <= f64::EPSILON,
-        "leaderless faction must floor morale to 0; got {}",
-        bravo_state.morale
+        bravo_state.command_effectiveness <= f64::EPSILON,
+        "leaderless faction must floor command_effectiveness to 0; got {}",
+        bravo_state.command_effectiveness
     );
 }
 
@@ -3397,15 +3400,16 @@ fn leadership_zero_recovery_ticks_means_immediate_full_effectiveness() {
     engine.tick().expect("tick 1");
     engine.tick().expect("tick 2"); // decapitation lands
 
-    // The morale cap on a recovery_ticks=0 cadre lands at the new
-    // rank's nominal effectiveness — no ramp scaling. Verified
-    // through the public snapshot's morale field.
+    // The command_effectiveness writer on a recovery_ticks=0 cadre
+    // lands at the new rank's nominal effectiveness — no ramp scaling.
+    // Verified through the public snapshot's command_effectiveness
+    // field. R3-4 moved this signal off `morale`.
     let snap = engine.snapshot();
     let bravo_state = snap.faction_states.get(&bravo_id).expect("bravo state");
     assert!(
-        bravo_state.morale <= 0.6 + 1e-9 && bravo_state.morale >= 0.6 - 1e-9,
-        "morale must be capped at deputy 0.6 with no ramp scaling, got {}",
-        bravo_state.morale
+        (bravo_state.command_effectiveness - 0.6).abs() < 1e-9,
+        "command_effectiveness must be capped at deputy 0.6 with no ramp scaling, got {}",
+        bravo_state.command_effectiveness
     );
 
     // The helper agrees when called against the post-tick state.
@@ -3546,6 +3550,186 @@ fn leadership_factor_full_when_no_decapitation_yet() {
     assert!(
         (factor - 0.9).abs() < 1e-9,
         "no-strike faction must read principal effectiveness 0.9; got {factor}"
+    );
+}
+
+#[test]
+fn r3_4_decapitation_does_not_pollute_raw_morale() {
+    // R3-4 contract: a leadership decapitation degrades
+    // `command_effectiveness` but leaves raw `morale` untouched apart
+    // from the explicit `morale_shock` carried by the phase output.
+    // Pre-R3-4, the morale-cap implementation pushed the leadership
+    // factor into morale directly, so the morale signal that
+    // alliance-fracture / political phases consume was contaminated by
+    // command degradation. This test pins the split: after a strike
+    // with `morale_shock = 0.0`, the morale field must be unchanged
+    // from its pre-strike value.
+    use faultline_engine::tick::effective_combat_morale;
+    use faultline_types::campaign::{
+        BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
+    };
+    use faultline_types::faction::{LeadershipCadre, LeadershipRank};
+    use faultline_types::ids::{KillChainId, PhaseId};
+
+    let mut scenario = base_scenario();
+    let bravo_id = FactionId::from("bravo");
+    if let Some(bravo) = scenario.factions.get_mut(&bravo_id) {
+        bravo.initial_morale = 0.9;
+        bravo.leadership = Some(LeadershipCadre {
+            ranks: vec![
+                LeadershipRank {
+                    id: "principal".into(),
+                    name: "Principal".into(),
+                    effectiveness: 1.0,
+                    description: String::new(),
+                },
+                LeadershipRank {
+                    id: "deputy".into(),
+                    name: "Deputy".into(),
+                    effectiveness: 0.4,
+                    description: String::new(),
+                },
+            ],
+            succession_recovery_ticks: 0,
+            succession_floor: 0.0,
+        });
+    }
+
+    let chain_id = KillChainId::from("decap_chain");
+    let phase_id = PhaseId::from("strike");
+    let mut phases = BTreeMap::new();
+    phases.insert(
+        phase_id.clone(),
+        CampaignPhase {
+            id: phase_id.clone(),
+            name: "Strike".into(),
+            description: String::new(),
+            prerequisites: vec![],
+            base_success_probability: 1.0,
+            min_duration: 1,
+            max_duration: 1,
+            detection_probability_per_tick: 0.0,
+            prerequisite_success_boost: 0.0,
+            attribution_difficulty: 0.5,
+            cost: PhaseCost {
+                attacker_dollars: 0.0,
+                defender_dollars: 0.0,
+                attacker_resources: 0.0,
+                confidence: None,
+            },
+            targets_domains: vec![],
+            outputs: vec![PhaseOutput::LeadershipDecapitation {
+                target_faction: bravo_id.clone(),
+                morale_shock: 0.0,
+            }],
+            branches: vec![PhaseBranch {
+                condition: BranchCondition::OnSuccess,
+                next_phase: phase_id.clone(),
+            }],
+            parameter_confidence: None,
+            warning_indicators: vec![],
+            defender_noise: vec![],
+            gated_by_defender: None,
+        },
+    );
+    scenario.kill_chains.insert(
+        chain_id.clone(),
+        KillChain {
+            id: chain_id.clone(),
+            name: "Decap".into(),
+            description: String::new(),
+            attacker: FactionId::from("alpha"),
+            target: bravo_id.clone(),
+            entry_phase: phase_id.clone(),
+            phases,
+        },
+    );
+
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    let pre_morale = engine
+        .snapshot()
+        .faction_states
+        .get(&bravo_id)
+        .expect("bravo state")
+        .morale;
+    engine.tick().expect("tick 1");
+    engine.tick().expect("tick 2 — strike resolves");
+    let bravo_state = engine
+        .snapshot()
+        .faction_states
+        .get(&bravo_id)
+        .expect("bravo state")
+        .clone();
+
+    // command_effectiveness reflects the deputy's nominal 0.4.
+    assert!(
+        (bravo_state.command_effectiveness - 0.4).abs() < 1e-9,
+        "command_effectiveness must be deputy 0.4 post-strike; got {}",
+        bravo_state.command_effectiveness
+    );
+    // Raw morale must NOT be clamped to the leadership factor. The
+    // pre-R3-4 implementation would have pulled morale all the way
+    // down to 0.4 (or below) here because the leadership factor
+    // crossed below the morale value. Natural per-tick drift from
+    // the political phase is expected — the test threshold tolerates
+    // up to 0.1 of legitimate drift but rejects anything close to
+    // the 0.5+ drop the old implementation produced.
+    let max_natural_drift = 0.1;
+    assert!(
+        bravo_state.morale > pre_morale - max_natural_drift,
+        "raw morale must be untouched by leadership writer apart from natural drift (R3-4); \
+         pre={pre_morale} post={} (drop={})",
+        bravo_state.morale,
+        pre_morale - bravo_state.morale
+    );
+    assert!(
+        bravo_state.morale > 0.5,
+        "raw morale must NOT be clamped to leadership factor 0.4 (R3-4); got {}",
+        bravo_state.morale
+    );
+    // Effective combat morale composes the two axes multiplicatively.
+    // Pull from the runtime state (which the helper takes by ref).
+    let runtime_state = engine
+        .state()
+        .faction_states
+        .get(&bravo_id)
+        .expect("runtime bravo state");
+    let expected = (runtime_state.morale * 0.4).clamp(0.0, 1.0);
+    assert!(
+        (effective_combat_morale(runtime_state) - expected).abs() < 1e-9,
+        "effective_combat_morale must equal morale × command_effectiveness = {expected}; got {}",
+        effective_combat_morale(runtime_state)
+    );
+}
+
+#[test]
+fn r3_4_no_cadre_legacy_path_leaves_morale_and_command_unchanged() {
+    // R3-4 contract: scenarios that declare no leadership cadre at all
+    // see no behavior change — `command_effectiveness` stays at its
+    // 1.0 default, the writer short-circuits, and combat reads
+    // `morale * 1.0` which is bit-identical to the pre-R3-4 read of
+    // raw morale. Pins the legacy fast path so a future refactor can't
+    // silently start touching cadre-less factions.
+    use faultline_engine::tick::effective_combat_morale;
+    let scenario = base_scenario();
+    let alpha_id = FactionId::from("alpha");
+    let mut engine = Engine::with_seed(scenario, 42).expect("engine");
+    for _ in 0..5 {
+        engine.tick().expect("tick");
+    }
+    let runtime_state = engine
+        .state()
+        .faction_states
+        .get(&alpha_id)
+        .expect("alpha runtime state");
+    assert!(
+        (runtime_state.command_effectiveness - 1.0).abs() < f64::EPSILON,
+        "no-cadre faction must keep command_effectiveness == 1.0; got {}",
+        runtime_state.command_effectiveness
+    );
+    assert!(
+        (effective_combat_morale(runtime_state) - runtime_state.morale).abs() < f64::EPSILON,
+        "effective_combat_morale must equal raw morale on the legacy path"
     );
 }
 
@@ -3740,14 +3924,15 @@ fn or_any_inner_probability_consumes_rng_only_when_reached() {
 }
 
 #[test]
-fn leadership_no_cadre_means_no_morale_cap() {
+fn leadership_no_cadre_means_no_command_degradation() {
     // Belt-and-suspenders: this scenario would fail `validate_scenario`
     // (decapitation against a faction with no cadre is rejected as an
     // authoring mistake), but we drive the engine directly to pin the
-    // runtime defensive behavior — `apply_leadership_caps` must remain
-    // a no-op for cadre-less factions even if validation is bypassed.
-    // Do not "fix" this to validation-pass; it would destroy what the
-    // test is asserting.
+    // runtime defensive behavior — `update_command_effectiveness` must
+    // remain a no-op for cadre-less factions even if validation is
+    // bypassed. Morale stays untouched and command_effectiveness stays
+    // at its 1.0 default. Do not "fix" this to validation-pass; it
+    // would destroy what the test is asserting.
     use faultline_types::campaign::{
         BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
     };
@@ -3824,8 +4009,13 @@ fn leadership_no_cadre_means_no_morale_cap() {
     assert_eq!(bravo_state.current_leadership_rank, 0);
     assert!(
         bravo_state.morale > 0.5,
-        "without a cadre, morale must not be capped by leadership; got {}",
+        "without a cadre, morale must not be touched by leadership writer; got {}",
         bravo_state.morale
+    );
+    assert!(
+        (bravo_state.command_effectiveness - 1.0).abs() < f64::EPSILON,
+        "without a cadre, command_effectiveness must stay at 1.0; got {}",
+        bravo_state.command_effectiveness
     );
 }
 
