@@ -1464,12 +1464,22 @@ pub fn effective_leadership_factor(
 /// multiplicatively into `command_effectiveness` without colliding
 /// with morale's other consumers.
 ///
+/// Composition contract: this writer resets every faction's
+/// `command_effectiveness` to `1.0` then multiplies the leadership
+/// factor in. Future command-degrading sources (logistics-targeted
+/// strikes, command-jamming, supply-pressure tier escalation) should
+/// run *after* this writer and multiply their own factor into the
+/// field; resetting first ensures repeated ticks don't compound the
+/// leadership factor with itself, and using `*=` here keeps the
+/// pattern uniform so the next writer added doesn't have to special-
+/// case the first multiplication.
+///
 /// Bit-identical fast path: when no faction declares a `leadership`
-/// cadre the function returns immediately. Otherwise every faction's
-/// `command_effectiveness` is overwritten with the leadership
-/// factor — including factions without a cadre, which correctly
-/// resolve to `1.0` via [`effective_leadership_factor`]. Idempotent
-/// across ticks.
+/// cadre the function returns immediately and every faction's
+/// `command_effectiveness` stays at its `1.0` default. Otherwise the
+/// reset+multiply produces the same numerical result as a direct
+/// overwrite (`1.0 × factor = factor`), so cadre-bearing scenario
+/// hashes are unchanged across this refactor.
 pub fn update_command_effectiveness(state: &mut SimulationState, scenario: &Scenario) {
     // Legacy scenarios with no cadres pay only this scan; the
     // command_effectiveness field stays at its 1.0 default.
@@ -1489,7 +1499,13 @@ pub fn update_command_effectiveness(state: &mut SimulationState, scenario: &Scen
         .collect();
     for (fid, factor) in factors {
         if let Some(fs) = state.faction_states.get_mut(&fid) {
-            fs.command_effectiveness = factor.clamp(0.0, 1.0);
+            // Reset to baseline then multiply in. Equivalent to direct
+            // overwrite while there is only one writer, but composes
+            // correctly the moment a second command-degrading source is
+            // added (and prevents repeated calls within a tick from
+            // compounding the leadership factor with itself).
+            fs.command_effectiveness = 1.0;
+            fs.command_effectiveness *= factor.clamp(0.0, 1.0);
         }
     }
 }
