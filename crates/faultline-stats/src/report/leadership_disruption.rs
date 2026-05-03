@@ -36,7 +36,7 @@ impl ReportSection for LeadershipDisruption {
         let _ = writeln!(out, "## Leadership Cadres");
         let _ = writeln!(
             out,
-            "Declared decapitation surface per faction. A `LeadershipDecapitation` phase output advances the rank index by one and applies a morale shock; the new rank's effectiveness × `succession_floor` caps the target's morale during the recovery ramp."
+            "Declared decapitation surface per faction. A `LeadershipDecapitation` phase output advances the rank index by one and applies a morale shock; the new rank's effectiveness × recovery ramp is written to the target's `command_effectiveness` (a multiplicative scalar combat reads alongside morale). The ramp linearly interpolates from `succession_floor` at the strike tick up to `1.0` over `succession_recovery_ticks`."
         );
         let _ = writeln!(out);
 

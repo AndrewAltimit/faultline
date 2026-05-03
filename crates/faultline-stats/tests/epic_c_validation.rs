@@ -739,6 +739,7 @@ fn correlation_matrix_diagonal_is_identity_for_varying_series() {
                     current_leadership_rank: 0,
                     leadership_decapitations: 0,
                     last_decapitation_tick: None,
+                    command_effectiveness: 1.0,
                 },
             );
             run.final_state.faction_states = fs;

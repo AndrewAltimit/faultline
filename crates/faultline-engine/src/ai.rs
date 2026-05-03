@@ -178,11 +178,18 @@ fn determine_weights(
         0.5
     };
 
-    if faction_state.morale < 0.3 {
+    // Read effective combat morale (raw morale × command_effectiveness)
+    // rather than raw morale. R3-4 split the two axes so a faction with
+    // intact rank-and-file morale but degraded command — e.g. just had
+    // its top leader killed and is in the recovery ramp — correctly
+    // shifts toward defensive posture rather than continuing to behave
+    // as if its full offensive capability were available.
+    let effective_morale = crate::tick::effective_combat_morale(faction_state);
+    if effective_morale < 0.3 {
         weights.survival_weight += 0.2 * morale_strength;
         weights.objective_weight -= 0.15 * morale_strength;
         weights.risk_aversion += 0.2 * morale_strength;
-    } else if faction_state.morale > 0.7 {
+    } else if effective_morale > 0.7 {
         weights.objective_weight += 0.1 * morale_strength;
         weights.opportunity_weight += 0.1 * morale_strength;
         weights.risk_aversion -= 0.15 * morale_strength;

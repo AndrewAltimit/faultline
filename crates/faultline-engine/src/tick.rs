@@ -19,7 +19,7 @@ use faultline_types::victory::VictoryType;
 
 use crate::ai;
 use crate::combat::{self, CombatParams};
-use crate::state::SimulationState;
+use crate::state::{RuntimeFactionState, SimulationState};
 
 /// Result of a single tick execution.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -474,8 +474,21 @@ pub fn combat_phase(state: &mut SimulationState, scenario: &Scenario, rng: &mut 
                     continue;
                 }
 
-                let morale_a = state.faction_states.get(fid_a).map_or(0.5, |fs| fs.morale);
-                let morale_b = state.faction_states.get(fid_b).map_or(0.5, |fs| fs.morale);
+                // Combat reads `morale * command_effectiveness`
+                // (via `effective_combat_morale`) rather than raw
+                // morale so a leadership decapitation degrades
+                // combat performance without rewriting morale —
+                // keeping the political-phase / alliance-fracture
+                // morale signal clean. See R3-4 in the improvement
+                // plan and `update_command_effectiveness`.
+                let morale_a = state
+                    .faction_states
+                    .get(fid_a)
+                    .map_or(0.5, effective_combat_morale);
+                let morale_b = state
+                    .faction_states
+                    .get(fid_b)
+                    .map_or(0.5, effective_combat_morale);
 
                 let guerrilla_a = state
                     .faction_states
@@ -1429,44 +1442,95 @@ pub fn effective_leadership_factor(
     rank.effectiveness * ramp
 }
 
-/// Cap each faction's morale at its current `effective_leadership_factor`.
+/// Recompute each faction's `command_effectiveness` from its current
+/// `effective_leadership_factor`.
 ///
-/// Iterates over every faction with a declared cadre and clamps
-/// `morale` from above. Faction morale stays at or below the
-/// leadership ceiling for the whole recovery window, which is what
-/// makes the decapitation observable in combat outcomes
-/// (combat reads `morale` directly).
+/// Replaces the Epic D round-one morale-clamping behavior. The
+/// previous implementation pushed leadership degradation into
+/// `morale` directly; combat read raw morale, so the cap surfaced
+/// the decapitation. That conflated two distinct axes — rank-and-
+/// file *will to fight* and chain-of-command *capacity to direct
+/// that will* — and made the morale-floor alliance-fracture
+/// condition incidentally fire on a leadership strike.
 ///
-/// No-op when no faction declares a `leadership` cadre — the
-/// per-faction loop body short-circuits via the `1.0` return.
-pub fn apply_leadership_caps(state: &mut SimulationState, scenario: &Scenario) {
-    // Legacy scenarios with no cadres pay only this scan instead of
-    // cloning every FactionId and computing a no-op factor per tick.
+/// Now: morale stays untouched and `command_effectiveness` is
+/// written to the leadership factor. Combat and AI threat-scoring
+/// read `morale * command_effectiveness`, so a decapitation still
+/// degrades both, but the morale signal stays clean for the
+/// political phase, alliance-fracture evaluation, and any future
+/// consumer that wants the raw will-to-fight axis. Future
+/// command-degrading effects (logistics-targeted strikes, command-
+/// jamming, supply-pressure tier escalation) can compose
+/// multiplicatively into `command_effectiveness` without colliding
+/// with morale's other consumers.
+///
+/// Composition contract: this writer resets every faction's
+/// `command_effectiveness` to `1.0` then multiplies the leadership
+/// factor in. Future command-degrading sources (logistics-targeted
+/// strikes, command-jamming, supply-pressure tier escalation) should
+/// run *after* this writer and multiply their own factor into the
+/// field; resetting first ensures repeated ticks don't compound the
+/// leadership factor with itself, and using `*=` here keeps the
+/// pattern uniform so the next writer added doesn't have to special-
+/// case the first multiplication.
+///
+/// Bit-identical fast path: when no faction declares a `leadership`
+/// cadre the function returns immediately and every faction's
+/// `command_effectiveness` stays at its `1.0` default. The
+/// reset+multiply pattern is mathematically equivalent to a direct
+/// overwrite while there is only one writer (`1.0 × factor =
+/// factor`), so switching from overwrite to reset+multiply alone did
+/// not change any cadre-bearing scenario's `output_hash`. Note that
+/// the broader R3-4 morale/command split *does* shift cadre-bearing
+/// scenario hashes (raw morale is no longer clamped by the
+/// leadership factor, so combat outcomes diverge); see the PR
+/// description and `CLAUDE.md`'s R3-4 section for the full hash
+/// movement.
+pub fn update_command_effectiveness(state: &mut SimulationState, scenario: &Scenario) {
+    // Legacy scenarios with no cadres pay only this scan; the
+    // command_effectiveness field stays at its 1.0 default.
     if !scenario.factions.values().any(|f| f.leadership.is_some()) {
         return;
     }
-    // Snapshot tick before borrowing the faction map mutably.
     let tick = state.tick;
-    // Collect the cap values first so we don't hold an immutable
-    // borrow while writing.
-    let caps: Vec<(FactionId, f64)> = state
+    // Compute factors first so we don't hold an immutable borrow
+    // while writing. Faction order is BTreeMap-deterministic.
+    let factors: Vec<(FactionId, f64)> = state
         .faction_states
         .keys()
         .map(|fid| {
-            let cap = effective_leadership_factor(state, scenario, fid, tick);
-            (fid.clone(), cap)
+            let factor = effective_leadership_factor(state, scenario, fid, tick);
+            (fid.clone(), factor)
         })
         .collect();
-    for (fid, cap) in caps {
-        if cap >= 1.0 - f64::EPSILON {
-            // No effect — common path for legacy factions; skip the
-            // write to keep the morale field untouched.
-            continue;
-        }
-        if let Some(fs) = state.faction_states.get_mut(&fid)
-            && fs.morale > cap
-        {
-            fs.morale = cap.clamp(0.0, 1.0);
+    for (fid, factor) in factors {
+        if let Some(fs) = state.faction_states.get_mut(&fid) {
+            // Reset to baseline then multiply in. Equivalent to direct
+            // overwrite while there is only one writer, but composes
+            // correctly the moment a second command-degrading source is
+            // added (and prevents repeated calls within a tick from
+            // compounding the leadership factor with itself).
+            fs.command_effectiveness = 1.0;
+            fs.command_effectiveness *= factor.clamp(0.0, 1.0);
         }
     }
+}
+
+/// Effective combat/AI morale for a faction: raw morale modulated
+/// by the chain-of-command capacity to translate that morale into
+/// directed action.
+///
+/// Combat reads this through [`effective_combat_morale`] rather
+/// than `fs.morale` directly so a leadership decapitation surfaces
+/// in casualty outcomes without polluting the political-phase /
+/// alliance-fracture morale signal.
+///
+/// `command_effectiveness` is written end-of-tick by
+/// [`update_command_effectiveness`]; the field defaults to `1.0`
+/// for legacy factions and the first tick before the writer has
+/// run, so the legacy fast path (no cadre declared anywhere)
+/// produces identical numerical output to the pre-refactor
+/// morale-only read.
+pub fn effective_combat_morale(fs: &RuntimeFactionState) -> f64 {
+    (fs.morale * fs.command_effectiveness).clamp(0.0, 1.0)
 }

@@ -1118,6 +1118,80 @@ manifest content hash, so changing section ordering or adding any
 unconditional output flips every bundled scenario's `output_hash`
 and breaks `--verify`. The `verify-bundled` CI step catches this.
 
+## Command effectiveness as a separate axis (R3-4)
+
+Closes the round-three-follow-up R3-4: the Epic D round-one leadership
+cadre originally pushed decapitation degradation directly into
+`morale` via a per-tick clamp step (`apply_leadership_caps`), so a
+strike landed as both a chain-of-command effect and a rank-and-file
+morale shift. That conflated two distinct axes — *will to fight* (how
+hard the troops will hit) versus *capacity to direct that will* (how
+effectively the chain of command can convert troops into action) —
+and contaminated the morale signal that political / alliance-fracture
+phases consume.
+
+R3-4 splits them. `RuntimeFactionState.command_effectiveness ∈ [0, 1]`
+(default `1.0`) is now a separate runtime field; combat and AI
+threat-scoring read `morale × command_effectiveness` (via the helper
+`tick::effective_combat_morale`) rather than raw morale. A new phase
+step `tick::update_command_effectiveness` (replacing
+`apply_leadership_caps`) writes the leadership factor into
+`command_effectiveness` end-of-tick, after the campaign phase.
+
+- The legacy fast path is unchanged: when no faction declares a
+  `leadership` cadre, the writer short-circuits and every faction's
+  `command_effectiveness` stays at its `1.0` default. Combat reads
+  `morale × 1.0`, which is bit-identical to the pre-R3-4 read of raw
+  morale. All 19 bundled scenarios verify deterministically with their
+  prior `output_hash` values.
+- Scenarios with leadership cadres see a behavior shift: morale stays
+  untouched by the leadership writer. Combat outcomes reflect the
+  decapitation just as before (because the multiplier passes through),
+  but the `MoraleFloor` alliance-fracture condition no longer
+  incidentally fires from a leadership strike — only from the
+  explicit `morale_shock` carried by the phase output and from
+  political-phase / combat-loss morale drift. This is the intended
+  semantic split: a leader being killed degrades command authority
+  without necessarily breaking rank-and-file morale.
+- The two bundled scenarios that declared a `leadership` cadre
+  (`defender_robustness_demo.toml`, `defender_posture_optimization.toml`)
+  shifted their `output_hash` to reflect the new semantics; both still
+  `verify-bundled` deterministically.
+- AI bias coupling: `ai::determine_weights` now reads
+  `effective_combat_morale` instead of raw morale. A faction with
+  intact rank-and-file morale but degraded command (recovery ramp
+  active) correctly shifts toward defensive posture rather than
+  continuing to behave as if its full offensive capability were
+  available. The fog-of-war path is unchanged because
+  `FactionWorldView.morale` has no current consumer; that field stays
+  on raw morale as a placeholder for future Epic M (belief asymmetry)
+  work.
+- Future composition: command-degrading effects can multiply directly
+  into `command_effectiveness` without colliding with morale's other
+  consumers. Logistics-targeted strikes, command-jamming, supply-
+  pressure tier escalation are the natural next sources. Each new
+  source becomes one more multiplicative factor in the writer.
+- Snapshot exposure: `FactionState.command_effectiveness` (in
+  `crates/faultline-types/src/strategy.rs`) is now part of every
+  per-tick snapshot, with `#[serde(default = "default_command_effectiveness")]`
+  defaulting to `1.0` so legacy snapshots deserialize unchanged. The
+  `## Leadership Cadres` report section's prose was updated to describe
+  the new mechanic.
+- Determinism: `update_command_effectiveness` is a pure function of
+  `(state, scenario)` — no RNG, no `HashMap`, `BTreeMap`-ordered
+  iteration. Idempotent across ticks. Adding a `leadership` cadre to
+  a scenario *will* change the affected scenario's combat schedule
+  and downstream observable outputs (the multiplier propagates), but
+  determinism for any fixed seed holds.
+- Coverage: the Epic D round-one tests in
+  `crates/faultline-engine/tests/integration.rs` were updated to
+  assert `command_effectiveness` (not morale) for the cap value, and
+  two new R3-4 tests pin the contract:
+  `r3_4_decapitation_does_not_pollute_raw_morale` (raw morale stays
+  above the leadership factor floor; `effective_combat_morale` equals
+  the product) and `r3_4_no_cadre_legacy_path_leaves_morale_and_command_unchanged`
+  (legacy fast path still produces `command_effectiveness == 1.0`).
+
 ## Property tests (R3-5)
 
 Determinism + seeded RNG is the substrate property tests are designed
