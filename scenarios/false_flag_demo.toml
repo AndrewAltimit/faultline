@@ -222,12 +222,15 @@ region = "north_west"
 false_strength = 500.0
 
 # Tick 8: Alpha plants a second deception — a false morale read on
-# Bravo, suggesting Bravo's morale is much higher than reality. A
-# higher believed-self-morale doesn't directly affect Bravo's AI in
-# round-one (the engine reads true morale from `state.faction_states`
-# for self-knowledge), but the report captures the deception event
-# count regardless — useful for "how often did Alpha attempt
-# deception?" analytics.
+# Bravo, suggesting Bravo's morale is much higher than reality. The
+# net behavioral effect on Bravo's AI in round-one is zero: the
+# deception is planted into `belief.faction_morale[bravo]`, but the
+# same tick's belief phase calls `observe_into_belief` which
+# refreshes self-morale from ground truth at confidence 1.0,
+# overwriting the planted value before the AI consults its world
+# view. The report still captures the deception event count
+# regardless — useful for "how often did Alpha attempt deception?"
+# analytics.
 [events.alpha_morale_op]
 id = "alpha_morale_op"
 name = "Alpha Morale Disinformation"
