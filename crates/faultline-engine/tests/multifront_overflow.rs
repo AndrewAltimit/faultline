@@ -312,11 +312,16 @@ fn overflow_routes_excess_to_target_role() {
         "chain conservation: tier1 spillover_out ({}) must equal tier2 spillover_in ({})",
         r1.spillover_out, r2.spillover_in,
     );
-    assert!(
-        r2.total_enqueued >= r2.spillover_in,
-        "tier2 total_enqueued ({}) must include spillover_in ({})",
-        r2.total_enqueued,
-        r2.spillover_in,
+    // Strict equality: tier2 receives no direct chain noise (the
+    // one-phase chain targets tier1) and has no `overflow_to` of its
+    // own, so every item it sees arrives via spillover and is then
+    // counted as direct. A regression that accidentally routed direct
+    // noise to tier2 would push `total_enqueued > spillover_in`.
+    assert_eq!(
+        r2.total_enqueued, r2.spillover_in,
+        "tier2 sees only spillover_in (no direct noise, no further spillover); \
+         got total_enqueued={} spillover_in={}",
+        r2.total_enqueued, r2.spillover_in,
     );
     assert_eq!(
         r2.spillover_out, 0,
@@ -424,6 +429,44 @@ fn overflow_threshold_governs_spillover_engagement_depth() {
         low.max_depth <= 6,
         "tier1 max_depth must stay near the spillover threshold (5); got {}",
         low.max_depth,
+    );
+}
+
+#[test]
+fn overflow_threshold_zero_routes_all_arrivals_to_spillover() {
+    // Edge case: `overflow_threshold = 0.0` means "spill 100% of
+    // arrivals from the start". The threshold-rounding path in
+    // campaign.rs computes `ceil(0.0) = 0` headroom, so every item
+    // routes to spillover before it can enter tier1's queue. Pin the
+    // documented contract — a regression that switched ceil to floor
+    // (or special-cased 0.0) would silently break this.
+    let blue = faction(
+        "blue",
+        vec![
+            capacity("tier1", 10, 1.0, Some("tier2"), Some(0.0)),
+            capacity("tier2", 100, 0.5, None, None),
+        ],
+    );
+    let chain = one_phase_chain("blue", "tier1", 20.0);
+    let sc = base_scenario(7, 20, blue, chain);
+
+    let reports = run_and_collect_queue_reports(sc);
+    let r1 = reports.iter().find(|r| r.role.0 == "tier1").expect("tier1");
+    let r2 = reports.iter().find(|r| r.role.0 == "tier2").expect("tier2");
+
+    assert_eq!(
+        r1.total_enqueued, 0,
+        "threshold=0.0 must route every arrival to spillover; \
+         tier1.total_enqueued should be 0 but got {}",
+        r1.total_enqueued,
+    );
+    assert!(
+        r1.spillover_out > 0,
+        "threshold=0.0 with non-zero noise must produce some spillover"
+    );
+    assert_eq!(
+        r1.spillover_out, r2.spillover_in,
+        "chain conservation must hold even when 100% of arrivals spill",
     );
 }
 
