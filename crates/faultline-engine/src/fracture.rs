@@ -182,7 +182,11 @@ fn condition_satisfied(
 /// `attacker`. Returns 0.0 when no such chain is in flight (no
 /// signal yet, can't fire the rule). Iteration is `BTreeMap`-ordered
 /// for determinism even though the result is order-independent.
-fn mean_attribution(
+///
+/// `pub(crate)` so the utility evaluator's `AttributionAgainstSelf`
+/// trigger can reuse the same definition — both phases agree on what
+/// "attribution against attacker" means without a parallel copy.
+pub(crate) fn mean_attribution(
     scenario: &Scenario,
     campaigns: &BTreeMap<KillChainId, CampaignState>,
     attacker: &FactionId,

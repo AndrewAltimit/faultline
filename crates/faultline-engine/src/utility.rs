@@ -168,37 +168,12 @@ fn condition_holds(
             // operational footprint and can estimate exposure
             // independently. Future Epic M (belief asymmetry) may
             // revisit this; the choice is deliberate, not an oversight.
-            mean_attribution_against(scenario, campaigns, faction_id) >= *threshold
+            //
+            // Reuses `crate::fracture::mean_attribution` so the
+            // attribution definition has a single source of truth
+            // across the fracture and utility phases.
+            crate::fracture::mean_attribution(scenario, campaigns, faction_id) >= *threshold
         },
-    }
-}
-
-/// Mean per-chain attribution confidence over kill chains where
-/// `faction` is the attacker. `0.0` when no such chain is in flight
-/// (no signal yet) — the trigger can't fire on a faction without a
-/// kill chain in the first place. Mirrors the helper in
-/// `crate::fracture` so the two phases agree on the attribution
-/// definition.
-pub(crate) fn mean_attribution_against(
-    scenario: &Scenario,
-    campaigns: &BTreeMap<KillChainId, CampaignState>,
-    faction: &FactionId,
-) -> f64 {
-    let mut sum = 0.0f64;
-    let mut count = 0u32;
-    for (cid, chain) in &scenario.kill_chains {
-        if chain.attacker != *faction {
-            continue;
-        }
-        if let Some(cstate) = campaigns.get(cid) {
-            sum += cstate.attribution_confidence;
-            count += 1;
-        }
-    }
-    if count == 0 {
-        0.0
-    } else {
-        sum / f64::from(count)
     }
 }
 
@@ -389,10 +364,12 @@ pub fn evaluate_action_utility(
             // territory it's dispersion. The friendly-region case
             // contributes positively scaled by how many *other*
             // friendly forces are already in the destination — so a
-            // unit joining a single sibling adds 1, joining a stack
-            // of three adds 3.
+            // unit joining a single sibling adds 0.25, joining a
+            // stack of three adds 0.75. Capped at 1.0 to keep the
+            // contribution within the module-level `[0, 1]` invariant
+            // that authoring weights are sized against.
             let friendly_count = friendly_forces_in_region(state, faction_id, destination, force);
-            let concentration_delta = (friendly_count as f64) * 0.25;
+            let concentration_delta = ((friendly_count as f64) * 0.25).min(1.0);
             add_contribution(
                 &mut score,
                 UtilityTerm::ForceConcentration,
