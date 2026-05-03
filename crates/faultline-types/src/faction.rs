@@ -628,9 +628,12 @@ pub enum UtilityTerm {
 impl UtilityTerm {
     /// All variants in declaration order. Used by the report renderer
     /// and the cross-run aggregator so adding a new term flows through
-    /// without explicit list maintenance at every consumer.
-    pub fn all() -> [UtilityTerm; 7] {
-        [
+    /// without explicit list maintenance at every consumer. Returning
+    /// a slice (rather than a fixed-arity array) means adding an
+    /// eighth variant only requires editing the slice contents — the
+    /// return type and call sites are unaffected.
+    pub fn all() -> &'static [UtilityTerm] {
+        &[
             UtilityTerm::Control,
             UtilityTerm::CasualtiesSelf,
             UtilityTerm::CasualtiesInflicted,

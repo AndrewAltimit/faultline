@@ -98,6 +98,19 @@ pub struct ScoredAction {
     pub utility: Option<UtilityScore>,
 }
 
+/// Output of one decision-phase action evaluation for a single faction.
+///
+/// `fired_triggers` is non-empty only when the faction declared a
+/// `[utility]` profile and at least one adaptive trigger matched this
+/// phase. Returned alongside the scored actions so the per-tick
+/// decision logger doesn't need to re-evaluate `effective_weights`
+/// just to read the fire list.
+#[derive(Clone, Debug, Default)]
+pub struct ActionEvaluation {
+    pub actions: Vec<ScoredAction>,
+    pub fired_triggers: Vec<String>,
+}
+
 /// Evaluate and return a prioritized list of actions for a faction.
 ///
 /// The utility-driven adaptive AI scaffold (Epic J round-one): when
@@ -105,6 +118,10 @@ pub struct ScoredAction {
 /// adds it to the doctrine score before sorting. Pure additive
 /// composition keeps the legacy doctrine-only path bit-identical for
 /// scenarios without a `[utility]` block.
+///
+/// Returns the scored actions plus the IDs of any utility triggers
+/// that fired this phase so the decision-phase logger can record the
+/// fires without re-evaluating [`utility::effective_weights`].
 pub fn evaluate_actions(
     faction_id: &FactionId,
     state: &SimulationState,
@@ -112,14 +129,14 @@ pub fn evaluate_actions(
     map: &GameMap,
     campaigns: &BTreeMap<KillChainId, CampaignState>,
     rng: &mut impl Rng,
-) -> Vec<ScoredAction> {
+) -> ActionEvaluation {
     let faction_state = match state.faction_states.get(faction_id) {
         Some(fs) => fs,
-        None => return Vec::new(),
+        None => return ActionEvaluation::default(),
     };
 
     if faction_state.eliminated {
-        return Vec::new();
+        return ActionEvaluation::default();
     }
 
     // Determine which factions are hostile, weighted by diplomatic
@@ -180,22 +197,34 @@ pub fn evaluate_actions(
     // Apply utility-driven re-scoring on top of the doctrine score
     // when a profile is declared. Pure pure-function composition —
     // adds to `score` and captures the per-term decomposition for the
-    // post-run report.
-    if let Some(eff) = &utility_weights {
+    // post-run report. The ground-truth path passes `None` for
+    // `world_view` so utility reads opponent strength and region
+    // control from `state` directly.
+    let fired_triggers = if let Some(eff) = &utility_weights {
         for sa in &mut actions {
-            apply_utility_score(sa, faction_id, eff, state, scenario, map);
+            apply_utility_score(sa, faction_id, eff, state, scenario, map, None);
         }
-    }
+        eff.fired_triggers.clone()
+    } else {
+        Vec::new()
+    };
 
     // Sort by score descending.
     actions.sort_by(|a, b| b.score.total_cmp(&a.score));
 
-    actions
+    ActionEvaluation {
+        actions,
+        fired_triggers,
+    }
 }
 
 /// Mutate a doctrine-scored action in-place to add the utility
 /// component. After this, `sa.score` is the sum of the doctrine score
 /// and the utility total, and `sa.utility` carries the decomposition.
+///
+/// `world_view`: when `Some`, opponent-strength and region-control
+/// reads in [`utility::evaluate_action_utility`] are routed through
+/// the fog-of-war view. `None` = ground-truth path.
 fn apply_utility_score(
     sa: &mut ScoredAction,
     faction_id: &FactionId,
@@ -203,9 +232,11 @@ fn apply_utility_score(
     state: &SimulationState,
     scenario: &Scenario,
     map: &GameMap,
+    world_view: Option<&faultline_types::strategy::FactionWorldView>,
 ) {
-    let utility_score =
-        utility::evaluate_action_utility(weights, faction_id, &sa.action, state, scenario, map);
+    let utility_score = utility::evaluate_action_utility(
+        weights, faction_id, &sa.action, state, scenario, map, world_view,
+    );
     sa.score += utility_score.total;
     sa.utility = Some(utility_score);
 }
@@ -592,12 +623,14 @@ pub fn build_world_view(
 
 /// Evaluate actions using fog-of-war partial information.
 ///
-/// Uses the faction's world view instead of full ground truth. The
-/// utility-driven re-scoring (Epic J round-one) reads ground truth
-/// for state values that are "self-knowledge" — own morale, resources,
-/// strength loss; only the controller-of-region inputs come from the
-/// world view, which is consistent with how `evaluate_attack_actions_fog`
-/// already mixes the two for the doctrine score.
+/// Uses the faction's world view instead of full ground truth.
+/// Self-knowledge inputs to the utility evaluator (own morale,
+/// resources, strength loss, friendly force counts) still come from
+/// `state` — the faction always knows its own posture. Opponent
+/// strength and region control are read from `world_view` so the
+/// utility score honours the fog contract: a faction's score for
+/// attacking an undetected force in a region it cannot see drops to
+/// the no-information branch.
 pub fn evaluate_actions_fog(
     faction_id: &FactionId,
     state: &SimulationState,
@@ -606,14 +639,14 @@ pub fn evaluate_actions_fog(
     map: &GameMap,
     campaigns: &BTreeMap<KillChainId, CampaignState>,
     rng: &mut impl Rng,
-) -> Vec<ScoredAction> {
+) -> ActionEvaluation {
     let faction_state = match state.faction_states.get(faction_id) {
         Some(fs) => fs,
-        None => return Vec::new(),
+        None => return ActionEvaluation::default(),
     };
 
     if faction_state.eliminated {
-        return Vec::new();
+        return ActionEvaluation::default();
     }
 
     // Build enemy presence from detected forces only, weighted by
@@ -674,14 +707,20 @@ pub fn evaluate_actions_fog(
 
     evaluate_recruit_actions(faction_state, &weights, &mut actions);
 
-    if let Some(eff) = &utility_weights {
+    let fired_triggers = if let Some(eff) = &utility_weights {
         for sa in &mut actions {
-            apply_utility_score(sa, faction_id, eff, state, scenario, map);
+            apply_utility_score(sa, faction_id, eff, state, scenario, map, Some(world_view));
         }
-    }
+        eff.fired_triggers.clone()
+    } else {
+        Vec::new()
+    };
 
     actions.sort_by(|a, b| b.score.total_cmp(&a.score));
-    actions
+    ActionEvaluation {
+        actions,
+        fired_triggers,
+    }
 }
 
 /// Attack evaluation using fog-of-war region control.

@@ -33,7 +33,7 @@ use faultline_geo::{GameMap, adjacent_regions};
 use faultline_types::faction::{AdaptiveCondition, AdaptiveTrigger, FactionUtility, UtilityTerm};
 use faultline_types::ids::{FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
-use faultline_types::strategy::FactionAction;
+use faultline_types::strategy::{FactionAction, FactionWorldView};
 
 use crate::campaign::CampaignState;
 use crate::state::SimulationState;
@@ -202,6 +202,14 @@ pub(crate) fn mean_attribution_against(
 /// the module. Contributions are bounded in `[-w, w]` per term so
 /// the total stays interpretable when the analyst sees it in the
 /// report.
+///
+/// When `world_view` is `Some`, opponent-strength and region-control
+/// reads are routed through the fog-of-war view rather than ground
+/// truth — the AI's utility score can only see what its world view
+/// surfaces. Self-knowledge inputs (own force strength, own
+/// `controlled_regions`, own resources) still come from `state`
+/// because the faction always knows its own posture. `None` =
+/// ground-truth path used by the no-fog evaluator.
 pub fn evaluate_action_utility(
     weights: &EffectiveWeights,
     faction_id: &FactionId,
@@ -209,6 +217,7 @@ pub fn evaluate_action_utility(
     state: &SimulationState,
     _scenario: &Scenario,
     map: &GameMap,
+    world_view: Option<&FactionWorldView>,
 ) -> UtilityScore {
     let Some(fs) = state.faction_states.get(faction_id) else {
         return UtilityScore::default();
@@ -232,8 +241,11 @@ pub fn evaluate_action_utility(
             // tech), but the AI doesn't simulate combat to score; it
             // approximates. Sized so a faction with 2× attacker
             // strength scores ~0.67 capture probability.
-            let own_strength = fs.forces.get(force).map_or(1.0, |f| f.strength);
-            let opp_strength = enemy_strength_in_region(state, faction_id, target_region);
+            let own_strength = fs.forces.get(force).map_or(0.0, |f| f.strength);
+            let opp_strength = match world_view {
+                Some(wv) => enemy_strength_in_region_fog(wv, faction_id, target_region),
+                None => enemy_strength_in_region(state, faction_id, target_region),
+            };
             let p_capture = if own_strength + opp_strength <= f64::EPSILON {
                 0.5
             } else {
@@ -287,8 +299,11 @@ pub fn evaluate_action_utility(
             // enemy threatens the region the contribution should
             // compress to zero (defending an unthreatened region is
             // wasted attention).
-            let threat = enemy_strength_in_adjacent(state, faction_id, region, map);
-            let own_strength = fs.forces.get(force).map_or(1.0, |f| f.strength);
+            let threat = match world_view {
+                Some(wv) => enemy_strength_in_adjacent_fog(wv, faction_id, region, map),
+                None => enemy_strength_in_adjacent(state, faction_id, region, map),
+            };
+            let own_strength = fs.forces.get(force).map_or(0.0, |f| f.strength);
             let normalized_threat = if threat <= f64::EPSILON {
                 0.0
             } else {
@@ -319,12 +334,30 @@ pub fn evaluate_action_utility(
             // value (vs. Attack's full value × p_capture). Move into
             // friendly territory contributes nothing — that's
             // re-positioning, not progress.
-            let controller = state
-                .region_control
-                .get(destination)
-                .and_then(|c| c.as_ref());
-            let unclaimed = controller.is_none();
-            let is_ours = controller == Some(faction_id);
+            //
+            // Under fog of war, region control is read from the world
+            // view's `known_regions`. A destination not in
+            // `known_regions` is treated as `is_ours = false /
+            // unclaimed = false` (the unknown branch) — moving into
+            // unknown territory should not be scored as either
+            // friendly consolidation *or* free strategic value.
+            let (unclaimed, is_ours) = match world_view {
+                Some(wv) => {
+                    if let Some(entry) = wv.known_regions.get(destination) {
+                        let controller = entry.as_ref();
+                        (controller.is_none(), controller == Some(faction_id))
+                    } else {
+                        (false, false)
+                    }
+                },
+                None => {
+                    let controller = state
+                        .region_control
+                        .get(destination)
+                        .and_then(|c| c.as_ref());
+                    (controller.is_none(), controller == Some(faction_id))
+                },
+            };
             let control_factor = if unclaimed {
                 strategic_value * 0.5
             } else if is_ours {
@@ -434,6 +467,30 @@ fn enemy_strength_in_region(
     sum
 }
 
+/// Sum of detected enemy strength in `region` under fog of war.
+/// Mirrors [`enemy_strength_in_region`] but reads `world_view.detected_forces`
+/// (which is already filtered to detected forces only and carries the
+/// confidence-scaled `estimated_strength`) instead of ground truth.
+/// Excludes the faction's own forces so the formula matches the
+/// no-fog branch's semantics.
+fn enemy_strength_in_region_fog(
+    world_view: &FactionWorldView,
+    faction_id: &FactionId,
+    region: &faultline_types::ids::RegionId,
+) -> f64 {
+    let mut sum = 0.0;
+    for df in &world_view.detected_forces {
+        if df.faction == *faction_id {
+            continue;
+        }
+        if df.region != *region {
+            continue;
+        }
+        sum += df.estimated_strength;
+    }
+    sum
+}
+
 /// Sum of enemy strength in any region adjacent to `region`. Used by
 /// Defend scoring to estimate how much the position is under threat.
 fn enemy_strength_in_adjacent(
@@ -446,6 +503,21 @@ fn enemy_strength_in_adjacent(
     let mut sum = 0.0;
     for n in &neighbors {
         sum += enemy_strength_in_region(state, faction_id, n);
+    }
+    sum
+}
+
+/// Fog-of-war counterpart to [`enemy_strength_in_adjacent`].
+fn enemy_strength_in_adjacent_fog(
+    world_view: &FactionWorldView,
+    faction_id: &FactionId,
+    region: &faultline_types::ids::RegionId,
+    map: &GameMap,
+) -> f64 {
+    let neighbors = adjacent_regions(region, map);
+    let mut sum = 0.0;
+    for n in &neighbors {
+        sum += enemy_strength_in_region_fog(world_view, faction_id, n);
     }
     sum
 }

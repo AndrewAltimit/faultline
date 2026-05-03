@@ -320,7 +320,8 @@ fn ai_evaluates_defend_for_threatened_region() {
         .expect("bravo_threat should exist")
         .region = RegionId::from("nw");
 
-    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng);
+    let actions =
+        ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng).actions;
 
     let has_defend = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Defend { force, region }
@@ -372,7 +373,8 @@ fn ai_evaluates_attack_for_weak_enemy() {
     let alpha = FactionId::from("alpha");
     let scenario = minimal_scenario();
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng);
+    let actions =
+        ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng).actions;
 
     let has_attack = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Attack { target_region, .. }

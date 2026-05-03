@@ -421,7 +421,7 @@ pub fn decision_phase(
     let mut all_actions = BTreeMap::new();
 
     for fid in &faction_ids {
-        let scored = if fog_of_war {
+        let evaluation = if fog_of_war {
             let world_view = ai::build_world_view(fid, state, scenario, map);
             ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, campaigns, rng)
         } else {
@@ -438,7 +438,7 @@ pub fn decision_phase(
         let mut term_sums: BTreeMap<faultline_types::faction::UtilityTerm, f64> = BTreeMap::new();
         let mut decision_count = 0u32;
         let mut top3 = Vec::with_capacity(3);
-        for sa in scored.into_iter().take(3) {
+        for sa in evaluation.actions.into_iter().take(3) {
             if let Some(u) = &sa.utility {
                 decision_count += 1;
                 for (term, contribution) in &u.contributions {
@@ -448,28 +448,18 @@ pub fn decision_phase(
             top3.push(sa.action);
         }
         if decision_count > 0 {
-            // Capture fired-trigger ids before re-borrowing state for
-            // the log entry — `effective_weights` reads `&state`, the
-            // log update reads `&mut state.utility_decisions`, so
-            // computing the trigger fires up front side-steps the
-            // borrow checker without needing to clone state.
-            let fired_triggers: Vec<String> = scenario
-                .factions
-                .get(fid)
-                .and_then(|f| f.utility.as_ref())
-                .map(|profile| {
-                    crate::utility::effective_weights(profile, fid, state, scenario, campaigns)
-                        .fired_triggers
-                })
-                .unwrap_or_default();
-
             let entry = state.utility_decisions.entry(fid.clone()).or_default();
             entry.tick_count += 1;
             entry.decision_count += u64::from(decision_count);
             for (term, sum) in term_sums {
                 *entry.term_sums.entry(term).or_insert(0.0) += sum;
             }
-            for trigger_id in fired_triggers {
+            // `fired_triggers` was populated by `ai::evaluate_actions`
+            // / `evaluate_actions_fog` from the same `EffectiveWeights`
+            // used to score the candidate actions, so reading it here
+            // avoids a second `crate::utility::effective_weights` call
+            // per faction per tick.
+            for trigger_id in evaluation.fired_triggers {
                 *entry.trigger_fires.entry(trigger_id).or_insert(0) += 1;
             }
         }
