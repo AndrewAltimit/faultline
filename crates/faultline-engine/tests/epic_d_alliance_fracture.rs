@@ -81,6 +81,7 @@ fn make_faction(id: &str, region_id: &str) -> Faction {
         defender_capacities: BTreeMap::new(),
         leadership: None,
         alliance_fracture: None,
+        utility: None,
     }
 }
 

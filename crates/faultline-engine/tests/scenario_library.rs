@@ -31,6 +31,7 @@ use faultline_types::scenario::Scenario;
 /// globbing the directory at test time) means a new scenario file
 /// lands with an explicit test update and a reviewer sees it.
 const BUNDLED_SCENARIOS: &[&str] = &[
+    "adaptive_utility_demo.toml",
     "alert_fatigue_soc.toml",
     "calibration_demo.toml",
     "capabilities_demo.toml",

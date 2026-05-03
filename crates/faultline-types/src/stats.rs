@@ -138,6 +138,49 @@ pub struct RunResult {
     /// fires `Flee`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub displacement_reports: BTreeMap<RegionId, RegionDisplacementReport>,
+    /// Per-faction utility-driven decision report for this run (Epic
+    /// J round-one — adaptive AI scaffold). Only populated for factions
+    /// that declare `Faction.utility` *and* whose top-3 selected
+    /// actions had non-zero utility decomposition at any decision
+    /// phase. Keyed by `FactionId` for deterministic rendering. Empty
+    /// when no faction declares `[utility]`. The cross-run aggregator
+    /// `MonteCarloSummary.utility_decompositions` rolls these into
+    /// per-faction means.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub utility_decisions: BTreeMap<FactionId, UtilityDecisionReport>,
+}
+
+/// Per-faction utility-driven decision report for one run (Epic J
+/// round-one).
+///
+/// Captured live by the engine across the run's decision phases.
+/// `tick_count` and `decision_count` are the counters the cross-run
+/// aggregator divides into to recover means; `term_sums` and
+/// `trigger_fires` are the cumulative numerators.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UtilityDecisionReport {
+    pub faction: FactionId,
+    /// Number of decision phases where this faction's `[utility]`
+    /// profile contributed to at least one of the top-3 selected
+    /// actions. Equals the number of phases where `decision_count`
+    /// for this run was non-zero. Always `>= 1` when this report
+    /// exists in the parent map (the engine elides factions with
+    /// zero contribution).
+    pub tick_count: u32,
+    /// Cumulative count of top-3 actions whose `ScoredAction.utility`
+    /// was `Some` across the run. Sum across ticks; the denominator
+    /// for "mean contribution per decision".
+    pub decision_count: u64,
+    /// Per-`UtilityTerm` cumulative contribution across all selected
+    /// actions in the run. Stored keyed by the term's `as_key()` to
+    /// keep the manifest-content-hash-relevant on-disk key stable
+    /// across binary representations of `UtilityTerm`.
+    #[serde(default)]
+    pub term_sums: BTreeMap<String, f64>,
+    /// Per-trigger fire count across the run. Keyed by the trigger
+    /// id the author declared.
+    #[serde(default)]
+    pub trigger_fires: BTreeMap<String, u32>,
 }
 
 /// Per-faction tech-card cost activity for one run.
@@ -680,6 +723,53 @@ pub struct MonteCarloSummary {
     /// any region. Keyed by `RegionId` for deterministic rendering.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub displacement_summaries: BTreeMap<RegionId, DisplacementSummary>,
+    /// Per-faction utility-decomposition analytics aggregated across
+    /// runs (Epic J round-one — adaptive AI scaffold). Empty when no
+    /// scenario faction declares `Faction.utility` or no run produced
+    /// a contributing decision. Keyed by `FactionId` for deterministic
+    /// rendering. Producer:
+    /// `faultline_stats::utility_decomposition::compute_utility_decompositions`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub utility_decompositions: BTreeMap<FactionId, UtilityDecompositionSummary>,
+}
+
+/// Per-faction utility-decomposition summary across runs (Epic J
+/// round-one).
+///
+/// `mean_contributions_per_decision` is the headline analytical
+/// signal: which terms drove which decisions, in what proportion. A
+/// faction whose `Control` term mean is much larger than its
+/// `CasualtiesSelf` mean was operating like a control-maximiser; the
+/// inverse profile reads as cautious / casualty-averse.
+///
+/// `trigger_fire_rates` reports per-trigger firing frequency — the
+/// fraction of the run's decision phases where each trigger held —
+/// averaged across runs. Triggers with zero fire rate across all
+/// runs are surfaced too so the analyst can see "this trigger never
+/// fired" rather than wondering whether they typoed the id.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct UtilityDecompositionSummary {
+    pub faction: FactionId,
+    /// Number of runs where this faction had at least one contributing
+    /// decision (the denominator for `runs_with_contribution_rate`
+    /// derivations).
+    pub runs_with_contribution: u32,
+    /// Mean per-run number of decision phases where the profile
+    /// contributed.
+    pub mean_tick_count: f64,
+    /// Mean per-run number of selected actions with non-`None`
+    /// utility.
+    pub mean_decision_count: f64,
+    /// Per-`UtilityTerm` mean contribution across all contributing
+    /// decisions in all runs. Keyed by the term's `as_key()` for
+    /// schema-stable serialization.
+    pub mean_contributions_per_decision: BTreeMap<String, f64>,
+    /// Per-trigger mean firing rate across runs (in `[0, 1]`):
+    /// `total_fires_across_runs / total_tick_count_across_runs`.
+    /// Triggers that never fired in any run still appear with rate
+    /// `0.0` so the analyst can see the "declared but never fired"
+    /// case explicitly.
+    pub trigger_fire_rates: BTreeMap<String, f64>,
 }
 
 /// Calibration verdict against a scenario's `historical_analogue`.
@@ -1445,4 +1535,8 @@ pub struct DeltaEncodedRun {
     /// when no region had non-zero displaced fraction during the run.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub displacement_reports: BTreeMap<RegionId, RegionDisplacementReport>,
+    /// Per-faction utility-decision report — preserved verbatim. Empty
+    /// when no faction declares `[utility]` or no decision contributed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub utility_decisions: BTreeMap<FactionId, UtilityDecisionReport>,
 }

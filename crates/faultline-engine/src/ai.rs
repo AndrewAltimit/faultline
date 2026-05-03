@@ -8,13 +8,15 @@ use std::collections::BTreeSet;
 
 use faultline_geo::{GameMap, adjacent_regions};
 use faultline_types::faction::UnitCapability;
-use faultline_types::ids::{FactionId, RegionId};
+use faultline_types::ids::{FactionId, KillChainId, RegionId};
 use faultline_types::scenario::Scenario;
 use faultline_types::strategy::{
     DetectedForce, Doctrine, FactionAction, FactionWorldView, PoliticalClimateView,
 };
 
+use crate::campaign::CampaignState;
 use crate::state::{RuntimeFactionState, SimulationState};
+use crate::utility::{self, EffectiveWeights, UtilityScore};
 
 /// Weights used to score candidate actions.
 #[derive(Clone, Debug)]
@@ -76,18 +78,39 @@ impl AiWeights {
 }
 
 /// A scored candidate action.
+///
+/// `utility_decomposition` is `None` for legacy doctrine-only scoring
+/// and `Some(score)` when the faction declared `[utility]` and the
+/// post-doctrine utility re-scoring contributed to `score`. Captured
+/// here so the per-tick decomposition can be aggregated into the
+/// post-run [`crate::state::SimulationState::utility_decisions`] log
+/// without re-evaluating utility — round-one's report relies on this.
 #[derive(Clone, Debug)]
 pub struct ScoredAction {
     pub action: FactionAction,
     pub score: f64,
+    /// Per-term contribution decomposition for the utility component
+    /// of `score`. `None` when the faction's `Faction.utility` is
+    /// `None` (legacy doctrine-only path); `Some` even when the
+    /// utility total is zero, so the report can distinguish "no
+    /// profile declared" from "profile declared but did not
+    /// contribute".
+    pub utility: Option<UtilityScore>,
 }
 
 /// Evaluate and return a prioritized list of actions for a faction.
+///
+/// The utility-driven adaptive AI scaffold (Epic J round-one): when
+/// `Faction.utility` is set, computes a per-action utility delta and
+/// adds it to the doctrine score before sorting. Pure additive
+/// composition keeps the legacy doctrine-only path bit-identical for
+/// scenarios without a `[utility]` block.
 pub fn evaluate_actions(
     faction_id: &FactionId,
     state: &SimulationState,
     scenario: &Scenario,
     map: &GameMap,
+    campaigns: &BTreeMap<KillChainId, CampaignState>,
     rng: &mut impl Rng,
 ) -> Vec<ScoredAction> {
     let faction_state = match state.faction_states.get(faction_id) {
@@ -105,6 +128,18 @@ pub fn evaluate_actions(
     let enemy_presence = compute_enemy_presence(faction_id, state, scenario);
 
     let weights = determine_weights(faction_id, state, scenario);
+
+    // Resolve the faction's utility profile and effective weights up
+    // front. Computed once per (faction, decision phase) — re-using
+    // it across the candidate-action enumeration costs nothing and
+    // matches the latched-per-phase semantics declared on
+    // `AdaptiveTrigger`. `None` profile = legacy doctrine-only path
+    // (utility re-scoring is a no-op).
+    let utility_weights = scenario
+        .factions
+        .get(faction_id)
+        .and_then(|f| f.utility.as_ref())
+        .map(|p| utility::effective_weights(p, faction_id, state, scenario, campaigns));
 
     let mut actions = Vec::new();
 
@@ -142,10 +177,37 @@ pub fn evaluate_actions(
     // Evaluate recruit action if resources allow.
     evaluate_recruit_actions(faction_state, &weights, &mut actions);
 
+    // Apply utility-driven re-scoring on top of the doctrine score
+    // when a profile is declared. Pure pure-function composition —
+    // adds to `score` and captures the per-term decomposition for the
+    // post-run report.
+    if let Some(eff) = &utility_weights {
+        for sa in &mut actions {
+            apply_utility_score(sa, faction_id, eff, state, scenario, map);
+        }
+    }
+
     // Sort by score descending.
     actions.sort_by(|a, b| b.score.total_cmp(&a.score));
 
     actions
+}
+
+/// Mutate a doctrine-scored action in-place to add the utility
+/// component. After this, `sa.score` is the sum of the doctrine score
+/// and the utility total, and `sa.utility` carries the decomposition.
+fn apply_utility_score(
+    sa: &mut ScoredAction,
+    faction_id: &FactionId,
+    weights: &EffectiveWeights,
+    state: &SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+) {
+    let utility_score =
+        utility::evaluate_action_utility(weights, faction_id, &sa.action, state, scenario, map);
+    sa.score += utility_score.total;
+    sa.utility = Some(utility_score);
 }
 
 // -----------------------------------------------------------------------
@@ -252,6 +314,7 @@ fn evaluate_defend_actions(
                     region: force.region.clone(),
                 },
                 score,
+                utility: None,
             });
         }
     }
@@ -324,6 +387,7 @@ fn evaluate_attack_actions(
                         target_region: neighbor.clone(),
                     },
                     score,
+                    utility: None,
                 });
             }
         }
@@ -374,6 +438,7 @@ fn evaluate_move_actions(
                         destination: neighbor.clone(),
                     },
                     score,
+                    utility: None,
                 });
             }
         }
@@ -400,6 +465,7 @@ fn evaluate_recruit_actions(
                 region: region.clone(),
             },
             score,
+            utility: None,
         });
     }
 }
@@ -526,13 +592,19 @@ pub fn build_world_view(
 
 /// Evaluate actions using fog-of-war partial information.
 ///
-/// Uses the faction's world view instead of full ground truth.
+/// Uses the faction's world view instead of full ground truth. The
+/// utility-driven re-scoring (Epic J round-one) reads ground truth
+/// for state values that are "self-knowledge" — own morale, resources,
+/// strength loss; only the controller-of-region inputs come from the
+/// world view, which is consistent with how `evaluate_attack_actions_fog`
+/// already mixes the two for the doctrine score.
 pub fn evaluate_actions_fog(
     faction_id: &FactionId,
     state: &SimulationState,
     scenario: &Scenario,
     world_view: &FactionWorldView,
     map: &GameMap,
+    campaigns: &BTreeMap<KillChainId, CampaignState>,
     rng: &mut impl Rng,
 ) -> Vec<ScoredAction> {
     let faction_state = match state.faction_states.get(faction_id) {
@@ -560,6 +632,13 @@ pub fn evaluate_actions_fog(
     }
 
     let weights = determine_weights(faction_id, state, scenario);
+
+    // Resolve utility profile (matching the ground-truth path).
+    let utility_weights = scenario
+        .factions
+        .get(faction_id)
+        .and_then(|f| f.utility.as_ref())
+        .map(|p| utility::effective_weights(p, faction_id, state, scenario, campaigns));
 
     let mut actions = Vec::new();
 
@@ -594,6 +673,12 @@ pub fn evaluate_actions_fog(
     );
 
     evaluate_recruit_actions(faction_state, &weights, &mut actions);
+
+    if let Some(eff) = &utility_weights {
+        for sa in &mut actions {
+            apply_utility_score(sa, faction_id, eff, state, scenario, map);
+        }
+    }
 
     actions.sort_by(|a, b| b.score.total_cmp(&a.score));
     actions
@@ -660,6 +745,7 @@ fn evaluate_attack_actions_fog(
                         target_region: neighbor.clone(),
                     },
                     score,
+                    utility: None,
                 });
             }
         }
@@ -711,6 +797,7 @@ fn evaluate_move_actions_fog(
                         destination: neighbor.clone(),
                     },
                     score,
+                    utility: None,
                 });
             }
         }

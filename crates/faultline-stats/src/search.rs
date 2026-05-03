@@ -860,6 +860,7 @@ mod tests {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         }
     }
 
@@ -1045,6 +1046,7 @@ mod tests {
                 calibration: None,
                 narrative_dynamics: None,
                 displacement_summaries: ::std::collections::BTreeMap::new(),
+                utility_decompositions: BTreeMap::new(),
             },
         };
         // Trial 0 dominates trial 1 (better win, equal detection).
@@ -1100,6 +1102,7 @@ mod tests {
                 calibration: None,
                 narrative_dynamics: None,
                 displacement_summaries: ::std::collections::BTreeMap::new(),
+                utility_decompositions: BTreeMap::new(),
             },
         };
         let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
@@ -1152,6 +1155,7 @@ mod tests {
             calibration: None,
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
+            utility_decompositions: BTreeMap::new(),
         }
     }
 
@@ -1492,6 +1496,7 @@ mod tests {
             calibration: None,
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
+            utility_decompositions: BTreeMap::new(),
         };
 
         // Cost-style objectives sum across chains.

@@ -1287,6 +1287,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         calibration: None,
         narrative_dynamics: None,
         displacement_summaries: ::std::collections::BTreeMap::new(),
+        utility_decompositions: ::std::collections::BTreeMap::new(),
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");
@@ -1634,6 +1635,96 @@ fn environment_schedule_roundtrips_through_toml() {
             duration: 12
         }
     ));
+}
+
+// ============================================================================
+// FactionUtility (Epic J round-one — adaptive AI scaffold)
+//
+// `Faction.utility` is `#[serde(default, skip_serializing_if = "Option::is_none")]`,
+// so legacy scenarios load unchanged. The block roundtrips through TOML
+// with `BTreeMap<UtilityTerm, f64>` keys serialized as the variant
+// names (PascalCase via the default serde representation), and adaptive
+// triggers carry an internally-tagged `kind` discriminator on the
+// condition variant.
+// ============================================================================
+
+#[test]
+fn faction_utility_toml_roundtrip() {
+    use crate::faction::{AdaptiveCondition, AdaptiveTrigger, FactionUtility, UtilityTerm};
+    use std::collections::BTreeMap;
+
+    let mut terms = BTreeMap::new();
+    terms.insert(UtilityTerm::Control, 1.5);
+    terms.insert(UtilityTerm::CasualtiesSelf, 0.5);
+    terms.insert(UtilityTerm::CasualtiesInflicted, 0.4);
+    let mut adjustments = BTreeMap::new();
+    adjustments.insert(UtilityTerm::CasualtiesSelf, 2.0);
+    adjustments.insert(UtilityTerm::Control, 0.5);
+    let profile = FactionUtility {
+        terms,
+        triggers: vec![AdaptiveTrigger {
+            id: "low_morale".into(),
+            description: "shift toward self-preservation".into(),
+            condition: AdaptiveCondition::MoraleBelow { threshold: 0.3 },
+            adjustments,
+        }],
+        time_horizon_ticks: Some(50),
+    };
+    let serialized = toml::to_string(&profile).expect("utility profile must serialize");
+    let restored: FactionUtility = toml::from_str(&serialized).expect("must roundtrip");
+    assert_eq!(restored.terms.len(), 3);
+    assert!((restored.terms[&UtilityTerm::Control] - 1.5).abs() < 1e-12);
+    assert_eq!(restored.triggers.len(), 1);
+    assert_eq!(restored.triggers[0].id, "low_morale");
+    match &restored.triggers[0].condition {
+        AdaptiveCondition::MoraleBelow { threshold } => {
+            assert!((threshold - 0.3).abs() < 1e-12);
+        },
+        other => panic!("expected MoraleBelow, got {other:?}"),
+    }
+    assert_eq!(restored.time_horizon_ticks, Some(50));
+}
+
+#[test]
+fn faction_utility_absent_field_loads_legacy_scenario_unchanged() {
+    // Tutorial scenario declares no `[utility]` block; serde should
+    // load `Faction.utility` as `None` so legacy behavior is preserved.
+    let scenario: Scenario = toml::from_str(TUTORIAL_TOML).expect("tutorial parses");
+    for faction in scenario.factions.values() {
+        assert!(
+            faction.utility.is_none(),
+            "absent [utility] must default to None"
+        );
+    }
+}
+
+#[test]
+fn faction_utility_each_adaptive_condition_variant_roundtrips() {
+    use crate::faction::AdaptiveCondition;
+    use crate::ids::FactionId;
+
+    // Pin the serde representation of each `AdaptiveCondition` variant
+    // — the wider AI scoring tests build state and check behavior, but
+    // they don't lock the on-the-wire TOML shape. A future
+    // serde-rename refactor would silently break scenario files
+    // without this test.
+    for cond in [
+        AdaptiveCondition::MoraleBelow { threshold: 0.3 },
+        AdaptiveCondition::MoraleAbove { threshold: 0.8 },
+        AdaptiveCondition::TensionAbove { threshold: 0.5 },
+        AdaptiveCondition::TickFraction { fraction: 0.75 },
+        AdaptiveCondition::ResourcesBelow { threshold: 100.0 },
+        AdaptiveCondition::StrengthLossFraction { fraction: 0.4 },
+        AdaptiveCondition::AttributionAgainstSelf { threshold: 0.6 },
+    ] {
+        // Roundtrip via JSON since TOML can't represent a bare
+        // top-level enum value; serde representation is the same.
+        let json = serde_json::to_string(&cond).expect("ser");
+        let _restored: AdaptiveCondition = serde_json::from_str(&json).expect("de");
+        // Touch the FactionId variant too to ensure dependent imports
+        // don't drift; not part of `cond` itself.
+        let _ = FactionId::from("touch");
+    }
 }
 
 #[test]

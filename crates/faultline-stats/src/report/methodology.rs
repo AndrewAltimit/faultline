@@ -8,16 +8,57 @@
 use std::fmt::Write;
 
 use faultline_types::scenario::Scenario;
-use faultline_types::stats::MonteCarloSummary;
+use faultline_types::stats::{CalibrationVerdict, MonteCarloSummary};
 
 use super::ReportSection;
 
 pub(super) struct Methodology;
 
 impl ReportSection for Methodology {
-    fn render(&self, _summary: &MonteCarloSummary, _scenario: &Scenario, out: &mut String) {
+    fn render(&self, summary: &MonteCarloSummary, scenario: &Scenario, out: &mut String) {
         let _ = writeln!(out, "## Methodology & Confidence");
+
+        // Per-scenario calibration confidence tag (Epic N round-two).
+        // Surfaces the cross-scenario calibration claim alongside the
+        // existing parameter-defensibility tag (`meta.confidence`) and
+        // the per-observation Wilson CIs explained below. Renders
+        // only when the scenario declares a `historical_analogue` and
+        // the summary computed a verdict — the standalone Calibration
+        // section above handles the synthetic-disclaimer / no-runs
+        // paths.
+        if scenario.meta.historical_analogue.is_some()
+            && let Some(report) = summary.calibration.as_ref()
+        {
+            let (glyph, claim) = match report.overall {
+                CalibrationVerdict::Pass => {
+                    ("[H]", "Passes against the declared historical analogue")
+                },
+                CalibrationVerdict::Marginal => {
+                    ("[M]", "Marginal against the declared historical analogue")
+                },
+                CalibrationVerdict::Fail => {
+                    ("[L]", "Fails against the declared historical analogue")
+                },
+            };
+            let _ = writeln!(
+                out,
+                "> **Calibration confidence: {} {}.** {} (worst per-observation verdict; see the Calibration section above for the per-observation breakdown).",
+                glyph,
+                verdict_word(report.overall),
+                claim,
+            );
+            let _ = writeln!(out);
+        }
+
         let _ = writeln!(out, "{}", METHODOLOGY_APPENDIX.trim_start());
+    }
+}
+
+fn verdict_word(v: CalibrationVerdict) -> &'static str {
+    match v {
+        CalibrationVerdict::Pass => "Pass",
+        CalibrationVerdict::Marginal => "Marginal",
+        CalibrationVerdict::Fail => "Fail",
     }
 }
 
@@ -58,4 +99,9 @@ The optional `[meta].confidence` field tags the scenario as a whole:
 | `Low` | Conceptual sketch — intended to illustrate a mechanic, not to stand as analysis. |
 
 This is a coarse, author-asserted flag. It is *not* derived from the MC output and does not narrow or widen any CI — it tells the reader how much weight to place on the inputs before any sampling question comes into play.
+
+### Calibration confidence (Epic N)
+The optional `[meta.historical_analogue]` block opts the scenario into back-testing against a declared precedent. When present and the run set is non-empty, this section surfaces a `Calibration confidence` tag — `Pass` / `Marginal` / `Fail` — that mirrors the per-observation roll-up shown in the Calibration section above. The tag complements (does not replace) the parameter-defensibility tag in the header banner: parameter defensibility says "are the inputs sourceable?"; calibration says "do the outputs match a documented precedent?". The two answer different trust questions and a scenario can in principle Pass one and Fail the other.
+
+A `Fail` verdict here does *not* invalidate the report — it tells the analyst that the scenario's structural model produces outputs inconsistent with the declared precedent at the parameters chosen. The next step is usually a sensitivity sweep on the low-confidence parameters listed above to identify which inputs would need to move for the verdict to flip.
 "#;

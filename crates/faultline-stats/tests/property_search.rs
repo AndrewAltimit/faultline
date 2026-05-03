@@ -127,6 +127,7 @@ fn minimal_search_scenario(low: f64, high: f64) -> Scenario {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         }
     };
 

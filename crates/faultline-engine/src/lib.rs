@@ -18,6 +18,7 @@ pub mod network;
 pub mod state;
 pub mod supply;
 pub mod tick;
+pub mod utility;
 
 #[cfg(test)]
 mod ai_tests;
@@ -665,6 +666,92 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                 )));
             }
             validate_fracture_condition(scenario, fid, &rule.id, &rule.condition)?;
+        }
+    }
+
+    // FactionUtility (Epic J round-one). Catch silent-no-op shapes:
+    // empty terms, NaN / non-finite weights, empty trigger
+    // adjustments, NaN / non-finite trigger thresholds, duplicate
+    // trigger ids, unknown trigger references. Each rejection
+    // mirrors the load-time-fail-loud pattern from prior epics —
+    // the engine has well-defined semantics for everything that
+    // *would* be a no-op (zero weight = no contribution; absent
+    // trigger = no firing), so a non-empty profile that contains
+    // one of these shapes is almost certainly an authoring mistake.
+    for (fid, faction) in &scenario.factions {
+        let Some(profile) = &faction.utility else {
+            continue;
+        };
+        if profile.terms.is_empty() {
+            return Err(ScenarioError::Custom(format!(
+                "faction {fid} declares an empty `[utility.terms]` block; \
+                 either remove the `[utility]` block or add at least one \
+                 weighted term. An empty terms map is almost always an \
+                 unfilled author template — utility-driven scoring with \
+                 zero terms is exactly the legacy doctrine-only behavior, \
+                 which the absent-block path already produces."
+            )));
+        }
+        for (term, weight) in &profile.terms {
+            if !weight.is_finite() {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("faction {fid} utility.terms.{}", term.as_key()),
+                    value: *weight,
+                    expected: "finite (no NaN / inf)".into(),
+                });
+            }
+        }
+        if let Some(horizon) = profile.time_horizon_ticks
+            && horizon == 0
+        {
+            return Err(ScenarioError::Custom(format!(
+                "faction {fid} utility.time_horizon_ticks is 0; \
+                 a horizon of zero ticks divides by zero in the \
+                 TickFraction computation. Use `None` to fall back \
+                 to scenario.simulation.max_ticks."
+            )));
+        }
+        let mut seen_trigger_ids: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for trigger in &profile.triggers {
+            if trigger.id.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} utility trigger has empty `id`; \
+                     each trigger needs a stable identifier so the \
+                     report's per-trigger fire-rate column can name it."
+                )));
+            }
+            if !seen_trigger_ids.insert(trigger.id.as_str()) {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} utility trigger id `{}` is declared \
+                     more than once; trigger ids must be unique within \
+                     a faction so the cross-run aggregator attributes \
+                     fires correctly.",
+                    trigger.id
+                )));
+            }
+            if trigger.adjustments.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "faction {fid} utility trigger `{}` has empty \
+                     `adjustments`; a trigger without adjustments is a \
+                     no-op and almost always an authoring mistake.",
+                    trigger.id
+                )));
+            }
+            for (term, multiplier) in &trigger.adjustments {
+                if !multiplier.is_finite() {
+                    return Err(ScenarioError::ValueOutOfRange {
+                        field: format!(
+                            "faction {fid} utility trigger `{}` adjustment to {}",
+                            trigger.id,
+                            term.as_key()
+                        ),
+                        value: *multiplier,
+                        expected: "finite (no NaN / inf)".into(),
+                    });
+                }
+            }
+            validate_adaptive_condition(fid, &trigger.id, &trigger.condition)?;
         }
     }
 
@@ -1367,6 +1454,75 @@ fn validate_fracture_condition(
     Ok(())
 }
 
+fn validate_adaptive_condition(
+    faction: &faultline_types::ids::FactionId,
+    trigger_id: &str,
+    cond: &faultline_types::faction::AdaptiveCondition,
+) -> Result<(), ScenarioError> {
+    use faultline_types::faction::AdaptiveCondition;
+    let bad_unit_threshold = |label: &str, value: f64| -> Result<(), ScenarioError> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("faction {faction} utility trigger {trigger_id} {label}"),
+                value,
+                expected: "[0.0, 1.0]".into(),
+            });
+        }
+        Ok(())
+    };
+    match cond {
+        AdaptiveCondition::MoraleBelow { threshold } => {
+            bad_unit_threshold("MoraleBelow.threshold", *threshold)
+        },
+        AdaptiveCondition::MoraleAbove { threshold } => {
+            bad_unit_threshold("MoraleAbove.threshold", *threshold)
+        },
+        AdaptiveCondition::TensionAbove { threshold } => {
+            bad_unit_threshold("TensionAbove.threshold", *threshold)
+        },
+        AdaptiveCondition::TickFraction { fraction } => {
+            // `fraction` is a tick / horizon ratio; values >1 are
+            // legitimate when a faction's `time_horizon_ticks` shrinks
+            // the denominator below the scenario's max_ticks. So we
+            // accept any non-negative finite value, but reject NaN
+            // and negative since both silently never-fire under the
+            // `>=` comparison.
+            if !fraction.is_finite() || *fraction < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "faction {faction} utility trigger {trigger_id} TickFraction.fraction"
+                    ),
+                    value: *fraction,
+                    expected: ">= 0.0 and finite".into(),
+                });
+            }
+            Ok(())
+        },
+        AdaptiveCondition::ResourcesBelow { threshold } => {
+            // Resources are unbounded (a faction can have any
+            // non-negative resource count). Just reject NaN /
+            // negative — a negative threshold can never trigger
+            // since resources stay non-negative.
+            if !threshold.is_finite() || *threshold < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!(
+                        "faction {faction} utility trigger {trigger_id} ResourcesBelow.threshold"
+                    ),
+                    value: *threshold,
+                    expected: ">= 0.0 and finite".into(),
+                });
+            }
+            Ok(())
+        },
+        AdaptiveCondition::StrengthLossFraction { fraction } => {
+            bad_unit_threshold("StrengthLossFraction.fraction", *fraction)
+        },
+        AdaptiveCondition::AttributionAgainstSelf { threshold } => {
+            bad_unit_threshold("AttributionAgainstSelf.threshold", *threshold)
+        },
+    }
+}
+
 fn validate_environment_window(
     window: &faultline_types::map::EnvironmentWindow,
 ) -> Result<(), ScenarioError> {
@@ -1532,6 +1688,7 @@ mod tests {
                 defender_capacities: BTreeMap::new(),
                 leadership: None,
                 alliance_fracture: None,
+                utility: None,
             },
         );
 
@@ -2850,5 +3007,195 @@ mod tests {
             },
         ]));
         validate_scenario(&s).expect("well-formed analogue should pass");
+    }
+
+    // ====================================================================
+    // FactionUtility (Epic J round-one) — validation
+    // ====================================================================
+
+    fn util_profile_with(
+        terms: BTreeMap<faultline_types::faction::UtilityTerm, f64>,
+        triggers: Vec<faultline_types::faction::AdaptiveTrigger>,
+    ) -> faultline_types::faction::FactionUtility {
+        faultline_types::faction::FactionUtility {
+            terms,
+            triggers,
+            time_horizon_ticks: None,
+        }
+    }
+
+    fn unit_terms() -> BTreeMap<faultline_types::faction::UtilityTerm, f64> {
+        let mut t = BTreeMap::new();
+        t.insert(faultline_types::faction::UtilityTerm::Control, 1.0);
+        t
+    }
+
+    #[test]
+    fn validate_passes_for_well_formed_utility() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut adj = BTreeMap::new();
+        adj.insert(faultline_types::faction::UtilityTerm::Control, 2.0);
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(
+            unit_terms(),
+            vec![faultline_types::faction::AdaptiveTrigger {
+                id: "tense".into(),
+                description: "".into(),
+                condition: faultline_types::faction::AdaptiveCondition::TensionAbove {
+                    threshold: 0.5,
+                },
+                adjustments: adj,
+            }],
+        ));
+        validate_scenario(&s).expect("well-formed utility should pass");
+    }
+
+    #[test]
+    fn validate_rejects_empty_utility_terms() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        s.factions.get_mut(&fid).expect("gov").utility =
+            Some(util_profile_with(BTreeMap::new(), vec![]));
+        let err = validate_scenario(&s).expect_err("empty terms should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("empty `[utility.terms]`"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_nan_term_weight() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut terms = BTreeMap::new();
+        terms.insert(faultline_types::faction::UtilityTerm::Control, f64::NAN);
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(terms, vec![]));
+        let err = validate_scenario(&s).expect_err("NaN term weight should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("utility.terms"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_zero_time_horizon() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        s.factions.get_mut(&fid).expect("gov").utility =
+            Some(faultline_types::faction::FactionUtility {
+                terms: unit_terms(),
+                triggers: vec![],
+                time_horizon_ticks: Some(0),
+            });
+        let err = validate_scenario(&s).expect_err("zero horizon should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("time_horizon_ticks is 0"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_trigger_ids() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut adj = BTreeMap::new();
+        adj.insert(faultline_types::faction::UtilityTerm::Control, 2.0);
+        let trig_a = faultline_types::faction::AdaptiveTrigger {
+            id: "dup".into(),
+            description: "".into(),
+            condition: faultline_types::faction::AdaptiveCondition::MoraleBelow { threshold: 0.3 },
+            adjustments: adj.clone(),
+        };
+        let trig_b = faultline_types::faction::AdaptiveTrigger {
+            id: "dup".into(),
+            description: "".into(),
+            condition: faultline_types::faction::AdaptiveCondition::TensionAbove { threshold: 0.5 },
+            adjustments: adj,
+        };
+        s.factions.get_mut(&fid).expect("gov").utility =
+            Some(util_profile_with(unit_terms(), vec![trig_a, trig_b]));
+        let err = validate_scenario(&s).expect_err("duplicate trigger ids should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("declared more than once"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_empty_trigger_adjustments() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(
+            unit_terms(),
+            vec![faultline_types::faction::AdaptiveTrigger {
+                id: "empty".into(),
+                description: "".into(),
+                condition: faultline_types::faction::AdaptiveCondition::MoraleBelow {
+                    threshold: 0.3,
+                },
+                adjustments: BTreeMap::new(),
+            }],
+        ));
+        let err = validate_scenario(&s).expect_err("empty adjustments should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("empty `adjustments`"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_morale_threshold_above_one() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut adj = BTreeMap::new();
+        adj.insert(faultline_types::faction::UtilityTerm::Control, 2.0);
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(
+            unit_terms(),
+            vec![faultline_types::faction::AdaptiveTrigger {
+                id: "bad".into(),
+                description: "".into(),
+                condition: faultline_types::faction::AdaptiveCondition::MoraleBelow {
+                    threshold: 2.0,
+                },
+                adjustments: adj,
+            }],
+        ));
+        let err = validate_scenario(&s).expect_err("threshold > 1 should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("MoraleBelow.threshold"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_negative_resources_threshold() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut adj = BTreeMap::new();
+        adj.insert(faultline_types::faction::UtilityTerm::Control, 2.0);
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(
+            unit_terms(),
+            vec![faultline_types::faction::AdaptiveTrigger {
+                id: "neg".into(),
+                description: "".into(),
+                condition: faultline_types::faction::AdaptiveCondition::ResourcesBelow {
+                    threshold: -10.0,
+                },
+                adjustments: adj,
+            }],
+        ));
+        let err = validate_scenario(&s).expect_err("negative resources should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("ResourcesBelow"), "got: {msg}");
+    }
+
+    #[test]
+    fn validate_rejects_nan_adjustment_multiplier() {
+        let mut s = minimal_scenario();
+        let fid = FactionId::from("gov");
+        let mut adj = BTreeMap::new();
+        adj.insert(faultline_types::faction::UtilityTerm::Control, f64::NAN);
+        s.factions.get_mut(&fid).expect("gov").utility = Some(util_profile_with(
+            unit_terms(),
+            vec![faultline_types::faction::AdaptiveTrigger {
+                id: "nan_adj".into(),
+                description: "".into(),
+                condition: faultline_types::faction::AdaptiveCondition::MoraleBelow {
+                    threshold: 0.3,
+                },
+                adjustments: adj,
+            }],
+        ));
+        let err = validate_scenario(&s).expect_err("NaN multiplier should fail");
+        let msg = format!("{err}");
+        assert!(msg.contains("trigger"), "got: {msg}");
     }
 }

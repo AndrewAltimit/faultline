@@ -185,6 +185,7 @@ fn make_test_scenario() -> Scenario {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         },
     );
     factions.insert(
@@ -212,6 +213,7 @@ fn make_test_scenario() -> Scenario {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         },
     );
 

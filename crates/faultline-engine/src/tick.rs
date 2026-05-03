@@ -401,10 +401,18 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
 // -----------------------------------------------------------------------
 
 /// Each faction evaluates its situation and queues actions.
+///
+/// `campaigns` is the live in-flight kill-chain state (read-only).
+/// Threaded through so the utility-driven adaptive AI scaffold (Epic
+/// J round-one) can score the `AdaptiveCondition::AttributionAgainstSelf`
+/// trigger without re-deriving attribution from the event log.
+/// Empty `campaigns` (legacy scenarios with no kill chains) is the
+/// fast path — utility evaluation reads it as zero attribution.
 pub fn decision_phase(
     state: &mut SimulationState,
     scenario: &Scenario,
     map: &GameMap,
+    campaigns: &BTreeMap<faultline_types::ids::KillChainId, crate::campaign::CampaignState>,
     rng: &mut impl Rng,
 ) -> BTreeMap<FactionId, Vec<FactionAction>> {
     let faction_ids: Vec<FactionId> = state.faction_states.keys().cloned().collect();
@@ -415,14 +423,58 @@ pub fn decision_phase(
     for fid in &faction_ids {
         let scored = if fog_of_war {
             let world_view = ai::build_world_view(fid, state, scenario, map);
-            ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, rng)
+            ai::evaluate_actions_fog(fid, state, scenario, &world_view, map, campaigns, rng)
         } else {
-            ai::evaluate_actions(fid, state, scenario, map, rng)
+            ai::evaluate_actions(fid, state, scenario, map, campaigns, rng)
         };
-        // Take top 3 actions per faction per tick.
-        let top_actions: Vec<FactionAction> =
-            scored.into_iter().take(3).map(|sa| sa.action).collect();
-        all_actions.insert(fid.clone(), top_actions);
+
+        // Capture per-faction utility decomposition for the post-run
+        // report (Epic J round-one). Sums per-term contributions
+        // across the *top-3 selected* actions only — the actions the
+        // engine actually executes — so the report describes what
+        // drove the visible behavior, not the whole candidate set.
+        // No-op for factions with no `[utility]` profile (every
+        // ScoredAction's `utility` is `None`).
+        let mut term_sums: BTreeMap<faultline_types::faction::UtilityTerm, f64> = BTreeMap::new();
+        let mut decision_count = 0u32;
+        let mut top3 = Vec::with_capacity(3);
+        for sa in scored.into_iter().take(3) {
+            if let Some(u) = &sa.utility {
+                decision_count += 1;
+                for (term, contribution) in &u.contributions {
+                    *term_sums.entry(*term).or_insert(0.0) += contribution;
+                }
+            }
+            top3.push(sa.action);
+        }
+        if decision_count > 0 {
+            // Capture fired-trigger ids before re-borrowing state for
+            // the log entry — `effective_weights` reads `&state`, the
+            // log update reads `&mut state.utility_decisions`, so
+            // computing the trigger fires up front side-steps the
+            // borrow checker without needing to clone state.
+            let fired_triggers: Vec<String> = scenario
+                .factions
+                .get(fid)
+                .and_then(|f| f.utility.as_ref())
+                .map(|profile| {
+                    crate::utility::effective_weights(profile, fid, state, scenario, campaigns)
+                        .fired_triggers
+                })
+                .unwrap_or_default();
+
+            let entry = state.utility_decisions.entry(fid.clone()).or_default();
+            entry.tick_count += 1;
+            entry.decision_count += u64::from(decision_count);
+            for (term, sum) in term_sums {
+                *entry.term_sums.entry(term).or_insert(0.0) += sum;
+            }
+            for trigger_id in fired_triggers {
+                *entry.trigger_fires.entry(trigger_id).or_insert(0) += 1;
+            }
+        }
+
+        all_actions.insert(fid.clone(), top3);
     }
 
     all_actions

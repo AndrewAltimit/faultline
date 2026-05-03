@@ -163,6 +163,7 @@ fn make_ai_test_state() -> SimulationState {
         narrative_dominance_ticks: BTreeMap::new(),
         narrative_peak_dominance: BTreeMap::new(),
         displacement: BTreeMap::new(),
+        utility_decisions: BTreeMap::new(),
     }
 }
 
@@ -308,7 +309,8 @@ fn ai_evaluates_defend_for_threatened_region() {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     // The defend logic checks for enemy presence in the same region
     // as our force, so place bravo directly in nw to trigger defense.
-    let _initial_actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
+    let _initial_actions =
+        ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng);
     state
         .faction_states
         .get_mut(&bravo)
@@ -318,7 +320,7 @@ fn ai_evaluates_defend_for_threatened_region() {
         .expect("bravo_threat should exist")
         .region = RegionId::from("nw");
 
-    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
+    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng);
 
     let has_defend = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Defend { force, region }
@@ -370,7 +372,7 @@ fn ai_evaluates_attack_for_weak_enemy() {
     let alpha = FactionId::from("alpha");
     let scenario = minimal_scenario();
     let mut rng = ChaCha8Rng::seed_from_u64(42);
-    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &mut rng);
+    let actions = ai::evaluate_actions(&alpha, &state, &scenario, &map, &BTreeMap::new(), &mut rng);
 
     let has_attack = actions.iter().any(|sa| {
         matches!(&sa.action, FactionAction::Attack { target_region, .. }
@@ -431,6 +433,7 @@ fn allied_neighbor_preserves_downstream_rng_state() {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         },
     );
     let alpha_def = neutral_scenario
@@ -501,11 +504,25 @@ fn allied_neighbor_preserves_downstream_rng_state() {
     // call, then sample one more f64 — under the fix the post-call
     // RNG state is identical across arms.
     let mut rng_neutral = ChaCha8Rng::seed_from_u64(7);
-    let _ = ai::evaluate_actions(&alpha, &state, &neutral_scenario, &map, &mut rng_neutral);
+    let _ = ai::evaluate_actions(
+        &alpha,
+        &state,
+        &neutral_scenario,
+        &map,
+        &BTreeMap::new(),
+        &mut rng_neutral,
+    );
     let next_neutral: f64 = rng_neutral.r#gen();
 
     let mut rng_allied = ChaCha8Rng::seed_from_u64(7);
-    let _ = ai::evaluate_actions(&alpha, &state, &allied_scenario, &map, &mut rng_allied);
+    let _ = ai::evaluate_actions(
+        &alpha,
+        &state,
+        &allied_scenario,
+        &map,
+        &BTreeMap::new(),
+        &mut rng_allied,
+    );
     let next_allied: f64 = rng_allied.r#gen();
 
     assert_eq!(

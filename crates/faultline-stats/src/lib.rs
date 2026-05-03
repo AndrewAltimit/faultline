@@ -25,6 +25,7 @@ pub mod search;
 pub mod sensitivity;
 pub mod time_dynamics;
 pub mod uncertainty;
+pub mod utility_decomposition;
 
 use std::collections::BTreeMap;
 
@@ -150,6 +151,9 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             calibration: None,
             narrative_dynamics: None,
             displacement_summaries: BTreeMap::new(),
+            utility_decompositions: utility_decomposition::compute_utility_decompositions(
+                runs, scenario,
+            ),
         };
     }
 
@@ -359,6 +363,14 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // signal.
     let displacement_summaries = displacement::compute_displacement_summaries(runs);
 
+    // Utility-decomposition rollup (Epic J round-one). Pure post-
+    // processing of per-run `utility_decisions`; preserves determinism.
+    // Always emits an entry per faction declaring `[utility]` (with
+    // zero counters when no run contributed) so "declared but never
+    // fired" stays visible. Empty when no faction declares the block.
+    let utility_decompositions =
+        utility_decomposition::compute_utility_decompositions(runs, scenario);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -381,6 +393,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         calibration,
         narrative_dynamics,
         displacement_summaries,
+        utility_decompositions,
     }
 }
 
@@ -1175,6 +1188,7 @@ mod tests {
             narrative_dominance_ticks: BTreeMap::new(),
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: BTreeMap::new(),
         }
     }
 
@@ -1379,6 +1393,7 @@ mod tests {
             narrative_dominance_ticks: BTreeMap::new(),
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: BTreeMap::new(),
         }
     }
 
@@ -1916,6 +1931,7 @@ mod tests {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         }
     }
 }
