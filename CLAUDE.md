@@ -57,6 +57,15 @@ cargo run -p faultline-cli -- scenarios/network_resilience_demo.toml -n 16
 # every attrition tick.
 cargo run -p faultline-cli -- scenarios/supply_interdiction_demo.toml -n 16
 
+# Multi-front resource contention archetype (Epic D round-three item 3).
+# A 3-tier SOC defender (tier-1 triage → tier-2 IR → tier-3 forensics)
+# with declared cross-role escalation policy. Tier-1 saturates first,
+# spills to tier-2 at 80% capacity; tier-2 saturates next, spills to
+# tier-3 at 70%; tier-3 (terminal) absorbs the residual. The report's
+# "Defender Capacity" section gains a "Cross-role escalation" sub-table
+# whose `In` / `Out` columns trace the spillover chain by inspection.
+cargo run -p faultline-cli -- scenarios/multifront_soc_escalation.toml -n 16
+
 # Calibration scaffold demo (Epic N — calibration discipline). The
 # scenario declares a `[meta.historical_analogue]` block with three
 # observations (Winner, WinRate, DurationTicks); the report's
@@ -539,6 +548,112 @@ new event variants; just a new phase that consumes the existing
   (d) full severance → income gap matches `resource_rate × ticks`,
   (e) determinism across same-seed runs, plus the three validation
   rejections.
+
+**Multi-front resource contention (Epic D round three, item 3).** Closes
+the third Epic D round-three item: defender capacity (Epic K) was
+modelled as a per-role silo, so two campaigns competing for the same
+faction's defender attention either piled onto a single shared queue or
+ran independently against unrelated queues. Real SOC operations
+escalate: when tier-1 alert triage saturates, new alerts get pushed up
+to tier-2 incident response; when tier-2 itself saturates, work
+escalates further to a tier-3 forensics cell. This round adds the
+declarative escalation chain.
+
+- Two new optional fields on `DefenderCapacity` (in
+  `crates/faultline-types/src/faction.rs`): `overflow_to:
+  Option<DefenderRoleId>` names another role on the *same faction*
+  whose queue receives spillover when this role saturates;
+  `overflow_threshold: Option<f64>` (defaults to `1.0` in the engine)
+  is the queue-depth fraction at which spillover engages. Setting
+  `overflow_threshold = 0.8` against `queue_depth = 100` means
+  "escalate once depth crosses 80" — modelling proactive load-shed
+  policy versus the reactive default of "escalate only when full".
+  Both fields use `#[serde(default, skip_serializing_if =
+  "Option::is_none")]` so legacy scenario TOML loads byte-identically
+  and roles without `overflow_to` cost zero overhead on the hot
+  path.
+- Engine spillover lives in `crates/faultline-engine/src/campaign.rs`
+  as `enqueue_with_overflow`. Per per-phase Poisson noise draw:
+  resolve the role's `DefenderCapacity`; if `overflow_to.is_some()`,
+  split the count into `(direct, spillover)` where `direct` fills
+  whatever headroom remains under `ceil(queue_depth × threshold)` and
+  `spillover` is the rest; apply the existing `OverflowPolicy` to
+  `direct` only; recursively call `enqueue_with_overflow` on the
+  spillover portion against the named target role. Spillover takes
+  precedence over `OverflowPolicy::DropNew` — declaring `overflow_to`
+  is the analyst's signal that "escalate, don't drop" is the
+  intended semantic.
+- Per-role queue accounting on
+  `state::DefenderQueueState`: `spillover_in: u64` is the cumulative
+  count that arrived at this role via another role's overflow chain
+  — it tracks the conservation chain link from upstream regardless of
+  what this role then does with the items (so when this role itself
+  further spills, `spillover_in` may exceed `total_enqueued`).
+  `spillover_out` is the cumulative count this role redirected to its
+  overflow target (not in `total_enqueued`; the items left this queue
+  without ever being enqueued here). `total_enqueued` charges only
+  the items that actually entered this role's queue policy — items
+  that arrived but immediately spilled onward to another role are
+  *not* counted, so the throughput counter stays meaningful for
+  drop-rate analytics. Conservation invariant: for any saturated
+  role `A` whose `overflow_to = B`, `A.spillover_out` exactly equals
+  `B.spillover_in` (modulo the `MAX_OVERFLOW_CHAIN_DEPTH = 32`
+  recursion guard, which surfaces as `total_dropped` on the would-be-
+  target queue if it ever trips — defense in depth for hand-built
+  fixtures only, never trips on validated authoring).
+- `MAX_OVERFLOW_CHAIN_DEPTH = 32` is defense in depth against
+  hand-built `SimulationState` fixtures that bypass the loader, and
+  against any future schema mutation that might let a chain grow past
+  a sane operational depth. Validation already rejects authored
+  cycles at scenario load, so this guard never trips on a TOML-
+  loaded scenario; a real SOC escalation ladder is at most 3–4 deep.
+- Per-run output: `RunResult.defender_queue_reports` rows gain
+  `spillover_in` / `spillover_out`; `MonteCarloSummary.defender_capacity`
+  rows gain `mean_spillover_in` / `mean_spillover_out`. Both use
+  `#[serde(default)]` so legacy summaries shaped by older engine
+  versions deserialize cleanly. Report rendering lives in
+  `crates/faultline-stats/src/report/defender_capacity.rs` as a new
+  "Cross-role escalation" sub-section gated on `any role has non-zero
+  spillover` — legacy single-queue scenarios (e.g.
+  `alert_fatigue_soc.toml`) elide it entirely so the existing analyst
+  view doesn't gain noise rows.
+- Validation rejects six silent-no-op shapes at scenario load:
+  unknown `overflow_to` role; cross-faction overflow (rejected as
+  unknown-on-this-faction; the engine has no faction to escalate
+  *to* under cross-faction routing without a wider design discussion
+  about shared-services agreements); self-loops (`tier1 -> tier1`);
+  cycles in the chain (BFS from each role, reject on revisit);
+  `overflow_threshold` outside `[0, 1]` or NaN; `overflow_threshold`
+  set without `overflow_to`. Mirrors the load-time-fail-loud pattern
+  from every prior round.
+- Determinism: every helper is a pure function of `(scenario, state,
+  count)` — no RNG (the Poisson draw happens once at the top of the
+  phase-noise loop), no `HashMap`, no allocation in the hot path.
+  Adding `overflow_to` to a role *will* change the affected
+  scenario's queue trajectory and downstream observable outcomes
+  (detection rolls gated on a now-relieved tier-1 will catch more;
+  rolls gated on a now-saturated tier-3 will catch less), but
+  determinism for any fixed seed holds. All 19 bundled scenarios
+  (including the new `multifront_soc_escalation.toml`) still
+  `verify-bundled` deterministically.
+- Backward-compat: scenarios without `overflow_to` reproduce the
+  Epic K single-queue behavior exactly. The existing
+  `alert_fatigue_soc.toml` declares two roles without `overflow_to`,
+  so its behavior is unchanged. The new
+  `scenarios/multifront_soc_escalation.toml` archetype declares a
+  3-tier escalation cascade (tier-1 → tier-2 → tier-3 forensics)
+  driven by a sustained 4-phase intrusion; the report demonstrates
+  that the chokepoint moves from tier-1 (which would saturate at
+  100% under the legacy single-queue model) to tier-3 (which
+  saturates instead, absorbing the cascade's residual).
+- Coverage: `crates/faultline-engine/tests/multifront_overflow.rs`
+  pins (a) no-overflow_to → legacy single-queue behavior preserved,
+  (b) tier-1 → tier-2 routes excess and conserves the chain,
+  (c) tier-1 → tier-2 → tier-3 propagates spillover end-to-end,
+  (d) lower threshold yields strictly more spillover than the 1.0
+  baseline, (e) determinism across same-seed runs, plus the six
+  validation rejections (unknown role, self-loop, cycle, out-of-
+  range threshold, NaN threshold, threshold-without-target).
 
 **Calibration scaffold (Epic N — round one).** Closes the foundational
 piece of Epic N: every Monte Carlo report now carries a `## Calibration`

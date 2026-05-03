@@ -201,6 +201,86 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                     value: cap.saturated_detection_factor,
                 });
             }
+            // Cross-role escalation (Epic D round-three item 3 —
+            // multi-front resource contention). `overflow_to`, when
+            // set, must reference another role declared on the *same*
+            // faction; cross-faction escalation is a different
+            // analytical claim and is rejected at load. The threshold
+            // (when explicitly set) must be a finite value in [0, 1]
+            // — outside that range the spillover semantics degenerate
+            // (negative would push spillover before any arrival;
+            // > 1 would mean "spill only when over capacity", which
+            // the existing OverflowPolicy already covers).
+            if let Some(target) = &cap.overflow_to {
+                if !faction.defender_capacities.contains_key(target) {
+                    return Err(ScenarioError::Custom(format!(
+                        "defender role `{rid}` on faction `{fid}` declares \
+                         overflow_to = `{target}`, but that role is not \
+                         declared on the same faction; cross-faction \
+                         escalation is not supported and is almost always \
+                         an authoring typo."
+                    )));
+                }
+                if *target == *rid {
+                    return Err(ScenarioError::Custom(format!(
+                        "defender role `{rid}` on faction `{fid}` declares \
+                         overflow_to itself; a self-loop would silently push \
+                         spillover back into the same queue and never escalate."
+                    )));
+                }
+            }
+            if let Some(threshold) = cap.overflow_threshold {
+                if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
+                    return Err(ScenarioError::Custom(format!(
+                        "defender role `{rid}` on faction `{fid}` declares \
+                         overflow_threshold = {threshold}; the threshold is \
+                         a fraction of queue_depth and must be in [0.0, 1.0]."
+                    )));
+                }
+                if cap.overflow_to.is_none() {
+                    return Err(ScenarioError::Custom(format!(
+                        "defender role `{rid}` on faction `{fid}` sets \
+                         overflow_threshold = {threshold} but does not \
+                         declare overflow_to; the threshold is meaningless \
+                         without an escalation target and is almost always \
+                         an unfilled author template."
+                    )));
+                }
+            }
+        }
+        // Cycle check across the overflow chain. Walk forward from
+        // each role; reject if we revisit a role we've already seen.
+        // O(n²) over a per-faction role table that is realistically
+        // <10 entries — well below the cost of the surrounding
+        // validation loop.
+        for start_rid in faction.defender_capacities.keys() {
+            let mut seen = std::collections::BTreeSet::new();
+            let mut cursor = start_rid.clone();
+            loop {
+                if !seen.insert(cursor.clone()) {
+                    // `cursor` is the role we just revisited — i.e.
+                    // a node *on* the cycle. For a path A→B→C→B the
+                    // walk starts at A but the repeated node is B,
+                    // so naming `cursor` gives the author the actual
+                    // member of the cycle to break rather than the
+                    // walk's entry point (which may not be on the
+                    // cycle at all).
+                    return Err(ScenarioError::Custom(format!(
+                        "defender role chain on faction `{fid}` cycles \
+                         at `{cursor}` (walk started at `{start_rid}`); \
+                         an overflow loop would either spin forever or \
+                         silently drop spillover at the recursion guard. \
+                         Break the cycle in scenario authoring."
+                    )));
+                }
+                let Some(cap) = faction.defender_capacities.get(&cursor) else {
+                    break;
+                };
+                let Some(next) = cap.overflow_to.clone() else {
+                    break;
+                };
+                cursor = next;
+            }
         }
     }
 

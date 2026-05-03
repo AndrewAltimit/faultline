@@ -71,5 +71,39 @@ impl ReportSection for DefenderCapacity {
         {
             let _ = writeln!(out);
         }
+        // Spillover sub-section (Epic D round-three item 3 — multi-
+        // front resource contention). Renders only when at least one
+        // role observed cross-role escalation, so legacy single-queue
+        // scenarios elide it. The "in" / "out" pair lets the analyst
+        // audit chain conservation by inspection — a chain that
+        // terminated cleanly should have its leaf role's
+        // `spillover_in` add up to the sum of upstream `spillover_out`.
+        let any_spillover = summary
+            .defender_capacity
+            .iter()
+            .any(|q| q.mean_spillover_in > 0.0 || q.mean_spillover_out > 0.0);
+        if any_spillover {
+            let _ = writeln!(
+                out,
+                "### Cross-role escalation\n\nMean items per run that arrived via or were redirected through `overflow_to` chains. `In` is inbound spillover from a saturated upstream role; `out` is outbound spillover this role redirected to its own escalation target. A non-leaf role with `out > 0` should have a downstream sibling whose `in` accounts for the escalation."
+            );
+            let _ = writeln!(out);
+            let _ = writeln!(
+                out,
+                "| Faction | Role | Mean spillover in | Mean spillover out |"
+            );
+            let _ = writeln!(out, "|---|---|---|---|");
+            for q in &summary.defender_capacity {
+                if q.mean_spillover_in == 0.0 && q.mean_spillover_out == 0.0 {
+                    continue;
+                }
+                let _ = writeln!(
+                    out,
+                    "| `{}` | `{}` | {:.2} | {:.2} |",
+                    q.faction, q.role, q.mean_spillover_in, q.mean_spillover_out,
+                );
+            }
+            let _ = writeln!(out);
+        }
     }
 }

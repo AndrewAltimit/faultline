@@ -185,6 +185,28 @@ pub struct DefenderQueueState {
     /// (see `campaign::roll_detection_with_capacity`) so determinism
     /// is preserved.
     pub shadow_detections: u32,
+    /// Items that arrived on this queue via cross-role escalation
+    /// (Epic D round-three item 3 — multi-front resource contention).
+    /// Tracks the chain link from upstream: this is the count
+    /// delivered here from another saturated role's overflow,
+    /// independent of how much of it then further spills to a
+    /// downstream role. Pairs with the upstream role's
+    /// `spillover_out` for the conservation invariant
+    /// `A.spillover_out == B.spillover_in`. `0` for the legacy
+    /// single-queue model. Note that when this role itself further
+    /// spills, `spillover_in` may exceed `total_enqueued` (the
+    /// further-spilled portion arrived but never entered this
+    /// queue's policy).
+    #[serde(default)]
+    pub spillover_in: u64,
+    /// Items this queue redirected to its `overflow_to` target rather
+    /// than enqueueing here (Epic D round-three item 3). Not counted
+    /// in `total_enqueued` (the items entered the next role's queue,
+    /// not this one); compare `spillover_out` here against
+    /// `spillover_in` on the overflow target to confirm the chain
+    /// settled. `0` for roles without `overflow_to`.
+    #[serde(default)]
+    pub spillover_out: u64,
 }
 
 impl DefenderQueueState {
@@ -202,6 +224,8 @@ impl DefenderQueueState {
             ticks_observed: 0,
             first_saturated_at: None,
             shadow_detections: 0,
+            spillover_in: 0,
+            spillover_out: 0,
         }
     }
 
