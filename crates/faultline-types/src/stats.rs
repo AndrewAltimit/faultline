@@ -360,9 +360,11 @@ pub struct NarrativeKeySummary {
     /// runs where the narrative never appeared).
     pub mean_firings_per_run: f64,
     /// Mean peak strength reached per run that fired. `0.0` only when
-    /// every run that fired the narrative also let it decay to 0 before
-    /// the post-tick capture, which is unreachable under the engine's
-    /// strict monotonic strength updates — included for shape symmetry.
+    /// every firing in every run contributed `amount = 0` (e.g. the
+    /// `MediaEvent` was authored with `credibility = 0.0` or
+    /// `reach = 0.0`, both of which are valid points in the
+    /// `[0.0, 1.0]` validation range). Realistic authored values
+    /// always produce a positive peak.
     pub mean_peak_strength: f64,
     /// Mean tick of first firing across runs that fired.
     pub mean_first_tick: f64,

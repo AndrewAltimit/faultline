@@ -1535,22 +1535,28 @@ pub fn displacement_phase(state: &mut SimulationState, scenario: &Scenario) {
         // mutation) are skipped; the residual stays put. The border
         // list itself is `Vec<RegionId>` — duplicates would be a
         // load-time validation error, so we treat the iteration as a
-        // set.
-        let valid_neighbors: Vec<RegionId> = region
+        // set. Two passes over `region.borders` (count + distribute)
+        // avoid a per-region `Vec<RegionId>` heap allocation on the
+        // hot path; deterministic because both passes apply the same
+        // filter in the same order.
+        let outflow_total = displaced * DISPLACEMENT_PROPAGATION_RATE;
+        let absorbed = displaced * DISPLACEMENT_ABSORPTION_RATE;
+        let valid_neighbor_count = region
             .borders
             .iter()
             .filter(|nid| scenario.map.regions.contains_key(nid))
-            .cloned()
-            .collect();
-        let outflow_total = displaced * DISPLACEMENT_PROPAGATION_RATE;
-        let absorbed = displaced * DISPLACEMENT_ABSORPTION_RATE;
-        if !valid_neighbors.is_empty() && outflow_total > 0.0 {
-            let per_neighbor = outflow_total / valid_neighbors.len() as f64;
-            for nid in &valid_neighbors {
+            .count();
+        if valid_neighbor_count > 0 && outflow_total > 0.0 {
+            let per_neighbor = outflow_total / valid_neighbor_count as f64;
+            for nid in region
+                .borders
+                .iter()
+                .filter(|nid| scenario.map.regions.contains_key(nid))
+            {
                 *inflows.entry(nid.clone()).or_insert(0.0) += per_neighbor;
             }
         }
-        let actual_outflow = if valid_neighbors.is_empty() {
+        let actual_outflow = if valid_neighbor_count == 0 {
             0.0
         } else {
             outflow_total

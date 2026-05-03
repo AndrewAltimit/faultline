@@ -36,7 +36,7 @@ impl ReportSection for Displacement {
         let _ = writeln!(out);
         let _ = writeln!(
             out,
-            "| Region | Stressed runs | Mean peak | Max peak | Mean terminal | Mean total inflow | Mean total outflow | Mean total absorbed |"
+            "| Region | Stressed runs / Total | Mean peak | Max peak | Mean terminal | Mean total inflow | Mean total outflow | Mean total absorbed |"
         );
         let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
         for row in summary.displacement_summaries.values() {
