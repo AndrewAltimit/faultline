@@ -1476,10 +1476,16 @@ pub fn effective_leadership_factor(
 ///
 /// Bit-identical fast path: when no faction declares a `leadership`
 /// cadre the function returns immediately and every faction's
-/// `command_effectiveness` stays at its `1.0` default. Otherwise the
-/// reset+multiply produces the same numerical result as a direct
-/// overwrite (`1.0 × factor = factor`), so cadre-bearing scenario
-/// hashes are unchanged across this refactor.
+/// `command_effectiveness` stays at its `1.0` default. The
+/// reset+multiply pattern is mathematically equivalent to a direct
+/// overwrite while there is only one writer (`1.0 × factor =
+/// factor`), so switching from overwrite to reset+multiply alone did
+/// not change any cadre-bearing scenario's `output_hash`. Note that
+/// the broader R3-4 morale/command split *does* shift cadre-bearing
+/// scenario hashes (raw morale is no longer clamped by the
+/// leadership factor, so combat outcomes diverge); see the PR
+/// description and `CLAUDE.md`'s R3-4 section for the full hash
+/// movement.
 pub fn update_command_effectiveness(state: &mut SimulationState, scenario: &Scenario) {
     // Legacy scenarios with no cadres pay only this scan; the
     // command_effectiveness field stays at its 1.0 default.
