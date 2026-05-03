@@ -1,0 +1,347 @@
+# Narrative Competition + Displacement Demo — Epic D round-three item 4 archetype
+#
+# Demonstrates the persistent narrative store and the refugee /
+# displacement flow phase that close out Epic D. Three factions, two
+# regions, with scripted `MediaEvent` and `Displacement` events firing
+# across the run. The report's "Narrative Dynamics" section ranks
+# per-faction information dominance and per-narrative trajectory; the
+# "Displacement Flows" section captures peak displaced fraction, mean
+# inflow, and propagation across `frontier_north <-> frontier_south`.
+#
+# Three factions:
+#   - red_state: pushes a "frontier under attack" narrative across
+#     two firings (introduction + reinforcement) and authors a
+#     Displacement event in `frontier_north` to model a wave of
+#     displaced civilians fleeing combat;
+#   - blue_state: pushes a counter-narrative ("frontier secure")
+#     once. The narrative phase scores per-faction dominance from
+#     `(strength × credibility)` summed over each side's narratives
+#     so a sustained reinforced narrative dominates a one-shot
+#     counter;
+#   - civic_voice: a neutral civilian faction with a population
+#     segment whose `Flee` action redirects sympathy and pushes
+#     displaced fraction into the displacement store.
+#
+# The scenario is descriptive, not prescriptive, and contains no
+# classified, CUI, or export-controlled information. All capability
+# parameters are aggregate statistical descriptors derived from open
+# academic / journalistic literature on contested information
+# environments and refugee-flow modelling.
+
+[meta]
+schema_version = 1
+name = "Narrative Competition + Displacement Flows Demo"
+description = "Two-region archetype showing the info-op narrative competition phase and the refugee / displacement-flow propagation phase end-to-end. The report's `## Narrative Dynamics` section ranks per-faction dominance ticks and per-narrative trajectory; the `## Displacement Flows` section captures peak displaced fraction and cross-region propagation."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["narrative", "displacement", "info-ops", "refugee", "epic-d", "round-three"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 1
+
+[map.regions.frontier_north]
+id = "frontier_north"
+name = "Frontier North"
+population = 200_000
+urbanization = 0.45
+initial_control = "red_state"
+strategic_value = 1.0
+borders = ["frontier_south"]
+
+[map.regions.frontier_south]
+id = "frontier_south"
+name = "Frontier South"
+population = 250_000
+urbanization = 0.55
+initial_control = "blue_state"
+strategic_value = 1.0
+borders = ["frontier_north"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "frontier_north"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "frontier_south"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.2
+visibility = 0.9
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red_state]
+id = "red_state"
+name = "Red State"
+description = "Pushes a sustained frontier-crisis narrative and authors a Displacement event modelling a wave of refugees from combat in frontier_north."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 20.0
+initial_resources = 200.0
+resource_rate = 8.0
+command_resilience = 0.4
+intelligence = 0.5
+doctrine = "Conventional"
+diplomacy = []
+
+[factions.red_state.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.red_state.forces.red_inf]
+id = "red_inf"
+name = "Red 1st Infantry"
+unit_type = "Infantry"
+region = "frontier_north"
+strength = 80.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue_state]
+id = "blue_state"
+name = "Blue State"
+description = "Counter-narrator: pushes a single 'frontier secure' MediaEvent. The dominance scoring should put Red ahead because Red's narrative is reinforced twice."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 20.0
+initial_resources = 200.0
+resource_rate = 8.0
+command_resilience = 0.4
+intelligence = 0.6
+doctrine = "Conventional"
+diplomacy = []
+
+[factions.blue_state.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.blue_state.forces.blue_inf]
+id = "blue_inf"
+name = "Blue 1st Garrison"
+unit_type = "Infantry"
+region = "frontier_south"
+strength = 80.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.civic_voice]
+id = "civic_voice"
+name = "Civic Voice"
+description = "Neutral civilian faction. Owns the displaced population segment whose Flee action redirects population fraction into the displacement store, propagating across frontier regions over the run."
+color = "#888888"
+tech_access = []
+initial_morale = 0.6
+logistics_capacity = 5.0
+initial_resources = 50.0
+resource_rate = 1.0
+command_resilience = 0.0
+intelligence = 0.5
+doctrine = "Conventional"
+diplomacy = []
+
+[factions.civic_voice.faction_type]
+kind = "Civilian"
+
+[factions.civic_voice.forces.civic_inf]
+id = "civic_inf"
+name = "Civic Volunteers"
+unit_type = "Infantry"
+region = "frontier_north"
+strength = 5.0
+mobility = 0.5
+upkeep = 0.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology -------------------------------------------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.55
+global_modifiers = []
+
+[political_climate.media_landscape]
+# High fragmentation + high social-media penetration + full internet
+# = strong narrative reinforcement coefficient. Bubble-targeted
+# narratives dominate over a unified counter-narrative under these
+# conditions.
+fragmentation = 0.75
+disinformation_susceptibility = 0.55
+state_control = 0.10
+social_media_penetration = 0.85
+internet_availability = 1.0
+
+# Population segment whose `Flee` action pushes displacement state
+# into the displacement_phase. Activates when sympathy toward
+# civic_voice crosses the threshold.
+[[political_climate.population_segments]]
+id = "frontier_residents"
+name = "Frontier Residents"
+fraction = 0.30
+concentrated_in = ["frontier_north"]
+activation_threshold = 0.55
+volatility = 0.4
+
+[[political_climate.population_segments.sympathies]]
+faction = "civic_voice"
+sympathy = 0.50
+[[political_climate.population_segments.sympathies]]
+faction = "red_state"
+sympathy = -0.10
+[[political_climate.population_segments.sympathies]]
+faction = "blue_state"
+sympathy = -0.10
+
+# Two activation actions: a `Flee` push to displacement, and a
+# `Protest` to feed the political phase.
+[[political_climate.population_segments.activation_actions]]
+action = "Flee"
+rate = 0.10
+
+[[political_climate.population_segments.activation_actions]]
+action = "Protest"
+intensity = 0.4
+
+# -- Events -----------------------------------------------------------------
+
+# Red's first narrative push: introduces "frontier_under_attack".
+[events.red_narrative_intro]
+id = "red_narrative_intro"
+name = "Red Narrative — Initial Push"
+description = "Red state introduces the 'frontier under attack' narrative."
+earliest_tick = 2
+latest_tick = 2
+probability = 1.0
+repeatable = false
+
+[[events.red_narrative_intro.conditions]]
+condition = "TickAtLeast"
+tick = 2
+
+[[events.red_narrative_intro.effects]]
+effect = "MediaEvent"
+narrative = "frontier_under_attack"
+credibility = 0.7
+reach = 0.6
+favors = "red_state"
+
+# Red's reinforcement: same narrative, higher reach as the message
+# saturates the media landscape.
+[events.red_narrative_reinforce]
+id = "red_narrative_reinforce"
+name = "Red Narrative — Reinforcement"
+description = "Red state reinforces the frontier-crisis narrative as the kill chain progresses."
+earliest_tick = 6
+latest_tick = 6
+probability = 1.0
+repeatable = false
+
+[[events.red_narrative_reinforce.conditions]]
+condition = "TickAtLeast"
+tick = 6
+
+[[events.red_narrative_reinforce.effects]]
+effect = "MediaEvent"
+narrative = "frontier_under_attack"
+credibility = 0.75
+reach = 0.8
+favors = "red_state"
+
+# Blue's counter-narrative: a single push, lower reach.
+[events.blue_counter_narrative]
+id = "blue_counter_narrative"
+name = "Blue Counter-Narrative"
+description = "Blue state pushes a single 'frontier secure' message. Lower reach + no reinforcement means it loses dominance to Red's sustained push."
+earliest_tick = 4
+latest_tick = 4
+probability = 1.0
+repeatable = false
+
+[[events.blue_counter_narrative.conditions]]
+condition = "TickAtLeast"
+tick = 4
+
+[[events.blue_counter_narrative.effects]]
+effect = "MediaEvent"
+narrative = "frontier_secure"
+credibility = 0.7
+reach = 0.5
+favors = "blue_state"
+
+# Refugee wave from frontier_north. Models a scripted civilian
+# displacement event (combat damage, infrastructure failure, etc.).
+# 30% of the region's population becomes displaced.
+[events.refugee_wave]
+id = "refugee_wave"
+name = "Refugee Wave"
+description = "A scripted 30% displacement event in frontier_north. Propagates to frontier_south at 10%/tick across the run; absorbs at 5%/tick. The Displacement Flows section reports peak / mean / inflow / outflow per region."
+earliest_tick = 3
+latest_tick = 3
+probability = 1.0
+repeatable = false
+
+[[events.refugee_wave.conditions]]
+condition = "TickAtLeast"
+tick = 3
+
+[[events.refugee_wave.effects]]
+effect = "Displacement"
+region = "frontier_north"
+magnitude = 0.30
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 24
+monte_carlo_runs = 32
+fog_of_war = false
+snapshot_interval = 6
+seed = 11
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.red_holds_north]
+id = "red_holds_north"
+name = "Red holds Frontier North"
+faction = "red_state"
+[victory_conditions.red_holds_north.condition]
+type = "HoldRegions"
+regions = ["frontier_north"]
+duration = 999
+
+[victory_conditions.blue_holds_south]
+id = "blue_holds_south"
+name = "Blue holds Frontier South"
+faction = "blue_state"
+[victory_conditions.blue_holds_south.condition]
+type = "HoldRegions"
+regions = ["frontier_south"]
+duration = 999
+
+# -- Networks ---------------------------------------------------------------
+
+[networks]

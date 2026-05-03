@@ -29,12 +29,14 @@ mod continuous_metrics;
 mod correlation;
 mod countermeasure;
 mod defender_capacity;
+mod displacement;
 mod environment_schedule;
 mod feasibility;
 mod header;
 mod leadership_disruption;
 mod low_confidence;
 mod methodology;
+mod narrative_dynamics;
 mod network_resilience;
 mod pareto_frontier;
 mod phase_breakdown;
@@ -86,7 +88,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 23] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 25] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -108,7 +110,13 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 23] {
         &environment_schedule::EnvironmentSchedule,
         &leadership_disruption::LeadershipDisruption,
         &alliance_dynamics::AllianceDynamics,
+        // Narrative Dynamics and Displacement Flows (Epic D round-three
+        // item 4) sit alongside the political-phase analytics. Both
+        // gate on per-mechanic data presence — scenarios that author
+        // neither pay zero report-rendering cost.
+        &narrative_dynamics::NarrativeDynamics,
         &civilian_activations::CivilianActivations,
+        &displacement::Displacement,
         // Calibration sits just before Methodology so the verdict and
         // the methodology appendix are next to each other in the
         // rendered report — the reader sees the calibration claim,
@@ -242,7 +250,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 23);
+        assert_eq!(monte_carlo_sections().len(), 25);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -339,9 +347,10 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 21 = Calibration (added in Epic N), 22 =
-        // Methodology (last entry).
-        let unconditional_indices = [0usize, 21, 22];
+        // 0 = Header, 23 = Calibration (Epic N; index shifted by Epic D
+        // round-three item 4 inserting NarrativeDynamics + Displacement),
+        // 24 = Methodology (last entry).
+        let unconditional_indices = [0usize, 23, 24];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

@@ -32,6 +32,8 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         civilian_activation_summaries: ::std::collections::BTreeMap::new(),
         tech_cost_summaries: ::std::collections::BTreeMap::new(),
         calibration: None,
+        narrative_dynamics: None,
+        displacement_summaries: ::std::collections::BTreeMap::new(),
     }
 }
 

@@ -40,6 +40,10 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         supply_pressure_reports: run.supply_pressure_reports.clone(),
         civilian_activations: run.civilian_activations.clone(),
         tech_costs: run.tech_costs.clone(),
+        narrative_events: run.narrative_events.clone(),
+        narrative_dominance_ticks: run.narrative_dominance_ticks.clone(),
+        narrative_peak_dominance: run.narrative_peak_dominance.clone(),
+        displacement_reports: run.displacement_reports.clone(),
     }
 }
 
@@ -72,6 +76,10 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         supply_pressure_reports: encoded.supply_pressure_reports.clone(),
         civilian_activations: encoded.civilian_activations.clone(),
         tech_costs: encoded.tech_costs.clone(),
+        narrative_events: encoded.narrative_events.clone(),
+        narrative_dominance_ticks: encoded.narrative_dominance_ticks.clone(),
+        narrative_peak_dominance: encoded.narrative_peak_dominance.clone(),
+        displacement_reports: encoded.displacement_reports.clone(),
     }
 }
 
@@ -270,6 +278,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -333,6 +345,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -392,6 +408,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -422,6 +442,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -470,6 +494,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -559,6 +587,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: std::collections::BTreeMap::new(),
+            narrative_peak_dominance: std::collections::BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

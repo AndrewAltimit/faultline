@@ -74,6 +74,19 @@ cargo run -p faultline-cli -- scenarios/multifront_soc_escalation.toml -n 16
 # analogue render a "purely synthetic" disclaimer in the same section.
 cargo run -p faultline-cli -- scenarios/calibration_demo.toml -n 100
 
+# Narrative competition + displacement flows (Epic D round-three item
+# 4). Two-region archetype with three factions: Red and Blue push
+# competing `MediaEvent` narratives (Red reinforces twice, Blue once);
+# a scripted `Displacement` event seeds 30% displaced fraction in
+# `frontier_north` that propagates to `frontier_south` over the run;
+# a population segment's `Flee` action adds organic displacement once
+# its sympathy crosses the activation threshold. The report's
+# `## Narrative Dynamics` section ranks per-faction information
+# dominance and per-narrative trajectory (firing rate, peak strength,
+# modal favored faction); the `## Displacement Flows` section
+# captures peak / mean / inflow / outflow per region.
+cargo run -p faultline-cli -- scenarios/narrative_competition_demo.toml -n 16
+
 # Counterfactual override + delta report (Epic B)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --counterfactual "faction.alpha.initial_morale=0.3"
@@ -752,6 +765,144 @@ follow-up.
   `calibration_demo.toml` uses a *stylized aggregate* analogue
   (statistical patterns from a reference set) rather than a single
   named historical event.
+
+**Narrative competition + displacement flows (Epic D round-three item 4).** Closes
+the final Epic D round-three item: the previously-fire-and-forget
+`EventEffect::MediaEvent` now drives a persistent narrative store that
+decays each tick, scores per-faction information dominance, nudges
+segment sympathy toward the leading faction, and contributes to global
+tension. A new `EventEffect::Displacement` variant pairs with the
+existing civilian-segment `Flee` action to populate a per-region
+displacement store that propagates across `Region.borders` adjacencies
+each tick and absorbs back into the resident population at a separate
+rate. Both mechanics elide entirely on legacy scenarios — the engine
+short-circuits when the narrative store and displacement map are both
+empty, so all 19 pre-existing scenarios still `verify-bundled`
+deterministically with their prior `output_hash` values.
+
+- `EventEffect::MediaEvent { narrative, credibility, reach, favors }`
+  is now wired in `tick::apply_event_effects`. Each firing registers
+  or reinforces a `NarrativeRuntimeState` keyed on the narrative
+  string. Reinforcement adds `credibility × reach × (1 + 0.5 × fragmentation)`
+  to the existing strength (clamped to `[0, 1]`) — fragmented audiences
+  reinforce faster because bubble-targeted messages saturate sub-
+  audiences without competing against a unified counter-narrative.
+  Credibility and reach take the *max* of pre-existing and new values
+  rather than averaging, so a higher-reach reinforcement pulls the
+  live narrative toward the new value; `favors` stays sticky to the
+  first firing's choice so a malicious "switch sides" reinforcement
+  can't silently flip dominance attribution. Each firing also pushes a
+  `NarrativeEvent` onto `SimulationState.narrative_events` (per-run
+  log) with `was_new` distinguishing introductions from reinforcements.
+- `EventEffect::Displacement { region, magnitude }` is the new variant.
+  Adds `magnitude.clamp(0, 1)` displaced fraction to
+  `SimulationState.displacement[region]`, clamping the resulting
+  `current_displaced` to `[0, 1]`. Cumulative `total_inflow` accrues
+  by the actually-applied delta (so a `magnitude = 0.5` event against
+  a region already at 0.7 only adds 0.3 to inflow because the field is
+  saturated).
+- `tick::narrative_phase` runs end-of-tick after `information_phase`.
+  Decays each narrative's strength by
+  `BASE_NARRATIVE_DECAY × (1 - 0.5 × reach)` (high-reach narratives
+  decay at half the rate of low-reach ones because they're saturated
+  in the media landscape). Drops entries below
+  `NARRATIVE_DROP_EPSILON = 0.005`. Scores per-faction dominance
+  (`sum(strength × credibility)` over narratives that favor each
+  faction); the leading faction (max with lexicographic tie-break)
+  accrues a tick on `SimulationState.narrative_dominance_ticks` and
+  its peak attribution is captured for the cross-run rollup. Applies
+  a sympathy nudge toward the leader scaled by
+  `disinformation_susceptibility × leader_score`. Adds a tension
+  delta capped at `NARRATIVE_MAX_TENSION_DELTA = 0.02`. Updates
+  `non_kinetic.information_dominance` to the leading score (clamped to
+  `[0, 1]`).
+- `tick::displacement_phase` runs end-of-tick after `narrative_phase`.
+  Single-pass propagation: each region's pre-tick displaced fraction
+  contributes `outflow = displaced × DISPLACEMENT_PROPAGATION_RATE`
+  (10%/tick) split evenly across `Region.borders`, plus
+  `absorbed = displaced × DISPLACEMENT_ABSORPTION_RATE` (5%/tick) that
+  merges back into the resident population. The remainder stays put
+  for the next tick. Receiving regions accumulate inflows in a separate
+  `BTreeMap` first, then apply them after every source has computed its
+  outflow — so per-tick state mutation is single-pass, mirroring
+  `network` and `supply` phase conventions. Tension delta proportional
+  to average displaced fraction, capped at
+  `DISPLACEMENT_MAX_TENSION_DELTA = 0.005`.
+- `CivilianAction::Flee` (the existing population-segment action) was
+  extended to *also* push displacement: a segment flee with `rate = 0.10`
+  spread across two concentrated regions adds 0.05 displaced to each.
+  The previous behavior of shrinking `seg.fraction` is unchanged. This
+  is the organic-source path for displacement on scenarios that don't
+  author scripted `Displacement` events.
+- Per-run output:
+  - `RunResult.narrative_events` (`Vec<NarrativeEvent>`) — emission-
+    ordered log of every reinforcement event;
+  - `RunResult.displacement_reports` (`BTreeMap<RegionId, RegionDisplacementReport>`) —
+    one row per region with non-zero peak across the run, capturing
+    `peak_displaced` / `terminal_displaced` / `total_inflow` /
+    `total_outflow` / `total_absorbed` / `stressed_ticks`. Pristine
+    regions are elided so legacy scenarios pay zero `RunResult` shape
+    overhead.
+- Cross-run rollups in `faultline_stats`:
+  - `MonteCarloSummary.narrative_dynamics: Option<NarrativeDynamics>`
+    (in `crates/faultline-stats/src/narrative_dynamics.rs`) — per-
+    faction `mean_dominance_ticks` / `max_dominance_ticks` /
+    `mean_peak_information_dominance` / `total_firings`, plus per-
+    narrative-key `firing_runs` / `mean_firings_per_run` /
+    `mean_peak_strength` / `mean_first_tick` / `modal_favors`. The
+    per-faction dominance proxy here is a stream-level approximation
+    (counts events where the favored faction was leader-by-pressure
+    among events visible up to that tick), which is directionally
+    correct for ranking purposes.
+  - `MonteCarloSummary.displacement_summaries: BTreeMap<RegionId, DisplacementSummary>`
+    (in `crates/faultline-stats/src/displacement.rs`) — per-region
+    `stressed_runs` / `mean_peak` / `max_peak` / `mean_terminal` /
+    `mean_total_inflow` / `mean_total_outflow` across the batch. Empty
+    when no run had any displacement activity.
+- Two new report sections (`crates/faultline-stats/src/report/narrative_dynamics.rs`
+  and `crates/faultline-stats/src/report/displacement.rs`). Both gate
+  on per-mechanic data presence; legacy scenarios elide entirely.
+  Section count grew from 23 to 25 (entries 20 = NarrativeDynamics,
+  22 = Displacement; CivilianActivations stays at 21; Calibration
+  shifts to 23, Methodology to 24).
+- Validation rejects six silent-no-op shapes at scenario load: empty
+  `MediaEvent.narrative`; non-finite or out-of-range
+  `MediaEvent.credibility` / `MediaEvent.reach`; unknown
+  `MediaEvent.favors` faction; unknown `Displacement.region`; non-
+  finite or out-of-range `Displacement.magnitude`; zero
+  `Displacement.magnitude`. Mirrors the load-time-fail-loud pattern
+  from every prior round.
+- Determinism: every helper is a pure function of `(state, scenario)`
+  — no RNG, no `HashMap`, `BTreeMap`-ordered iteration. Adding a
+  `MediaEvent` or `Displacement` event *will* change the affected
+  scenario's combat / political trajectory and downstream observable
+  outputs (the narrative phase nudges sympathy and tension; the
+  displacement phase contributes a small tension delta), but
+  determinism for any fixed seed holds.
+- Backward-compat: scenarios without `MediaEvent` and without
+  `Displacement` see no change. The narrative store and displacement
+  map both stay empty for the run, the phases short-circuit, and the
+  report sections elide. All 19 pre-existing bundled scenarios
+  `verify-bundled` deterministically with their prior `output_hash`
+  values; the new `scenarios/narrative_competition_demo.toml`
+  demonstrates the full mechanism end-to-end with a Red 2-firing /
+  Blue 1-firing dominance asymmetry plus a 30% scripted refugee wave
+  in `frontier_north` that propagates to `frontier_south`.
+- Coverage:
+  `crates/faultline-engine/tests/narrative_and_displacement.rs` (16
+  tests): legacy fast paths (no narrative state / no displacement
+  state when neither effect is authored), single-firing introduction
+  marks `was_new = true`, second firing reinforces with `was_new =
+  false` and increased strength, decay over time produces strictly-
+  declining strength after introduction, propagation moves displaced
+  fraction to adjacent regions, absorption shrinks `terminal_displaced`
+  below `peak_displaced`, determinism across same-seed runs, plus the
+  six validation rejections (empty narrative, out-of-range credibility,
+  unknown `favors`, unknown region, negative / NaN / zero magnitude).
+  Plus 4 unit tests in
+  `crates/faultline-stats/src/narrative_dynamics.rs::tests`,
+  3 unit tests in `crates/faultline-stats/src/displacement.rs::tests`,
+  and 3 + 3 unit tests in the per-section report modules.
 
 **Unread-parameter audit (R3-2 round one).** Three previously-silent
 fields now affect simulation outcomes; each was authored in dozens of

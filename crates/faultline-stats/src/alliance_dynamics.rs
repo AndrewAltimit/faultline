@@ -174,6 +174,10 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            narrative_dominance_ticks: BTreeMap::new(),
+            narrative_peak_dominance: BTreeMap::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -324,6 +328,8 @@ mod tests {
             civilian_activation_summaries: ::std::collections::BTreeMap::new(),
             tech_cost_summaries: ::std::collections::BTreeMap::new(),
             calibration: None,
+            narrative_dynamics: None,
+            displacement_summaries: ::std::collections::BTreeMap::new(),
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

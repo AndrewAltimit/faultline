@@ -43,6 +43,7 @@ const BUNDLED_SCENARIOS: &[&str] = &[
     "europe_eastern_flank.toml",
     "europe_energy_sabotage.toml",
     "multifront_soc_escalation.toml",
+    "narrative_competition_demo.toml",
     "network_resilience_demo.toml",
     "persistent_covert_surveillance.toml",
     "strategy_search_demo.toml",

@@ -286,11 +286,109 @@ fn apply_event_effects(state: &mut SimulationState, effects: &[EventEffect]) {
                         .insert(faction_b.clone(), *new_stance);
                 }
             },
+            EventEffect::MediaEvent {
+                narrative,
+                credibility,
+                reach,
+                favors,
+            } => {
+                // Epic D round-three item 4 — info-op narrative
+                // competition. Register or reinforce a persistent
+                // narrative entry; the narrative phase later this tick
+                // decays the store, scores dominance, and applies
+                // sympathy / tension nudges. Empty narrative key is a
+                // silent no-op at runtime because validation rejects it
+                // at scenario load. Unknown `favors` faction is also a
+                // load-time rejection. The `was_new` flag drives the
+                // per-event log so the cross-run aggregator can count
+                // distinct firings vs. reinforcements without re-deriving
+                // it from the narrative timeline.
+                if narrative.is_empty() || !credibility.is_finite() || !reach.is_finite() {
+                    continue;
+                }
+                let credibility = credibility.clamp(0.0, 1.0);
+                let reach = reach.clamp(0.0, 1.0);
+                let fragmentation = state
+                    .political_climate
+                    .media_landscape
+                    .fragmentation
+                    .clamp(0.0, 1.0);
+                let amount = credibility * reach * (1.0 + 0.5 * fragmentation);
+                let tick = state.tick;
+                let entry = state
+                    .narratives
+                    .entry(narrative.clone())
+                    .or_insert_with(|| crate::state::NarrativeRuntimeState {
+                        favors: favors.clone(),
+                        credibility,
+                        reach,
+                        strength: 0.0,
+                        first_seen_tick: tick,
+                        last_reinforced_tick: tick,
+                        firings: 0,
+                        peak_strength: 0.0,
+                    });
+                let was_new = entry.firings == 0;
+                // Re-tag credibility / reach on reinforcement: a later
+                // event with higher reach should pull the live narrative
+                // toward the new value (max-of-history) rather than
+                // average. Same for credibility. Favors stays sticky to
+                // the first-firing's choice so a malicious "switch sides"
+                // reinforcement can't silently flip the dominance
+                // attribution.
+                entry.credibility = entry.credibility.max(credibility);
+                entry.reach = entry.reach.max(reach);
+                entry.strength = (entry.strength + amount).clamp(0.0, 1.0);
+                entry.last_reinforced_tick = tick;
+                entry.firings += 1;
+                if entry.strength > entry.peak_strength {
+                    entry.peak_strength = entry.strength;
+                }
+                let strength_after = entry.strength;
+                let event_favors = entry.favors.clone();
+                state
+                    .narrative_events
+                    .push(faultline_types::stats::NarrativeEvent {
+                        tick,
+                        narrative: narrative.clone(),
+                        favors: event_favors,
+                        credibility,
+                        reach,
+                        strength_after,
+                        was_new,
+                    });
+            },
+            EventEffect::Displacement { region, magnitude } => {
+                // Epic D round-three item 4 — refugee / displacement
+                // flows. Author-driven injection of displaced fraction
+                // into a region. Magnitude is interpreted as a
+                // delta-fraction-of-region-population in `[0, 1]`;
+                // out-of-range / non-finite values are rejected at
+                // scenario load. Unknown regions are also a load-time
+                // rejection. Runtime is defensive: bad values are
+                // skipped silently rather than poisoning state, and the
+                // resulting `current_displaced` is clamped to `[0, 1]`.
+                if !state.region_control.contains_key(region) {
+                    continue;
+                }
+                let mag = if magnitude.is_finite() && *magnitude > 0.0 {
+                    magnitude.clamp(0.0, 1.0)
+                } else {
+                    continue;
+                };
+                let entry = state.displacement.entry(region.clone()).or_default();
+                let new_displaced = (entry.current_displaced + mag).clamp(0.0, 1.0);
+                let actual_added = new_displaced - entry.current_displaced;
+                entry.current_displaced = new_displaced;
+                entry.total_inflow += actual_added;
+                if entry.current_displaced > entry.peak_displaced {
+                    entry.peak_displaced = entry.current_displaced;
+                }
+            },
             // Effects that require more complex handling are logged
             // but not fully resolved in this skeleton.
             EventEffect::InstitutionDefection { .. }
             | EventEffect::TechAccess { .. }
-            | EventEffect::MediaEvent { .. }
             | EventEffect::Narrative { .. } => {
                 tracing::debug!(?effect, "unhandled event effect");
             },
@@ -1073,10 +1171,34 @@ fn process_civilian_activation(
                     (state.political_climate.tension + intensity * 0.05).min(1.0);
             },
             CivilianAction::Flee { rate } => {
-                // Reduce segment fraction (already activated, so find it).
+                // Reduce segment fraction (already activated, so find it)
+                // and push the fled fraction into the displacement
+                // store for each region the segment was concentrated
+                // in. Splits the rate evenly across concentrated regions
+                // so a flee that depopulates a 0.10 fraction across two
+                // regions adds 0.05 displaced to each. Epic D round-three
+                // item 4 — the previous behavior was "the population
+                // disappears", which is fine for political bookkeeping
+                // but loses signal for the displacement-flow mechanic.
                 for seg in &mut state.political_climate.population_segments {
                     if seg.id == activation.segment_id {
                         seg.fraction = (seg.fraction - rate).max(0.0);
+                    }
+                }
+                if !activation.concentrated_in.is_empty() && *rate > 0.0 {
+                    let per_region = rate / activation.concentrated_in.len() as f64;
+                    for region in &activation.concentrated_in {
+                        if !state.region_control.contains_key(region) {
+                            continue;
+                        }
+                        let entry = state.displacement.entry(region.clone()).or_default();
+                        let new_displaced = (entry.current_displaced + per_region).clamp(0.0, 1.0);
+                        let actual_added = new_displaced - entry.current_displaced;
+                        entry.current_displaced = new_displaced;
+                        entry.total_inflow += actual_added;
+                        if entry.current_displaced > entry.peak_displaced {
+                            entry.peak_displaced = entry.current_displaced;
+                        }
                     }
                 }
             },
@@ -1169,6 +1291,327 @@ pub fn information_phase(state: &mut SimulationState, _scenario: &Scenario) {
     if media.state_control > 0.7 {
         let dampening = (media.state_control - 0.7) * 0.005;
         state.political_climate.tension = (state.political_climate.tension - dampening).max(0.0);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Phase 7b: Narrative competition (Epic D round-three item 4)
+// -----------------------------------------------------------------------
+
+/// Per-tick narrative-strength decay multiplier baseline. The
+/// canonical decay rate used in `narrative_phase` is
+/// `BASE_NARRATIVE_DECAY × (1 − 0.5 × reach)` — a high-reach narrative
+/// (saturated in the media landscape) decays at roughly half the rate
+/// of a low-reach one. Tunable via constants here so authors don't
+/// see the values in the schema.
+const BASE_NARRATIVE_DECAY: f64 = 0.08;
+
+/// Strength below which a narrative is dropped from the live store.
+/// Saves the per-tick scoring loop from carrying epsilon-strength
+/// entries indefinitely. Rounded so a narrative that reinforced
+/// briefly and then went silent fades out within ~30–40 ticks.
+const NARRATIVE_DROP_EPSILON: f64 = 0.005;
+
+/// Base sympathy nudge per tick from a dominant narrative on segments
+/// receptive to its disinformation slope. Multiplies through
+/// `disinformation_susceptibility × strength × credibility` so a
+/// low-credibility narrative pushes sympathy more slowly than a
+/// high-credibility one.
+const NARRATIVE_SYMPATHY_NUDGE: f64 = 0.02;
+
+/// Tension contribution per unit of `(strength × credibility)` summed
+/// across the narrative store. Capped at +0.02 / tick after summation
+/// — the narrative phase is meant to be a slow-burn pressure source,
+/// not a runaway tension generator.
+const NARRATIVE_TENSION_RATE: f64 = 0.005;
+const NARRATIVE_MAX_TENSION_DELTA: f64 = 0.02;
+
+/// Process narrative competition end-of-tick (Epic D round-three item 4).
+///
+/// Order of operations:
+/// 1. Decay every active narrative's strength by a reach-discounted
+///    base rate. Drop entries that fell below `NARRATIVE_DROP_EPSILON`.
+/// 2. Score per-faction information dominance: sum `strength ×
+///    credibility` over narratives that favor each faction. The
+///    leading faction (max sum, ties broken `BTreeMap`-lexicographically)
+///    accrues a dominance tick on `narrative_dominance_ticks`.
+/// 3. Apply sympathy nudges: for each population segment, the dominant
+///    narrative's `favors` faction (if any) gets a sympathy bump
+///    scaled by the segment's `disinformation_susceptibility` analogue
+///    — actually, since population segments don't carry a per-segment
+///    susceptibility, we use the global media-landscape value. The
+///    nudge is a one-sided pull (no symmetric zero-sum redistribution)
+///    so total sympathy mass can drift; that's fine — sympathy is
+///    already clamped per-faction.
+/// 4. Add a tension delta proportional to total narrative pressure
+///    (sum of `strength × credibility` across the entire store), capped
+///    at `NARRATIVE_MAX_TENSION_DELTA`.
+/// 5. Update `non_kinetic.information_dominance` to the leading faction's
+///    score (max over all factions); zero when no narrative is active.
+///
+/// Pure function of `(state, scenario)` — no RNG. Determinism preserved.
+pub fn narrative_phase(state: &mut SimulationState, scenario: &Scenario) {
+    if state.narratives.is_empty() {
+        // Reset information_dominance even when the store is empty: a
+        // narrative that decayed to nothing this tick should stop
+        // contributing. Cheap and unconditional so the metric snapshot
+        // doesn't drift.
+        state.non_kinetic.information_dominance = 0.0;
+        return;
+    }
+
+    // Step 1: decay + drop. `BTreeMap::retain` avoids the prior
+    // `Vec<String>` key-clone allocation; iteration order is still
+    // ascending, which is what the rest of the phase assumes.
+    state.narratives.retain(|_, entry| {
+        let decay = BASE_NARRATIVE_DECAY * (1.0 - 0.5 * entry.reach.clamp(0.0, 1.0));
+        entry.strength = (entry.strength - decay).max(0.0);
+        entry.strength >= NARRATIVE_DROP_EPSILON
+    });
+
+    if state.narratives.is_empty() {
+        state.non_kinetic.information_dominance = 0.0;
+        return;
+    }
+
+    // Step 2: dominance score per faction. Iteration order is
+    // deterministic via `BTreeMap` over both narratives and the
+    // `faction_scores` accumulator.
+    let mut faction_scores: BTreeMap<FactionId, f64> = BTreeMap::new();
+    let mut total_pressure: f64 = 0.0;
+    for entry in state.narratives.values() {
+        let pressure = entry.strength * entry.credibility;
+        total_pressure += pressure;
+        if let Some(fav) = &entry.favors {
+            *faction_scores.entry(fav.clone()).or_insert(0.0) += pressure;
+        }
+    }
+
+    // Leading faction = max score; on score tie, the lexicographically
+    // *largest* `FactionId` wins (the `then_with(|| b.0.cmp(a.0))`
+    // inversion). The same direction is used by
+    // `narrative_dynamics::compute_narrative_dynamics`, so cross-report
+    // attribution stays coherent.
+    let leading: Option<(FactionId, f64)> = faction_scores
+        .iter()
+        .max_by(|a, b| {
+            a.1.partial_cmp(b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.0.cmp(a.0))
+        })
+        .map(|(fid, score)| (fid.clone(), *score));
+
+    let leading_score = leading.as_ref().map(|(_, s)| *s).unwrap_or(0.0);
+    state.non_kinetic.information_dominance = leading_score.clamp(0.0, 1.0);
+
+    if let Some((fid, score)) = &leading
+        && *score > 0.0
+    {
+        *state
+            .narrative_dominance_ticks
+            .entry(fid.clone())
+            .or_insert(0) += 1;
+        let peak = state
+            .narrative_peak_dominance
+            .entry(fid.clone())
+            .or_insert(0.0);
+        if *score > *peak {
+            *peak = score.clamp(0.0, 1.0);
+        }
+    }
+
+    // Step 3: sympathy nudges. Pull each segment's sympathy toward the
+    // leading faction by a small amount scaled by media
+    // `disinformation_susceptibility` — segments in fragile
+    // information environments shift faster. The nudge is *additive*,
+    // not zero-sum redistribution, so total sympathy mass can drift
+    // up; the per-faction clamp at `[-1, 1]` and the segment-level
+    // sympathy clamp prevent runaway.
+    let susceptibility = scenario
+        .political_climate
+        .media_landscape
+        .disinformation_susceptibility
+        .clamp(0.0, 1.0);
+    if let Some((leader_fid, leader_score)) = &leading
+        && *leader_score > 0.0
+    {
+        // Scale by the leader's contribution density: leader_score is
+        // already in `[0, 1]` since it's a sum of `strength × credibility`
+        // for narratives with strength + credibility each in `[0, 1]`,
+        // and saturation just clips the multiplier at 1.0.
+        let nudge_factor = NARRATIVE_SYMPATHY_NUDGE * susceptibility * leader_score.min(1.0);
+        if nudge_factor > 0.0 {
+            for seg in &mut state.political_climate.population_segments {
+                for sym in &mut seg.sympathies {
+                    if &sym.faction == leader_fid {
+                        sym.sympathy = (sym.sympathy + nudge_factor).clamp(-1.0, 1.0);
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 4: tension contribution. Total pressure across the whole
+    // store nudges global tension upward; cap the per-tick delta so
+    // the narrative phase stays a slow-burn source.
+    if total_pressure > 0.0 {
+        let delta = (total_pressure * NARRATIVE_TENSION_RATE).min(NARRATIVE_MAX_TENSION_DELTA);
+        state.political_climate.tension = (state.political_climate.tension + delta).clamp(0.0, 1.0);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Phase 7c: Displacement flow (Epic D round-three item 4)
+// -----------------------------------------------------------------------
+
+/// Per-tick fraction of a region's displaced population that propagates
+/// to adjacent regions. The total outflow is split evenly across
+/// adjacent regions; the rest stays put for the next tick's iteration.
+const DISPLACEMENT_PROPAGATION_RATE: f64 = 0.10;
+
+/// Per-tick fraction of a region's displaced population that absorbs
+/// back into the resident population (assimilation / settlement). A
+/// region with zero adjacencies — a hand-crafted edge case that no
+/// bundled scenario authors — would still steadily decay via
+/// absorption alone, so the analytical signal isn't lost.
+const DISPLACEMENT_ABSORPTION_RATE: f64 = 0.05;
+
+/// Tension contribution per unit of average displaced fraction across
+/// regions. Capped at +0.005 / tick after summation: displacement
+/// stress should accumulate slowly relative to direct combat /
+/// disinformation tension.
+const DISPLACEMENT_TENSION_RATE: f64 = 0.01;
+const DISPLACEMENT_MAX_TENSION_DELTA: f64 = 0.005;
+
+/// Process displacement-flow propagation end-of-tick (Epic D
+/// round-three item 4). Pure function of `(state, scenario)` — no
+/// RNG.
+///
+/// Each region's `current_displaced` is split into three buckets:
+///
+/// 1. `outflow = current × DISPLACEMENT_PROPAGATION_RATE`, distributed
+///    evenly across adjacent regions. The receiving regions' counters
+///    are bumped *after* every source has computed its outflow, so
+///    "ricochet" effects (a region propagates, receives, then
+///    propagates again the same tick) are deferred to the next tick.
+///    This matches the existing `network` and `supply` phase
+///    conventions: per-tick state mutation is single-pass, not
+///    iterative-to-fixedpoint.
+/// 2. `absorbed = current × DISPLACEMENT_ABSORPTION_RATE`, removed
+///    from the live count. Tracks the fraction that stops being "in
+///    motion" and merges back into the resident population.
+/// 3. The remainder stays put for next tick.
+///
+/// After propagation, the total displaced fraction across regions
+/// contributes a small tension delta capped at
+/// `DISPLACEMENT_MAX_TENSION_DELTA`.
+pub fn displacement_phase(state: &mut SimulationState, scenario: &Scenario) {
+    if state.displacement.is_empty() {
+        return;
+    }
+
+    // Snapshot the current displaced values per region so propagation
+    // is single-pass — every region's outflow reads the *pre-tick*
+    // displaced value, not values that other regions have already
+    // written.
+    let snapshot: BTreeMap<RegionId, f64> = state
+        .displacement
+        .iter()
+        .map(|(rid, st)| (rid.clone(), st.current_displaced))
+        .collect();
+
+    let mut inflows: BTreeMap<RegionId, f64> = BTreeMap::new();
+
+    for (rid, displaced) in &snapshot {
+        if *displaced <= 0.0 {
+            continue;
+        }
+        let region = match scenario.map.regions.get(rid) {
+            Some(r) => r,
+            None => continue,
+        };
+        // Propagation: split outflow across known adjacent regions.
+        // Borders that don't resolve (typo, race-condition with map
+        // mutation) are skipped; the residual stays put. The border
+        // list itself is `Vec<RegionId>` — duplicates would be a
+        // load-time validation error, so we treat the iteration as a
+        // set. Two passes over `region.borders` (count + distribute)
+        // avoid a per-region `Vec<RegionId>` heap allocation on the
+        // hot path; deterministic because both passes apply the same
+        // filter in the same order.
+        let outflow_total = displaced * DISPLACEMENT_PROPAGATION_RATE;
+        let absorbed = displaced * DISPLACEMENT_ABSORPTION_RATE;
+        let valid_neighbor_count = region
+            .borders
+            .iter()
+            .filter(|nid| scenario.map.regions.contains_key(nid))
+            .count();
+        if valid_neighbor_count > 0 && outflow_total > 0.0 {
+            let per_neighbor = outflow_total / valid_neighbor_count as f64;
+            for nid in region
+                .borders
+                .iter()
+                .filter(|nid| scenario.map.regions.contains_key(nid))
+            {
+                *inflows.entry(nid.clone()).or_insert(0.0) += per_neighbor;
+            }
+        }
+        let actual_outflow = if valid_neighbor_count == 0 {
+            0.0
+        } else {
+            outflow_total
+        };
+        if let Some(entry) = state.displacement.get_mut(rid) {
+            entry.total_outflow += actual_outflow;
+            entry.total_absorbed += absorbed;
+            entry.current_displaced =
+                (entry.current_displaced - actual_outflow - absorbed).max(0.0);
+        }
+    }
+
+    // Apply inflows. Regions receiving propagation may not already
+    // have a displacement entry, so insert default on demand.
+    for (rid, inflow) in inflows {
+        if !scenario.map.regions.contains_key(&rid) {
+            continue;
+        }
+        let entry = state.displacement.entry(rid).or_default();
+        let new_displaced = (entry.current_displaced + inflow).clamp(0.0, 1.0);
+        let actual_added = new_displaced - entry.current_displaced;
+        entry.current_displaced = new_displaced;
+        entry.total_inflow += actual_added;
+        if entry.current_displaced > entry.peak_displaced {
+            entry.peak_displaced = entry.current_displaced;
+        }
+    }
+
+    // Stress-tick counter and tension delta. Region count is bounded
+    // by scenario.map.regions, so summation is O(R). Peak is already
+    // updated everywhere current_displaced grows (event effects, flee
+    // sources, propagation inflows); regions only lose mass in this
+    // phase, so no peak update is needed here.
+    //
+    // Convention: `stressed_ticks` reads post-outflow/absorption, so a
+    // region that started the tick with displacement but drained to
+    // zero by end-of-phase does not accrue a stressed tick for that
+    // tick. Reads as "ticks the region ended with residual displaced
+    // mass" rather than "ticks the region carried any displaced mass
+    // at any point". The under-count is intentional and matches the
+    // single-pass propagation convention used elsewhere in this phase.
+    let mut sum_displaced: f64 = 0.0;
+    let mut nonzero_regions: u32 = 0;
+    for st in state.displacement.values_mut() {
+        if st.current_displaced > 0.0 {
+            st.stressed_ticks += 1;
+            sum_displaced += st.current_displaced;
+            nonzero_regions += 1;
+        }
+    }
+
+    if nonzero_regions > 0 {
+        let avg_displaced = sum_displaced / f64::from(nonzero_regions);
+        let delta = (avg_displaced * DISPLACEMENT_TENSION_RATE).min(DISPLACEMENT_MAX_TENSION_DELTA);
+        state.political_climate.tension = (state.political_climate.tension + delta).clamp(0.0, 1.0);
     }
 }
 

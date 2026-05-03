@@ -106,6 +106,38 @@ pub struct RunResult {
     /// (the outer `BTreeMap` skips when empty).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tech_costs: BTreeMap<FactionId, TechCostReport>,
+    /// Log of every `EventEffect::MediaEvent` firing in this run, in
+    /// tick order (Epic D round-three item 4 — info-op narrative
+    /// competition). Each entry records the reinforcement / introduction;
+    /// reading the sequence reproduces the per-narrative trajectory.
+    /// Empty when no scenario authors any `MediaEvent` effect or none
+    /// ever fires.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub narrative_events: Vec<NarrativeEvent>,
+    /// Per-faction live dominance-tick counter from the engine's
+    /// narrative phase — the number of ticks where this faction owned
+    /// the strongest `strength × credibility` aggregate across the
+    /// active narrative store. This is the engine's *ground truth*,
+    /// captured each tick after decay; the cross-run aggregator should
+    /// consume this rather than re-deriving from the event log (which
+    /// can't see decay between firings). Empty when no narrative ever
+    /// fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_dominance_ticks: BTreeMap<FactionId, u32>,
+    /// Per-faction live peak of the narrative phase's
+    /// information-dominance attribution (in `[0, 1]`). Captured at the
+    /// tick the faction was leading; the post-decay value the engine
+    /// actually used. Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_peak_dominance: BTreeMap<FactionId, f64>,
+    /// Per-region displacement summary for this run (Epic D round-three
+    /// item 4 — refugee / displacement flows). Only populated for regions
+    /// that had a non-zero displaced fraction at any tick. Keyed by
+    /// `RegionId` for deterministic rendering. Empty when the scenario
+    /// authors no `EventEffect::Displacement` and no civilian segment
+    /// fires `Flee`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub displacement_reports: BTreeMap<RegionId, RegionDisplacementReport>,
 }
 
 /// Per-faction tech-card cost activity for one run.
@@ -231,6 +263,173 @@ pub struct FractureEvent {
     pub rule_id: String,
     pub previous_stance: Diplomacy,
     pub new_stance: Diplomacy,
+}
+
+/// One narrative-competition firing (Epic D round-three item 4 —
+/// info-op narrative competition).
+///
+/// Captured at the tick when an `EventEffect::MediaEvent` registered
+/// or reinforced a narrative. `was_new` is `true` for the first
+/// firing of a given narrative key in this run (the narrative was
+/// created here); subsequent reinforcements record `false`. `strength_after`
+/// reflects the post-reinforcement strength so a series of firings
+/// shows the trajectory the narrative took. `favors` is `None` for
+/// neutral / multi-faction narratives that don't bias sympathy nudges.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct NarrativeEvent {
+    pub tick: u32,
+    /// Free-text identifier — the same `narrative` string that the
+    /// authoring `MediaEvent` used. Narratives compete by sharing the
+    /// same key across multiple events; reinforcement is keyed on this
+    /// string.
+    pub narrative: String,
+    /// Faction the narrative biases sympathy toward when dominant. `None`
+    /// for narratives that contribute to tension / fragmentation without
+    /// favoring any particular side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub favors: Option<FactionId>,
+    /// Author-supplied credibility in `[0, 1]` carried through from the
+    /// firing event effect.
+    pub credibility: f64,
+    /// Author-supplied reach in `[0, 1]` carried through from the firing
+    /// event effect.
+    pub reach: f64,
+    /// Cumulative strength in `[0, 1]` after this reinforcement. Each
+    /// firing adds `credibility × reach × (1 + 0.5 × fragmentation)` and
+    /// clamps to `[0, 1]`.
+    pub strength_after: f64,
+    /// `true` iff this firing was the narrative's first appearance in
+    /// the run. `false` for reinforcements.
+    pub was_new: bool,
+}
+
+/// Cross-run narrative-competition analytics (Epic D round-three item 4).
+///
+/// Two complementary views: per-faction "how dominant was this side's
+/// narrative across the run set" and per-narrative "how often did this
+/// narrative fire and how strong did it get". Both elide entirely when
+/// no run produced any narrative events.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NarrativeDynamics {
+    pub n_runs: u32,
+    /// Per-faction summary — keyed by `FactionId` for deterministic
+    /// rendering. Only includes factions that were the `favors` side
+    /// of at least one narrative event across the batch.
+    pub faction_summaries: BTreeMap<FactionId, FactionNarrativeSummary>,
+    /// Per-narrative-key summary across runs. Keyed by the narrative
+    /// string for deterministic rendering. A narrative that never fires
+    /// is not represented here (no event row, no entry).
+    pub narrative_summaries: BTreeMap<String, NarrativeKeySummary>,
+}
+
+/// Cross-run dominance summary for one faction.
+///
+/// "Dominance ticks" is the number of ticks where this faction owned the
+/// strongest narrative weighted by credibility (i.e. the engine's
+/// information-dominance metric attributed to them). The mean across
+/// runs gives a tractable headline number; the max captures the
+/// best-case run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FactionNarrativeSummary {
+    pub faction: FactionId,
+    pub mean_dominance_ticks: f64,
+    pub max_dominance_ticks: u32,
+    /// Mean of the per-run peak strength × credibility this faction
+    /// achieved (`information_dominance` peak, in `[0, 1]`).
+    ///
+    /// Denominator is the count of runs where this faction led at any
+    /// tick (i.e. has a peak to mean), *not* `n_runs`. Reads as
+    /// "average peak when leading happened" rather than "average peak
+    /// across all runs"; runs where the faction never led don't drag
+    /// the mean toward zero. `mean_dominance_ticks` above uses
+    /// `n_runs` instead because zero-tick runs are meaningful there
+    /// (they're how often this faction simply didn't dominate).
+    pub mean_peak_information_dominance: f64,
+    /// Total firings of narratives that favored this faction across
+    /// the batch — sum of `narrative_events` rows where `favors == Some(faction)`.
+    pub total_firings: u32,
+}
+
+/// Cross-run summary for one narrative key.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NarrativeKeySummary {
+    pub narrative: String,
+    /// Number of runs in which this narrative fired at any tick.
+    pub firing_runs: u32,
+    /// Mean cumulative firings per run that fired (denominator excludes
+    /// runs where the narrative never appeared).
+    pub mean_firings_per_run: f64,
+    /// Mean peak strength reached per run that fired. `0.0` only when
+    /// every firing in every run contributed `amount = 0` (e.g. the
+    /// `MediaEvent` was authored with `credibility = 0.0` or
+    /// `reach = 0.0`, both of which are valid points in the
+    /// `[0.0, 1.0]` validation range). Realistic authored values
+    /// always produce a positive peak.
+    pub mean_peak_strength: f64,
+    /// Mean tick of first firing across runs that fired.
+    pub mean_first_tick: f64,
+    /// Modal `favors` faction across the batch. `None` when the narrative
+    /// fires unattributed in every run; otherwise the faction with the
+    /// most firings (ties broken lexicographically by `FactionId`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modal_favors: Option<FactionId>,
+}
+
+/// Per-region per-run displacement summary (Epic D round-three item 4 —
+/// refugee / displacement flows).
+///
+/// Captured only for regions that ever had a non-zero displaced
+/// population during the run — pristine regions are not represented at
+/// all. `peak_displaced` is the maximum per-tick displaced fraction; the
+/// `total_*` flows are cumulative across the run, so `total_inflow -
+/// total_outflow ≈ terminal_displaced + total_absorbed`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegionDisplacementReport {
+    pub region: RegionId,
+    /// Number of ticks where displaced fraction > 0.
+    pub stressed_ticks: u32,
+    /// Maximum displaced fraction observed at any tick (in `[0, 1]`).
+    pub peak_displaced: f64,
+    /// Displaced fraction at run end (in `[0, 1]`).
+    pub terminal_displaced: f64,
+    /// Cumulative inflow across the run, summed from event effects,
+    /// civilian flee, and propagation arrivals from adjacent regions.
+    pub total_inflow: f64,
+    /// Cumulative outflow across the run, summed from propagation
+    /// departures to adjacent regions.
+    pub total_outflow: f64,
+    /// Cumulative absorbed-into-population across the run. Models
+    /// assimilation / settlement: a fraction of displaced each tick
+    /// stops being "in motion" and merges back into the resident
+    /// population.
+    pub total_absorbed: f64,
+}
+
+/// Cross-run displacement analytics for one region.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DisplacementSummary {
+    pub region: RegionId,
+    pub n_runs: u32,
+    /// Number of runs in which this region had a non-zero displaced
+    /// population at any tick.
+    pub stressed_runs: u32,
+    /// Mean of per-run `peak_displaced` across the batch (in `[0, 1]`).
+    pub mean_peak: f64,
+    /// Maximum per-run `peak_displaced` seen across the batch.
+    pub max_peak: f64,
+    /// Mean of per-run `terminal_displaced` across the batch.
+    pub mean_terminal: f64,
+    /// Mean of per-run `total_inflow` across the batch.
+    pub mean_total_inflow: f64,
+    /// Mean of per-run `total_outflow` across the batch.
+    pub mean_total_outflow: f64,
+    /// Mean of per-run `total_absorbed` across the batch. Lets the
+    /// analyst verify the conservation identity
+    /// `inflow ≈ outflow + (terminal − initial) + absorbed` at the
+    /// summary level — distinguishing "assimilated back into the
+    /// resident population" from "propagated onward to a neighbor".
+    #[serde(default)]
+    pub mean_total_absorbed: f64,
 }
 
 /// End-of-run snapshot of one network's resilience trajectory.
@@ -469,6 +668,18 @@ pub struct MonteCarloSummary {
     /// `faultline_stats::report::calibration` for the renderer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calibration: Option<CalibrationReport>,
+    /// Cross-run narrative-competition analytics (Epic D round-three
+    /// item 4). `None` when no run produced any `NarrativeEvent` —
+    /// either the scenario authors no `MediaEvent` effects or every run
+    /// finished before one fired. Producer:
+    /// `faultline_stats::narrative_dynamics::compute_narrative_dynamics`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub narrative_dynamics: Option<NarrativeDynamics>,
+    /// Per-region cross-run displacement analytics (Epic D round-three
+    /// item 4). Empty when no run had a non-zero displaced fraction in
+    /// any region. Keyed by `RegionId` for deterministic rendering.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub displacement_summaries: BTreeMap<RegionId, DisplacementSummary>,
 }
 
 /// Calibration verdict against a scenario's `historical_analogue`.
@@ -1218,4 +1429,20 @@ pub struct DeltaEncodedRun {
     /// when no faction's tech roster engaged the cost mechanic.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub tech_costs: BTreeMap<FactionId, TechCostReport>,
+    /// Narrative-event log — preserved verbatim. Empty when the
+    /// scenario authors no `MediaEvent` effects or none ever fire.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub narrative_events: Vec<NarrativeEvent>,
+    /// Per-faction live dominance-tick counter — preserved verbatim.
+    /// Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_dominance_ticks: BTreeMap<FactionId, u32>,
+    /// Per-faction live peak information dominance — preserved verbatim.
+    /// Empty when no narrative ever fires.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub narrative_peak_dominance: BTreeMap<FactionId, f64>,
+    /// Per-region displacement summary — preserved verbatim. Empty
+    /// when no region had non-zero displaced fraction during the run.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub displacement_reports: BTreeMap<RegionId, RegionDisplacementReport>,
 }

@@ -198,4 +198,15 @@ pub enum EventEffect {
         node: NodeId,
         faction: FactionId,
     },
+    /// Add `magnitude` displaced fraction to `region` (Epic D round-three
+    /// item 4 — refugee / displacement flows). `magnitude` is interpreted
+    /// as a fraction-of-region-population delta in `[0, 1]`; the
+    /// displacement phase clamps the resulting per-region total to that
+    /// range and propagates it across adjacent regions every tick. Unknown
+    /// regions are a no-op at runtime; engine validation rejects them at
+    /// scenario load.
+    Displacement {
+        region: RegionId,
+        magnitude: f64,
+    },
 }
