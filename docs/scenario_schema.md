@@ -746,6 +746,54 @@ Tagged enum (`effect = "..."`):
 | `NetworkEdgeCapacity` (Epic L) | `network`, `edge`, `factor` — multiplies the named edge's runtime capacity factor by `factor`. Composes multiplicatively with prior events; runtime clamps the cumulative factor to `[0, 4]`. `factor = 0.0` severs the edge for resilience metrics. |
 | `NetworkNodeDisrupt` (Epic L) | `network`, `node` — marks the node disrupted; every edge incident to it counts as severed in the per-tick `NetworkSample`. Idempotent. |
 | `NetworkInfiltrate` (Epic L) | `network`, `node`, `faction` — adds `faction` to the set of factions with attacker-style visibility into the node. Surfaces in the report as an information loss; does not affect capacity. |
+| `Displacement` (Epic D round-three item 4) | `region`, `magnitude` — adds `magnitude.clamp(0, 1)` displaced fraction to the region. Validation rejects unknown region, non-finite or out-of-range / zero magnitude. |
+| `DeceptionOp` (Epic M round-one) | `source_faction`, `target_faction`, `payload` — plants a false belief in `target_faction`'s persistent `BeliefState`. The payload is a tagged enum (`kind = "..."`); see "DeceptionPayload" below. No-op when `simulation.belief_model.enabled = false`. Validation rejects unknown source / target / payload references and self-targeting. |
+| `IntelligenceShare` (Epic M round-one) | `source_faction`, `target_faction`, `payload` — same shape as `DeceptionOp` but lands as a truthful belief sourced from current ground truth. Models alliance intel sharing, captured prisoners. See "IntelligencePayload" below. |
+
+#### `DeceptionPayload` variants (`kind = "..."`)
+
+| Variant | Fields |
+|---|---|
+| `FalseForceStrength` | `force`, `owner`, `region`, `false_strength` — plants a phantom force in the target's belief at the given strength (which can be wildly different from any real force's strength). `force` may be a fictional id. |
+| `FalseRegionControl` | `region`, `false_controller` (faction id, optional) — plants a false region-controller in the target's belief. `None` means "no controller". |
+| `FalseFactionMorale` | `faction`, `false_morale` (in `[0, 1]`) — plants a false morale read on the named faction. |
+| `FalseFactionResources` | `faction`, `false_resources` (non-negative) — plants a false resource read on the named faction. |
+
+#### `IntelligencePayload` variants (`kind = "..."`)
+
+| Variant | Fields |
+|---|---|
+| `ForceObservation` | `force` — overwrites the target's belief about the named force with the current ground-truth (location + strength). |
+| `RegionControl` | `region` — overwrites the target's belief about the named region's controller with current ground truth. |
+| `FactionMorale` | `faction` — overwrites the target's belief about the named faction's morale with current ground truth. |
+| `FactionResources` | `faction` — overwrites the target's belief about the named faction's resources with current ground truth. |
+
+---
+
+## `[simulation.belief_model]` (Epic M round-one)
+
+Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When `enabled = false` (or the block is omitted entirely), the engine takes the legacy fast path: belief phase short-circuits in O(1), `RunResult.belief_accuracy` / `belief_snapshots` stay empty, and the AI consumes ground truth (or `simulation.fog_of_war`-filtered ground truth, if set). When `enabled = true`, the engine carries a per-faction `BeliefState` updated each tick from current observations, applies decay to unrefreshed entries, and consumes the belief-derived world view in the AI's decision phase. `EventEffect::DeceptionOp` and `EventEffect::IntelligenceShare` are no-ops when belief mode is off.
+
+| Field | Type | Notes |
+|---|---|---|
+| `enabled` | `bool` | Default `false`. Master toggle. |
+| `force_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.05`. Per-tick confidence decay for force beliefs. |
+| `region_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.02`. Per-tick confidence decay for region-control beliefs. |
+| `scalar_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.03`. Per-tick confidence decay for scalar beliefs (faction morale, faction resources). |
+| `prune_threshold` | `f64 ∈ [0, 1]` | Default `0.05`. Belief entries with confidence strictly below this are dropped from the persistent state. Set to `0.0` to never prune. |
+| `snapshot_interval` | `u32` | Default `0` (no snapshot stream). When `> 0`, the engine appends one belief-shape snapshot per faction every `N` ticks plus one terminal snapshot. |
+
+```toml
+[simulation.belief_model]
+enabled = true
+force_decay_per_tick = 0.05
+region_decay_per_tick = 0.02
+scalar_decay_per_tick = 0.03
+prune_threshold = 0.05
+snapshot_interval = 0
+```
+
+Validation rejects: non-finite or out-of-`[0, 1]` decay rates / prune threshold, including when `enabled = false` (a typo in a disabled-but-authored block surfaces at load time).
 
 ---
 

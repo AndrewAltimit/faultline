@@ -273,6 +273,7 @@ fn flagged_chain_scenario() -> Scenario {
             fog_of_war: false,
             attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 0,
+            belief_model: None,
         },
         victory_conditions,
         kill_chains,

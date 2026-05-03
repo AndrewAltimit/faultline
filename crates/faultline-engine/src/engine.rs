@@ -11,8 +11,9 @@ use faultline_types::campaign::BranchCondition;
 use faultline_types::ids::{EventId, FactionId, KillChainId, RegionId, TechCardId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    DefenderQueueReport, EventRecord, NetworkReport, Outcome, RegionDisplacementReport, RunResult,
-    StateSnapshot, SupplyPressureReport, TechCostReport, TechDecommissionEvent,
+    BeliefAccuracyReport, DefenderQueueReport, EventRecord, NetworkReport, Outcome,
+    RegionDisplacementReport, RunResult, StateSnapshot, SupplyPressureReport, TechCostReport,
+    TechDecommissionEvent,
 };
 use faultline_types::strategy::FactionState;
 
@@ -72,7 +73,13 @@ impl Engine {
         let event_defs: Vec<_> = scenario.events.values().cloned().collect();
         let event_evaluator = EventEvaluator::new(event_defs)?;
 
-        let state = initialize_state(&scenario)?;
+        let mut state = initialize_state(&scenario)?;
+        // Belief-asymmetry state is initialized after the rest of
+        // `state` is constructed because the visibility computation
+        // needs the live force / region maps. No-op when
+        // `simulation.belief_model` is `None` or disabled.
+        state.belief_states = crate::belief::initialize_belief_states(&state, &scenario, &map);
+        state.belief_counters = crate::belief::initialize_belief_counters(&scenario);
         let campaigns = campaign::initialize_campaigns(&scenario);
         let metric_history_depth = max_escalation_window(&scenario);
 
@@ -102,7 +109,12 @@ impl Engine {
         self.state.events_fired_this_tick.clear();
 
         // Phase 1: Events.
-        let events_fired = tick::event_phase(&mut self.state, &self.event_evaluator, &mut self.rng);
+        let events_fired = tick::event_phase(
+            &mut self.state,
+            &self.scenario,
+            &self.event_evaluator,
+            &mut self.rng,
+        );
 
         // Phase 2: Decision (AI).
         let queued_actions = tick::decision_phase(
@@ -185,6 +197,17 @@ impl Engine {
         // Update region control after all modifications.
         tick::update_region_control(&mut self.state, &self.scenario);
 
+        // Phase 7f: Belief asymmetry update (Epic M round-one).
+        // Decays unobserved beliefs, refreshes visible ones, prunes
+        // pruned-out entries, and updates the per-faction accuracy
+        // counters. Short-circuits in O(1) when the scenario does
+        // not enable `simulation.belief_model.enabled`. Runs *after*
+        // `update_region_control` so `observe_into_belief` reads the
+        // post-combat region control map — beliefs about region
+        // attribution reflect what combat actually resolved this tick,
+        // not the prior tick's stale state.
+        crate::belief::belief_phase(&mut self.state, &self.scenario, &self.map);
+
         // Take snapshot if interval is hit.
         let interval = self.scenario.simulation.snapshot_interval;
         if interval > 0 && current_tick.is_multiple_of(interval) {
@@ -246,6 +269,8 @@ impl Engine {
                     narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
                     utility_decisions: collect_utility_decisions(&self.state),
+                    belief_accuracy: collect_belief_accuracy(&self.state),
+                    belief_snapshots: self.state.belief_snapshots.clone(),
                 });
             }
 
@@ -276,6 +301,8 @@ impl Engine {
                     narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
                     utility_decisions: collect_utility_decisions(&self.state),
+                    belief_accuracy: collect_belief_accuracy(&self.state),
+                    belief_snapshots: self.state.belief_snapshots.clone(),
                 });
             }
         }
@@ -464,6 +491,9 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         narrative_peak_dominance: BTreeMap::new(),
         displacement: BTreeMap::new(),
         utility_decisions: BTreeMap::new(),
+        belief_states: BTreeMap::new(),
+        belief_counters: BTreeMap::new(),
+        belief_snapshots: BTreeMap::new(),
     })
 }
 
@@ -672,6 +702,55 @@ fn collect_utility_decisions(
                 decision_count: log.decision_count,
                 term_sums,
                 trigger_fires: log.trigger_fires.clone(),
+            },
+        );
+    }
+    out
+}
+
+/// Convert per-faction belief counters into the post-run
+/// [`BeliefAccuracyReport`] map (Epic M round-one). Only emits a row
+/// for factions that actually engaged the belief model — the
+/// `force_belief_ticks` / `region_belief_ticks` denominators are
+/// non-zero, or the faction was the target of at least one
+/// deception / intel-share event during the run. Legacy scenarios
+/// produce an empty outer map. Iteration is `BTreeMap`-ordered for
+/// deterministic rendering.
+fn collect_belief_accuracy(state: &SimulationState) -> BTreeMap<FactionId, BeliefAccuracyReport> {
+    let mut out = BTreeMap::new();
+    for (fid, counters) in &state.belief_counters {
+        let any_activity = counters.force_belief_ticks > 0
+            || counters.region_belief_ticks > 0
+            || counters.deception_events_received > 0
+            || counters.intel_shares_received > 0;
+        if !any_activity {
+            continue;
+        }
+        let belief = state.belief_states.get(fid);
+        let deceived_terminal = belief
+            .map(|b| {
+                u32::try_from(
+                    b.forces
+                        .values()
+                        .filter(|f| {
+                            matches!(f.source, faultline_types::belief::BeliefSource::Deceived)
+                        })
+                        .count(),
+                )
+                .unwrap_or(u32::MAX)
+            })
+            .unwrap_or(0);
+        out.insert(
+            fid.clone(),
+            BeliefAccuracyReport {
+                faction: fid.clone(),
+                force_belief_ticks: counters.force_belief_ticks,
+                force_strength_error_sum: counters.force_strength_error_sum,
+                region_belief_ticks: counters.region_belief_ticks,
+                region_accuracy_sum: counters.region_accuracy_sum,
+                deception_events_received: counters.deception_events_received,
+                intel_shares_received: counters.intel_shares_received,
+                deceived_beliefs_terminal: deceived_terminal,
             },
         );
     }

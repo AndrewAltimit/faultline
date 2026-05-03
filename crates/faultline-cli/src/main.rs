@@ -2237,7 +2237,8 @@ fn write_markdown_report(
     // a Phase-6 kill-chain table, Phase-6 feasibility matrix, a
     // network rollup, an alliance-fracture rollup, a civilian-segment
     // activation rollup, a narrative-dynamics rollup, a displacement
-    // rollup, an Epic J round-one utility-decomposition rollup, or a
+    // rollup, an Epic J round-one utility-decomposition rollup, an
+    // Epic M round-one belief-asymmetry rollup, or a
     // `meta.historical_analogue` declaration (Epic N — calibration
     // scaffold). The analogue case opts even a basic two-faction
     // scenario into the report so the calibration verdict is visible;
@@ -2251,6 +2252,7 @@ fn write_markdown_report(
         && result.summary.narrative_dynamics.is_none()
         && result.summary.displacement_summaries.is_empty()
         && result.summary.utility_decompositions.is_empty()
+        && result.summary.belief_summaries.is_empty()
         && scenario.meta.historical_analogue.is_none()
     {
         return Ok(());

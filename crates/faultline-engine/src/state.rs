@@ -2,13 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use faultline_types::belief::FactionBelief;
 use faultline_types::faction::{Diplomacy, ForceUnit, UnitType};
 use faultline_types::ids::{
     DefenderRoleId, EdgeId, EventId, FactionId, ForceId, InfraId, InstitutionId, NetworkId, NodeId,
     RegionId, TechCardId,
 };
 use faultline_types::politics::PoliticalClimate;
-use faultline_types::stats::{NetworkSample, StateSnapshot};
+use faultline_types::stats::{BeliefSnapshot, NetworkSample, StateSnapshot};
 
 /// All mutable runtime state for a running simulation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -154,6 +155,49 @@ pub struct SimulationState {
     /// them into per-faction means.
     #[serde(default)]
     pub utility_decisions: BTreeMap<FactionId, UtilityDecisionLog>,
+    /// Per-faction persistent belief state (Epic M round-one — belief
+    /// asymmetry). Populated at engine init when
+    /// `simulation.belief_model.enabled = true`; empty otherwise. Each
+    /// belief is updated end-of-tick by the belief phase (refresh
+    /// from current observations + decay aged entries) and is the
+    /// substrate the AI consumes when belief mode is active. Empty
+    /// for legacy scenarios; the belief phase short-circuits in O(1)
+    /// in that case.
+    #[serde(default)]
+    pub belief_states: BTreeMap<FactionId, FactionBelief>,
+    /// Per-faction running belief-accuracy counters (Epic M
+    /// round-one). Populated only when belief mode is enabled. The
+    /// belief phase increments these end-of-tick so the post-run
+    /// report can recover per-run mean error / accuracy without a
+    /// per-tick history. Counts are zeroed at engine init for every
+    /// faction; legacy scenarios stay at zero across the run and
+    /// the report layer elides empty rows.
+    #[serde(default)]
+    pub belief_counters: BTreeMap<FactionId, BeliefRunCounters>,
+    /// Per-faction belief-snapshot stream (Epic M round-one).
+    /// Populated only when `belief_model.snapshot_interval > 0`.
+    /// Captured at the configured cadence plus one terminal
+    /// snapshot at run end. Empty for default-config scenarios.
+    #[serde(default)]
+    pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
+}
+
+/// Per-faction running counters for the belief-accuracy report (Epic
+/// M round-one).
+///
+/// Each counter is a cumulative sum across the run; the post-run
+/// aggregator divides by the corresponding `*_ticks` field to
+/// recover the per-run mean. Default-zero values mean "the belief
+/// model never engaged for this faction" — the report layer elides
+/// such rows.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BeliefRunCounters {
+    pub force_belief_ticks: u32,
+    pub force_strength_error_sum: f64,
+    pub region_belief_ticks: u32,
+    pub region_accuracy_sum: f64,
+    pub deception_events_received: u32,
+    pub intel_shares_received: u32,
 }
 
 /// Per-faction running log of utility-driven decisions (Epic J round-one).

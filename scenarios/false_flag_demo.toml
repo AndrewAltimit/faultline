@@ -1,0 +1,327 @@
+# False Flag / Belief Asymmetry Demo — Epic M round-one archetype
+#
+# Demonstrates the persistent belief model and the
+# `EventEffect::DeceptionOp` / `EventEffect::IntelligenceShare`
+# variants end-to-end. Two factions, four regions in a square. Alpha
+# runs a deception campaign that plants a phantom-force belief in
+# Bravo's belief state — Bravo's AI (consuming the belief-derived
+# world view rather than ground truth) reads the phantom force as a
+# real threat and shifts posture accordingly. Mid-run, Alpha
+# truthfully shares Bravo's morale with itself via `IntelligenceShare`
+# (modelling a captured prisoner / SIGINT take), illustrating that
+# the same event family covers truthful intel as well as deception.
+#
+# The report's `## Belief Asymmetry` section captures per-faction
+# mean force-strength error (how far off was each faction's belief?)
+# and the count of deception / intel-share events received. With
+# `seed = 7` and 16 runs, Bravo's terminal-deceived count stays
+# non-zero across most runs — the phantom belief that planting
+# lands in tick 4 is rarely refreshed by direct observation before
+# run end because Bravo's units don't reach Alpha's home region.
+#
+# Run with:
+#   cargo run -p faultline-cli -- scenarios/false_flag_demo.toml -n 16
+
+[meta]
+schema_version = 1
+name = "False Flag — Belief Asymmetry Demo"
+description = """
+Two-faction archetype showing the persistent belief-asymmetry phase
+end-to-end. Alpha plants a phantom-force belief in Bravo's belief
+state via `DeceptionOp::FalseForceStrength`; Bravo's AI (consuming
+the belief-derived world view) reads the phantom as real and reacts.
+A later `IntelligenceShare::FactionMorale` from Alpha to itself
+illustrates the truthful-intel sibling event. The report's
+`## Belief Asymmetry` section tracks per-faction belief accuracy and
+deception event counts.
+"""
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["belief", "deception", "false-flag", "info-ops", "epic-m", "round-one"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500000
+urbanization = 0.5
+initial_control = "alpha"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500000
+urbanization = 0.5
+initial_control = "bravo"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.alpha]
+id = "alpha"
+name = "Faction Alpha — Deceiver"
+description = "Northern force running an active deception campaign against Bravo."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.7
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.alpha.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.alpha.forces.alpha_infantry]
+id = "alpha_infantry"
+name = "Alpha 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.bravo]
+id = "bravo"
+name = "Faction Bravo — Target"
+description = "Southern force whose belief state is the target of Alpha's deception."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.bravo.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.bravo.forces.bravo_infantry]
+id = "bravo_infantry"
+name = "Bravo 1st Infantry"
+unit_type = "Infantry"
+region = "south_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) ------------------------------------------------------
+
+[technology]
+
+# -- Political Climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.4
+state_control = 0.2
+social_media_penetration = 0.5
+internet_availability = 0.9
+
+# -- Events: deception campaign --------------------------------------------
+
+# Tick 4: Alpha plants a phantom-force belief in Bravo's belief
+# state. The phantom is reported to be in `north_west` (Alpha's
+# home region) at 500 strength — five times the actual Alpha
+# infantry force. Bravo's AI, consuming the belief-derived world
+# view, sees this as a real threat and re-prioritizes defense over
+# offense.
+[events.alpha_phantom_deception]
+id = "alpha_phantom_deception"
+name = "Alpha Phantom Force (Deception)"
+description = "Alpha leaks fabricated SIGINT suggesting a 500-strength reserve battalion sits in north_west."
+probability = 1.0
+repeatable = false
+
+[[events.alpha_phantom_deception.conditions]]
+condition = "TickAtLeast"
+tick = 4
+
+[[events.alpha_phantom_deception.effects]]
+effect = "DeceptionOp"
+source_faction = "alpha"
+target_faction = "bravo"
+
+[events.alpha_phantom_deception.effects.payload]
+kind = "FalseForceStrength"
+force = "alpha_phantom_battalion"
+owner = "alpha"
+region = "north_west"
+false_strength = 500.0
+
+# Tick 8: Alpha plants a second deception — a false morale read on
+# Bravo, suggesting Bravo's morale is much higher than reality. The
+# net behavioral effect on Bravo's AI in round-one is zero: the
+# deception is planted into `belief.faction_morale[bravo]`, but the
+# same tick's belief phase calls `observe_into_belief` which
+# refreshes self-morale from ground truth at confidence 1.0,
+# overwriting the planted value before the AI consults its world
+# view. The report still captures the deception event count
+# regardless — useful for "how often did Alpha attempt deception?"
+# analytics.
+[events.alpha_morale_op]
+id = "alpha_morale_op"
+name = "Alpha Morale Disinformation"
+description = "Alpha plants a false belief in Bravo's mind that Bravo's own morale is higher than it is."
+probability = 1.0
+repeatable = false
+
+[[events.alpha_morale_op.conditions]]
+condition = "TickAtLeast"
+tick = 8
+
+[[events.alpha_morale_op.effects]]
+effect = "DeceptionOp"
+source_faction = "alpha"
+target_faction = "bravo"
+
+[events.alpha_morale_op.effects.payload]
+kind = "FalseFactionMorale"
+faction = "bravo"
+false_morale = 0.95
+
+# Tick 12: Alpha's resource state is exposed to Bravo at full
+# confidence (modelling exfiltration via a captured logistics
+# manifest — Bravo's intel service obtains the data, but in
+# IntelligenceShare semantics Alpha is the `source_faction` because
+# Alpha is where the ground truth originates; Bravo is the
+# `target_faction` because Bravo's belief is what gets updated).
+# The event refreshes Bravo's belief with whatever Alpha's
+# *current* resource level actually is — different from DeceptionOp
+# because the source tag is DirectObservation rather than Deceived.
+[events.bravo_counter_intel]
+id = "bravo_counter_intel"
+name = "Alpha Resource State Exposed to Bravo"
+description = "Alpha's current resource state is leaked to Bravo via a captured logistics manifest."
+probability = 1.0
+repeatable = false
+
+[[events.bravo_counter_intel.conditions]]
+condition = "TickAtLeast"
+tick = 12
+
+[[events.bravo_counter_intel.effects]]
+effect = "IntelligenceShare"
+source_faction = "alpha"
+target_faction = "bravo"
+
+[events.bravo_counter_intel.effects.payload]
+kind = "FactionResources"
+faction = "alpha"
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 16
+fog_of_war = false
+snapshot_interval = 0
+seed = 7
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# Belief-asymmetry model — Epic M round-one. Without this block, the
+# DeceptionOp / IntelligenceShare events would be silent no-ops.
+[simulation.belief_model]
+enabled = true
+force_decay_per_tick = 0.05
+region_decay_per_tick = 0.02
+scalar_decay_per_tick = 0.03
+prune_threshold = 0.05
+snapshot_interval = 0
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.alpha_control]
+id = "alpha_control"
+name = "Alpha Strategic Control"
+faction = "alpha"
+
+[victory_conditions.alpha_control.condition]
+type = "StrategicControl"
+threshold = 0.75
+
+[victory_conditions.bravo_control]
+id = "bravo_control"
+name = "Bravo Strategic Control"
+faction = "bravo"
+
+[victory_conditions.bravo_control.condition]
+type = "StrategicControl"
+threshold = 0.75

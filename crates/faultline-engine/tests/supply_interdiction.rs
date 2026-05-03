@@ -200,6 +200,7 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
             fog_of_war: false,
             attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 0,
+            belief_model: None,
         },
         victory_conditions,
         kill_chains: BTreeMap::new(),

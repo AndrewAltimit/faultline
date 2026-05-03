@@ -251,6 +251,7 @@ fn chain_scenario(detection_per_tick: f64, success: f64) -> Scenario {
             fog_of_war: false,
             attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 0,
+            belief_model: None,
         },
         victory_conditions,
         kill_chains,
@@ -331,6 +332,8 @@ fn make_run(
         narrative_peak_dominance: BTreeMap::new(),
         displacement_reports: ::std::collections::BTreeMap::new(),
         utility_decisions: BTreeMap::new(),
+        belief_accuracy: ::std::collections::BTreeMap::new(),
+        belief_snapshots: ::std::collections::BTreeMap::new(),
     }
 }
 

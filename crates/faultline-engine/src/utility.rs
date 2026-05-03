@@ -628,6 +628,9 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement: BTreeMap::new(),
             utility_decisions: BTreeMap::new(),
+            belief_states: BTreeMap::new(),
+            belief_counters: BTreeMap::new(),
+            belief_snapshots: BTreeMap::new(),
         }
     }
 

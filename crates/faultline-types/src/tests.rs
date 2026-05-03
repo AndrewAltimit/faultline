@@ -1288,6 +1288,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         narrative_dynamics: None,
         displacement_summaries: ::std::collections::BTreeMap::new(),
         utility_decompositions: ::std::collections::BTreeMap::new(),
+        belief_summaries: ::std::collections::BTreeMap::new(),
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

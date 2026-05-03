@@ -1,3 +1,4 @@
+pub mod belief;
 pub mod campaign;
 pub mod error;
 pub mod events;

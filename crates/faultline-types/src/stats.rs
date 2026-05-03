@@ -148,6 +148,73 @@ pub struct RunResult {
     /// per-faction means.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub utility_decisions: BTreeMap<FactionId, UtilityDecisionReport>,
+    /// Per-faction belief-accuracy report for this run (Epic M
+    /// round-one — belief asymmetry). Only populated when the
+    /// scenario set `simulation.belief_model.enabled = true`; legacy
+    /// scenarios elide entirely. Keyed by `FactionId` for
+    /// deterministic rendering. The cross-run aggregator
+    /// `MonteCarloSummary.belief_summaries` rolls these into per-
+    /// faction means.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub belief_accuracy: BTreeMap<FactionId, BeliefAccuracyReport>,
+    /// Optional per-faction belief snapshot stream (Epic M round-one).
+    /// Only populated when the scenario enables the belief model
+    /// *and* sets `belief_model.snapshot_interval > 0`. Keyed by
+    /// `FactionId`; values are time-series snapshots at the configured
+    /// cadence plus one terminal snapshot.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
+}
+
+/// Per-faction belief-accuracy report for one run (Epic M round-one
+/// — belief asymmetry).
+///
+/// Captured live by the engine's belief phase: each tick where the
+/// believer holds at least one force belief, the engine computes the
+/// mean absolute error between believed and actual force strength
+/// (across the believer's *opponent* forces; own-force entries
+/// trivially have zero error and are excluded). The cumulative sum +
+/// tick count let the cross-run aggregator recover the run-mean
+/// without a per-tick history.
+///
+/// Region-control accuracy uses the same shape: per-tick fraction of
+/// believed regions whose `controller` matches ground truth, summed
+/// across ticks; divide by `region_belief_ticks` for the run-mean.
+///
+/// `deception_events_received` and `intel_shares_received` are raw
+/// counters captured at run end. Orthogonal to accuracy because a
+/// single deception event may move a single belief without dragging
+/// the average error meaningfully if the rest of the belief tracks
+/// truth — the analyst correlates the two signals.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BeliefAccuracyReport {
+    pub faction: FactionId,
+    pub force_belief_ticks: u32,
+    pub force_strength_error_sum: f64,
+    pub region_belief_ticks: u32,
+    pub region_accuracy_sum: f64,
+    pub deception_events_received: u32,
+    pub intel_shares_received: u32,
+    /// Number of force-belief entries with
+    /// [`crate::belief::BeliefSource::Deceived`] at run end —
+    /// "deceptions still in effect at run end". A direct refresh
+    /// resets the source tag, so this counts only *unrefreshed*
+    /// deceptions.
+    pub deceived_beliefs_terminal: u32,
+}
+
+/// One captured snapshot of a faction's belief state at a tick (Epic
+/// M round-one). High-level counters only; the underlying maps are
+/// reconstructible from the live `FactionBelief` for any analyst use
+/// case that needs the full shape.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BeliefSnapshot {
+    pub tick: u32,
+    pub force_belief_count: u32,
+    pub region_belief_count: u32,
+    pub mean_force_confidence: f64,
+    pub mean_region_confidence: f64,
+    pub deceived_force_count: u32,
 }
 
 /// Per-faction utility-driven decision report for one run (Epic J
@@ -731,6 +798,40 @@ pub struct MonteCarloSummary {
     /// `faultline_stats::utility_decomposition::compute_utility_decompositions`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub utility_decompositions: BTreeMap<FactionId, UtilityDecompositionSummary>,
+    /// Per-faction belief-asymmetry analytics aggregated across runs
+    /// (Epic M round-one). Empty when no scenario set
+    /// `simulation.belief_model.enabled = true` — the report section
+    /// elides on that signal. Keyed by `FactionId` for deterministic
+    /// rendering. Producer: `faultline_stats::belief::compute_belief_summaries`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub belief_summaries: BTreeMap<FactionId, BeliefAsymmetrySummary>,
+}
+
+/// Per-faction belief-asymmetry analytics across runs (Epic M
+/// round-one).
+///
+/// `mean_force_strength_error` is the headline analyst signal: how
+/// far off, on average, was this faction's belief about opponent
+/// force strength? Lower = more accurate intel; high values paired
+/// with non-zero `mean_deception_events` suggest deception drove the
+/// inaccuracy. `mean_region_accuracy` is in `[0, 1]` (1.0 = perfect
+/// region-control awareness across the believer's known regions).
+///
+/// `runs_with_belief` is the count of runs where the faction had at
+/// least one tick of force or region belief; used as the denominator
+/// for surface-level "did the belief model engage?" diagnostics.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BeliefAsymmetrySummary {
+    pub faction: FactionId,
+    pub runs_with_belief: u32,
+    pub mean_force_strength_error: f64,
+    pub mean_region_accuracy: f64,
+    pub mean_deception_events: f64,
+    pub mean_intel_shares: f64,
+    pub mean_terminal_deceived_beliefs: f64,
+    /// Largest per-run mean force-strength error observed across all
+    /// runs — the "worst-case" belief drift for this faction.
+    pub max_force_strength_error: f64,
 }
 
 /// Per-faction utility-decomposition summary across runs (Epic J
@@ -1539,4 +1640,12 @@ pub struct DeltaEncodedRun {
     /// when no faction declares `[utility]` or no decision contributed.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub utility_decisions: BTreeMap<FactionId, UtilityDecisionReport>,
+    /// Per-faction belief-accuracy report (Epic M round-one) —
+    /// preserved verbatim. Empty when `belief_model.enabled = false`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub belief_accuracy: BTreeMap<FactionId, BeliefAccuracyReport>,
+    /// Per-faction belief snapshot stream — preserved verbatim. Empty
+    /// when `belief_model.snapshot_interval = 0`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
 }

@@ -179,6 +179,8 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
             utility_decisions: BTreeMap::new(),
+            belief_accuracy: ::std::collections::BTreeMap::new(),
+            belief_snapshots: ::std::collections::BTreeMap::new(),
         }
     }
 
@@ -332,6 +334,7 @@ mod tests {
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
+            belief_summaries: ::std::collections::BTreeMap::new(),
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

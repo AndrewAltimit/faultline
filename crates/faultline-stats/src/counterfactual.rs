@@ -362,6 +362,7 @@ mod tests {
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
+            belief_summaries: ::std::collections::BTreeMap::new(),
         };
         let mut variant = base.clone();
 

@@ -35,6 +35,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         narrative_dynamics: None,
         displacement_summaries: ::std::collections::BTreeMap::new(),
         utility_decompositions: BTreeMap::new(),
+        belief_summaries: ::std::collections::BTreeMap::new(),
     }
 }
 
@@ -83,6 +84,7 @@ pub(crate) fn minimal_scenario() -> Scenario {
             fog_of_war: false,
             attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 0,
+            belief_model: None,
         },
         victory_conditions: BTreeMap::new(),
         kill_chains: BTreeMap::new(),

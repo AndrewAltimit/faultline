@@ -7,6 +7,7 @@
 
 pub mod alliance_dynamics;
 pub mod analysis;
+pub mod belief;
 pub mod calibration;
 pub mod civilian_activations;
 pub mod coevolve;
@@ -154,6 +155,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             utility_decompositions: utility_decomposition::compute_utility_decompositions(
                 runs, scenario,
             ),
+            belief_summaries: belief::compute_belief_summaries(runs, scenario),
         };
     }
 
@@ -370,6 +372,10 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // fired" stays visible. Empty when no faction declares the block.
     let utility_decompositions =
         utility_decomposition::compute_utility_decompositions(runs, scenario);
+    // Per-faction belief-asymmetry analytics (Epic M round-one).
+    // Pre-seeds entries for every faction that has the belief model
+    // active; empty when the scenario opts out.
+    let belief_summaries = belief::compute_belief_summaries(runs, scenario);
 
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
@@ -394,6 +400,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         narrative_dynamics,
         displacement_summaries,
         utility_decompositions,
+        belief_summaries,
     }
 }
 
@@ -1189,6 +1196,8 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
             utility_decisions: BTreeMap::new(),
+            belief_accuracy: ::std::collections::BTreeMap::new(),
+            belief_snapshots: ::std::collections::BTreeMap::new(),
         }
     }
 
@@ -1309,6 +1318,7 @@ mod tests {
                 fog_of_war: false,
                 attrition_model: AttritionModel::LanchesterLinear,
                 snapshot_interval: 0,
+                belief_model: None,
             },
             victory_conditions,
             kill_chains: BTreeMap::new(),
@@ -1394,6 +1404,8 @@ mod tests {
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
             utility_decisions: BTreeMap::new(),
+            belief_accuracy: ::std::collections::BTreeMap::new(),
+            belief_snapshots: ::std::collections::BTreeMap::new(),
         }
     }
 

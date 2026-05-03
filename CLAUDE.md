@@ -87,6 +87,19 @@ cargo run -p faultline-cli -- scenarios/calibration_demo.toml -n 100
 # captures peak / mean / inflow / outflow per region.
 cargo run -p faultline-cli -- scenarios/narrative_competition_demo.toml -n 16
 
+# Belief asymmetry demo (Epic M round-one). Two factions, four regions
+# in a square. Alpha runs a `DeceptionOp::FalseForceStrength` campaign
+# that plants a phantom 500-strength force in Bravo's belief state
+# (Alpha's actual infantry is 100). Bravo's AI consumes the
+# belief-derived world view and reads the phantom as real, shifting
+# posture against a non-existent threat. Mid-run, an
+# `IntelligenceShare::FactionResources` event refreshes Bravo's belief
+# about Alpha's resources from ground truth (modelling exfiltrated
+# intel). The report's `## Belief Asymmetry` section captures
+# per-faction mean force-strength error, deception event counts, and
+# terminal-deceived belief counts.
+cargo run -p faultline-cli -- scenarios/false_flag_demo.toml -n 16
+
 # Counterfactual override + delta report (Epic B)
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
     --counterfactual "faction.alpha.initial_morale=0.3"
@@ -1518,6 +1531,198 @@ This closes one of the two round-two N items; the other (5–10
 cleanly-sourced single-event analogues for the bundled scenario
 set) remains deferred per the priority list — single-event analogue
 research is per-scenario work, not a framework change.
+
+## Belief asymmetry & deception (Epic M round-one)
+
+Closes the foundational piece of Epic M: the engine carries a
+persistent per-faction belief state separate from ground truth, with
+observation-driven refresh, per-tick decay, deception / intel-share
+event hooks, and AI consumption via the existing fog-of-war path.
+Round-one ships the schema, the engine wiring, the cross-run
+analytics, and one bundled archetype; round-two will add Bayesian
+belief updating from indirect signals (intelligence stat, captured
+prisoners, surveillance tech) and pair with Epic J round-two
+(utility scoring against believed state).
+
+- New types in `crates/faultline-types/src/belief.rs`:
+  - `BeliefSource` enum — `DirectObservation`, `Stale`, `Inferred`
+    (reserved for round-two), `Deceived`. Tracks belief provenance
+    so the post-run analytics can distinguish "saw the truth", "saw
+    it once and aged out", "got planted by a deception event".
+  - `BeliefScalar` / `BeliefForce` / `BeliefRegion` — per-axis
+    belief entries with `value`, `confidence ∈ [0, 1]`,
+    `last_observed_tick`, and `source`. `BeliefForce` carries
+    `region` + `estimated_strength`; `BeliefRegion` carries
+    `controller` (option-typed for "no controller").
+  - `FactionBelief` — `BTreeMap`-keyed maps for regions, forces,
+    faction morale, faction resources. Plus `last_updated_tick`
+    (denormalised for snapshots) and `deception_events_received`
+    (counter for the cross-run rollup).
+  - `BeliefModelConfig` — opt-in toggle (`enabled: bool` defaults
+    `false`), per-axis decay rates (`force_decay_per_tick = 0.05`,
+    `region_decay_per_tick = 0.02`, `scalar_decay_per_tick = 0.03`),
+    `prune_threshold = 0.05`, optional `snapshot_interval`. All
+    fields `#[serde(default)]` so adding the block to a scenario
+    without enabling it is bit-identical to omitting it.
+  - `DeceptionPayload` enum (4 variants — `FalseForceStrength`,
+    `FalseRegionControl`, `FalseFactionMorale`,
+    `FalseFactionResources`) and `IntelligencePayload` enum (4
+    variants — `ForceObservation`, `RegionControl`, `FactionMorale`,
+    `FactionResources`). Both `#[serde(tag = "kind")]` for stable
+    TOML representation.
+- Two new `EventEffect` variants:
+  - `DeceptionOp { source_faction, target_faction, payload }` —
+    plants a `BeliefSource::Deceived`-tagged entry in the target's
+    belief at confidence 1.0. Seamless from the AI's perspective
+    (the world view it consumes can't tell deception from direct
+    observation), but the source tag persists through decay so
+    "deceptions still active at run end" is countable.
+  - `IntelligenceShare { source_faction, target_faction, payload }` —
+    same shape as `DeceptionOp` but lands as `DirectObservation` at
+    confidence 1.0, populated from the *current ground truth* of
+    the referenced entity. Models alliance intel sharing, captured
+    prisoners, sympathetic third-party reporting.
+- New `simulation.belief_model: Option<BeliefModelConfig>` field —
+  `None` (or `enabled = false`) means the engine takes the legacy
+  fast path: belief phase short-circuits in O(1), `belief_states` /
+  `belief_counters` stay empty, AI consumes ground truth.
+- Engine implementation in `crates/faultline-engine/src/belief.rs`:
+  - `belief_phase` runs end-of-tick after combat / political /
+    narrative / displacement phases, before campaign. Three-step:
+    (1) decay every entry's confidence by the per-axis rate, marking
+    non-deceived entries as `Stale`; (2) refresh every entry visible
+    to the believer from current ground truth (resets confidence to
+    1.0, clears `Deceived` source tag); (3) prune entries with
+    confidence strictly below `prune_threshold`. Updates per-faction
+    accuracy counters in lock-step.
+  - `apply_deception_op` / `apply_intelligence_share` are wired in
+    `tick::apply_event_effects`. Both are no-ops when the belief
+    model is disabled.
+  - `world_view_from_belief` constructs a `FactionWorldView` from a
+    persistent `FactionBelief` so the AI's existing
+    `evaluate_actions_fog` evaluator can consume beliefs as if they
+    were observations. Belief overlay → `DetectedForce` per believed
+    foreign force, `known_regions` per believed region, self
+    morale / resources from the believer's own belief entries
+    (which the belief phase keeps refreshed at confidence 1.0).
+  - `decision_phase` consults `belief::belief_enabled(scenario)` to
+    decide between the new belief path and the legacy fog /
+    ground-truth paths. The selection is order-preserving relative
+    to the existing branches: belief mode takes precedence over
+    `simulation.fog_of_war` because they're alternative answers to
+    the same "what does the AI know?" question.
+- Per-faction running counters
+  (`SimulationState.belief_counters`): `force_belief_ticks`,
+  `force_strength_error_sum`, `region_belief_ticks`,
+  `region_accuracy_sum`, `deception_events_received`,
+  `intel_shares_received`. Pre-seeded for every faction at engine
+  init when belief mode is on; legacy scenarios stay empty across
+  the run.
+- Per-run output:
+  - `RunResult.belief_accuracy: BTreeMap<FactionId, BeliefAccuracyReport>` —
+    per-faction roll-up of the running counters at run end, plus
+    `deceived_beliefs_terminal` (count of `Deceived`-tagged entries
+    that were never refreshed). Skips serialization when empty so
+    legacy scenarios don't pollute manifest hashes.
+  - `RunResult.belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>` —
+    optional time series captured every `snapshot_interval` ticks.
+    Empty when `snapshot_interval = 0` (the default).
+- Cross-run rollup:
+  `MonteCarloSummary.belief_summaries: BTreeMap<FactionId, BeliefAsymmetrySummary>`.
+  Producer:
+  `faultline_stats::belief::compute_belief_summaries`. Per-faction
+  `runs_with_belief`, `mean_force_strength_error`,
+  `max_force_strength_error`, `mean_region_accuracy`,
+  `mean_deception_events`, `mean_intel_shares`,
+  `mean_terminal_deceived_beliefs`. Pre-seeds rows for every faction
+  in a belief-enabled scenario so "declared but never engaged"
+  surfaces explicitly rather than as silent omission.
+- New `## Belief Asymmetry` report section in
+  `crates/faultline-stats/src/report/belief_asymmetry.rs`. Elides
+  when `summary.belief_summaries` is empty — i.e. the scenario opted
+  out of the belief model. Section ordering: `BeliefAsymmetry` sits
+  between `UtilityDecomposition` and `Calibration`. Section count
+  grew from 26 to 27.
+- Validation rejects nine silent-no-op shapes at scenario load:
+  unknown source / target faction in `DeceptionOp` /
+  `IntelligenceShare`; self-targeting (a faction can't deceive
+  itself, and sharing intel with yourself is a no-op); unknown
+  region / faction references inside the payloads; empty force ID
+  in payloads; out-of-range / NaN morale or resources in deception
+  payloads; out-of-range / NaN / negative decay rates and prune
+  threshold on `BeliefModelConfig` (validated unconditionally —
+  even when `enabled = false` — so a typo in a disabled-but-authored
+  config surfaces at load time rather than silently when the toggle
+  later flips). Mirrors the load-time-fail-loud pattern from every
+  prior round.
+- Determinism: every helper is a pure function of `(state,
+  scenario, map)` — no RNG, no `HashMap`, `BTreeMap`-ordered
+  iteration. Adding a `belief_model.enabled = true` block to a
+  scenario *will* change the affected scenario's combat schedule
+  and downstream observable outputs (the AI consumes a different
+  world view), but determinism for any fixed seed holds. All 22
+  bundled scenarios still `verify-bundled` deterministically; the
+  new `false_flag_demo.toml` is the 22nd bundled scenario.
+- Backward-compat: scenarios without `simulation.belief_model` (or
+  with `enabled = false`) see no behavior change. The belief phase
+  short-circuits in O(1), every belief-related field on `RunResult`
+  / `MonteCarloSummary` skips serialization when empty, and the AI
+  takes the unchanged ground-truth or fog-of-war path. The 21
+  pre-existing bundled scenarios are bit-identical post-Epic-M;
+  their `output_hash` values are unchanged.
+- Bundled archetype: `scenarios/false_flag_demo.toml`. Two factions
+  (alpha = deceiver, bravo = target), 4-region map. Three scripted
+  events: tick 4 plants a phantom 500-strength force in Bravo's
+  belief about Alpha (Alpha's actual infantry is 100); tick 8
+  plants a false morale read on Bravo about itself; tick 12 fires
+  an `IntelligenceShare::FactionResources` event from Alpha to
+  Bravo (truthful resource intel exfiltrated). Demo run with 16 MC
+  draws shows Bravo with mean force-Δ ≈ 225 (the 500-vs-100 phantom
+  plus stale beliefs), 2 deceptions / 1 intel-share received per
+  run, 1 terminal-deceived belief.
+- Coverage:
+  - `crates/faultline-types/src/belief.rs::tests` (8 tests):
+    `BeliefModelConfig::Default` is `enabled = false` with the
+    documented decay rates; `BeliefScalar::fresh` constructs a
+    direct-observation entry; `validate_belief_model` accepts
+    defaults and rejects negative / above-1 / NaN / negative-prune
+    inputs; serde roundtrips for `DeceptionPayload` and
+    `IntelligencePayload`.
+  - `crates/faultline-engine/src/belief.rs::tests` (6 tests):
+    decay clamps confidence at 0; deception is sticky through
+    decay (`Deceived` tag persists); direct observation decays to
+    `Stale` source tag; prune drops below threshold;
+    `prune_threshold = 0.0` keeps everything; `summarize_belief`
+    handles empty + populated cases.
+  - `crates/faultline-engine/src/lib.rs::tests` (11 validation
+    tests): well-formed deception passes; unknown source / target
+    faction rejected; self-targeting rejected; unknown region in
+    payload rejected; empty force-id rejected; negative strength
+    rejected; out-of-range morale rejected; intel-share self-target
+    rejected; belief-model decay above 1 / NaN rejected;
+    disabled-but-authored config still validates fields.
+  - `crates/faultline-engine/tests/belief_asymmetry.rs` (13
+    integration tests): legacy fast path (no `belief_model` →
+    empty `belief_accuracy` / `belief_snapshots`); belief init
+    populates self-observable state; deception lands in target
+    belief with `Deceived` source; intel-share lands with
+    non-`Deceived` source; deception counter increments; belief
+    accuracy report collected at run end; determinism across
+    same-seed runs; decay marks unrefreshed entries `Stale`;
+    validation rejects unknown faction; validation rejects invalid
+    decay; snapshot interval captures stream; `snapshot_interval =
+    0` produces empty stream; legacy scenarios produce no
+    serialized belief data.
+  - `crates/faultline-stats/src/belief.rs::tests` (5 tests):
+    empty when belief disabled; pre-seeds factions when enabled
+    with no runs; averages across runs; same-input determinism;
+    faction with no belief data keeps pre-seeded zero row;
+    `MonteCarloSummary` containing belief data round-trips through
+    serde.
+  - `crates/faultline-stats/src/report/belief_asymmetry.rs::tests`
+    (3 tests): elides when `summary.belief_summaries` is empty;
+    renders table with entries; pre-seeded zero row still renders
+    so "declared but never engaged" surfaces.
 
 ## Property tests (R3-5)
 

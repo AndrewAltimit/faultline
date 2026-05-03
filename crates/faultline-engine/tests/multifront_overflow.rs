@@ -225,6 +225,7 @@ fn base_scenario(seed: u64, max_ticks: u32, defender: Faction, chain: KillChain)
             fog_of_war: false,
             attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 10,
+            belief_model: None,
         },
         victory_conditions: BTreeMap::new(),
         kill_chains: chains,

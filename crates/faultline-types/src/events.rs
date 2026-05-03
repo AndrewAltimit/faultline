@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::belief::{DeceptionPayload, IntelligencePayload};
 use crate::faction::{Diplomacy, ForceUnit};
 use crate::ids::{
     EdgeId, EventId, FactionId, InfraId, InstitutionId, NetworkId, NodeId, RegionId, SegmentId,
@@ -208,5 +209,40 @@ pub enum EventEffect {
     Displacement {
         region: RegionId,
         magnitude: f64,
+    },
+    /// Plant a false belief in `target_faction`'s persistent belief
+    /// state (Epic M round-one — belief asymmetry). The `source_faction`
+    /// is the planting party (recorded for cross-run analytics —
+    /// "which factions spread the most successful disinformation?");
+    /// the `payload` describes the false fact. The deception is
+    /// seamless from inside the simulation — the target's AI cannot
+    /// distinguish a planted belief from a direct observation — but
+    /// the resulting belief entry is tagged
+    /// [`crate::belief::BeliefSource::Deceived`] so the post-run
+    /// belief-asymmetry report can quantify how often the deception
+    /// drove behavior. No-op when the scenario does not enable
+    /// `simulation.belief_model.enabled`; validation rejects unknown
+    /// faction / force / region references at scenario load.
+    DeceptionOp {
+        source_faction: FactionId,
+        target_faction: FactionId,
+        payload: DeceptionPayload,
+    },
+    /// Truthfully share intelligence from `source_faction` to
+    /// `target_faction` — the target's belief is overwritten with the
+    /// *current ground-truth* state of the referenced entity at full
+    /// confidence (Epic M round-one). Models alliance-style intel
+    /// sharing, captured prisoners, sympathetic third-party
+    /// reporting. Unlike [`Self::DeceptionOp`], the resulting belief
+    /// entry is tagged
+    /// [`crate::belief::BeliefSource::DirectObservation`] —
+    /// it's true at the moment of transfer. Subsequent ticks may stale
+    /// it through normal decay if the target loses sight of the entity.
+    /// No-op when `simulation.belief_model.enabled = false`; validation
+    /// rejects unknown references at scenario load.
+    IntelligenceShare {
+        source_faction: FactionId,
+        target_faction: FactionId,
+        payload: IntelligencePayload,
     },
 }
