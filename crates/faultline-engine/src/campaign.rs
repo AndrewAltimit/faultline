@@ -981,13 +981,16 @@ fn enqueue_with_overflow_inner(
             // e.g. 0.5 against capacity 3 yields a threshold of 2 (not
             // 1) — round-up reads more naturally as "spill once you've
             // crossed half-capacity" than the floor rounding which
-            // would spill *at* half. The clamp ensures we never read
-            // below the current depth (saturation is sticky once
-            // reached, even if the queue has drained to under the
-            // threshold this same tick). `threshold = 0.0` is a
-            // legitimate authoring choice meaning "spill 100% of
-            // arrivals from the start"; ceil(0.0) = 0 yields zero
-            // headroom, so every item routes to spillover immediately.
+            // would spill *at* half. `.min(queue_depth_cap)` prevents
+            // `threshold_depth` from exceeding physical capacity
+            // (defense in depth — validation already constrains
+            // `threshold <= 1.0`); the sticky-saturation behavior
+            // comes from `saturating_sub(q.depth)` below, which yields
+            // zero headroom once depth reaches or exceeds the
+            // threshold. `threshold = 0.0` is a legitimate authoring
+            // choice meaning "spill 100% of arrivals from the start";
+            // ceil(0.0) = 0 yields zero headroom, so every item routes
+            // to spillover immediately.
             let threshold_depth =
                 ((f64::from(queue_depth_cap) * threshold).ceil() as u32).min(queue_depth_cap);
             let headroom = threshold_depth.saturating_sub(q.depth);
