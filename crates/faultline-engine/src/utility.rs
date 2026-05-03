@@ -30,7 +30,7 @@
 use std::collections::BTreeMap;
 
 use faultline_geo::{GameMap, adjacent_regions};
-use faultline_types::faction::{AdaptiveCondition, AdaptiveTrigger, FactionUtility, UtilityTerm};
+use faultline_types::faction::{AdaptiveCondition, FactionUtility, UtilityTerm};
 use faultline_types::ids::{FactionId, KillChainId};
 use faultline_types::scenario::Scenario;
 use faultline_types::strategy::{FactionAction, FactionWorldView};
@@ -162,6 +162,12 @@ fn condition_holds(
             (lost / initial) >= *fraction
         },
         AdaptiveCondition::AttributionAgainstSelf { threshold } => {
+            // Self-knowledge proxy: a faction is treated as knowing its
+            // own attribution exposure even under fog of war. Defenders
+            // measure attribution, but the attacker observes its own
+            // operational footprint and can estimate exposure
+            // independently. Future Epic M (belief asymmetry) may
+            // revisit this; the choice is deliberate, not an oversight.
             mean_attribution_against(scenario, campaigns, faction_id) >= *threshold
         },
     }
@@ -544,13 +550,10 @@ fn friendly_forces_in_region(
         .unwrap_or(0)
 }
 
-#[allow(dead_code)] // referenced from tests in this crate's other modules
-pub(crate) fn _trigger_marker(_t: &AdaptiveTrigger) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use faultline_types::faction::{Faction, FactionType};
+    use faultline_types::faction::{AdaptiveTrigger, Faction, FactionType};
     use faultline_types::ids::FactionId;
 
     /// A scenario fixture built in-line so the utility tests don't

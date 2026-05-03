@@ -105,7 +105,7 @@ pub fn compute_utility_decompositions(
         }
     }
 
-    let runs_count = runs.len() as u32;
+    let runs_count = u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX");
     for (fid, row) in out.iter_mut() {
         let tick_total = tick_totals.get(fid).copied().unwrap_or(0);
         let decision_total = decision_totals.get(fid).copied().unwrap_or(0);
