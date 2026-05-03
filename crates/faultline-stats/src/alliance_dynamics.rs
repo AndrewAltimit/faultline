@@ -178,6 +178,7 @@ mod tests {
             narrative_dominance_ticks: BTreeMap::new(),
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: BTreeMap::new(),
         }
     }
 
@@ -330,6 +331,7 @@ mod tests {
             calibration: None,
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
+            utility_decompositions: BTreeMap::new(),
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

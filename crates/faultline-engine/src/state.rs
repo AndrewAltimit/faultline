@@ -144,6 +144,41 @@ pub struct SimulationState {
     /// `Flee`.
     #[serde(default)]
     pub displacement: BTreeMap<RegionId, RegionDisplacementState>,
+    /// Per-faction utility-driven decision log (Epic J round-one).
+    /// Each entry accumulates the per-term contributions across the
+    /// top-3 actions the AI selected per tick, plus per-trigger fire
+    /// counts. Empty when no faction declares `Faction.utility` —
+    /// legacy scenarios pay zero overhead. The post-run report's
+    /// `## Utility Decomposition` section reads this; the cross-run
+    /// aggregator in `faultline_stats::utility_decomposition` rolls
+    /// them into per-faction means.
+    #[serde(default)]
+    pub utility_decisions: BTreeMap<FactionId, UtilityDecisionLog>,
+}
+
+/// Per-faction running log of utility-driven decisions (Epic J round-one).
+///
+/// Three counters track the activity:
+/// - `tick_count`: number of decision phases where this faction's
+///   `[utility]` block actually contributed (i.e. was non-`None`).
+///   Decision phases where `decision_count == 0` (no top-3 action had
+///   a utility component because none were selected) are not counted.
+/// - `decision_count`: cumulative count of top-3 actions whose
+///   `ScoredAction.utility` was `Some`. Sum across ticks; the
+///   denominator for "mean contribution per decision".
+/// - `term_sums`: per-`UtilityTerm` cumulative contribution. Divide by
+///   `decision_count` to recover the mean per-term contribution.
+/// - `trigger_fires`: per-trigger-id firing count over the run. Divide
+///   by `tick_count` for the per-trigger fire rate.
+///
+/// All fields are `#[serde(default)]` so older runtime snapshots
+/// missing the field deserialize cleanly.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct UtilityDecisionLog {
+    pub tick_count: u32,
+    pub decision_count: u64,
+    pub term_sums: BTreeMap<faultline_types::faction::UtilityTerm, f64>,
+    pub trigger_fires: BTreeMap<String, u32>,
 }
 
 /// Per-run runtime state for one declared [`Network`](

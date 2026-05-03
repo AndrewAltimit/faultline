@@ -1,0 +1,285 @@
+# Adaptive Utility Demo (Epic J round-one)
+#
+# Two factions with contrasting `[factions.<id>.utility]` profiles
+# meet on a 4-region square. The profiles re-score the AI's
+# doctrine-based action set against named axes (control,
+# casualties_self, casualties_inflicted, time_to_objective,
+# resource_cost, force_concentration) and shift the action ranking
+# accordingly. Two adaptive triggers fire based on tick-fraction
+# (deadline pressure for `red`) and morale (panic for `blue`),
+# multiplying the term weights when their conditions hold.
+#
+# What to look for in the report's `## Utility Decomposition`
+# section:
+#
+#   - `red` accumulates a positive `control` mean and (because the
+#     deadline_pressure trigger doubles `time_to_objective` past
+#     tick 50) a strongly positive `time_to_objective` mean too.
+#     Net effect: red's AI shifts toward attacking high-strategic-
+#     value regions over the second half of the run.
+#
+#   - `blue` accumulates a strongly negative `casualties_self` mean
+#     (the defensive profile expressed as a positive term weight
+#     against negative per-attack contributions). The `panic`
+#     trigger fires when blue's effective combat morale drops below
+#     0.4, doubling `casualties_self` further — biasing blue toward
+#     Defend rather than Attack.
+#
+#   - Trigger fire-rates surface in a sub-table: `deadline_pressure`
+#     fires for ~half the run by construction; `panic` fires only
+#     when morale actually slips, so its rate is a diagnostic of how
+#     much pressure blue absorbed.
+#
+# Authoring note: the scenario's combat dynamics are kept minimal so
+# the analyst can isolate the utility surface's effect. The tutorial
+# scenario is the closest comparison — same map, similar forces, no
+# `[utility]` block.
+
+[meta]
+schema_version = 1
+name = "Adaptive Utility Demo"
+description = """
+Two factions with contrasting multi-term utility profiles meet on a
+4-region square. `red` is a control-maximizing aggressor with a
+deadline-pressure adaptive trigger; `blue` is a cautious defender
+with a morale-panic trigger. Demonstrates the Epic J round-one
+utility-driven AI scoring scaffold end-to-end.
+"""
+author = "AndrewAltimit"
+version = "0.1.0"
+tags = ["utility", "adaptive-ai", "epic-j", "demo"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500000
+urbanization = 0.5
+initial_control = "red"
+strategic_value = 1.0
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East"
+population = 500000
+urbanization = 0.6
+strategic_value = 1.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West"
+population = 500000
+urbanization = 0.4
+strategic_value = 1.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500000
+urbanization = 0.5
+initial_control = "blue"
+strategic_value = 1.0
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red]
+id = "red"
+name = "Red Aggressor"
+description = "Control-maximizing offensive faction with a deadline-pressure adaptive trigger."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.red.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.red.forces.red_infantry]
+id = "red_infantry"
+name = "Red 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.red.utility]
+# Base term weights (analyst-facing axes). Red prizes territorial
+# control and is willing to take casualties to inflict them; the
+# CasualtiesInflicted weight is positive and CasualtiesSelf is small,
+# producing an aggressive net contribution per Attack.
+[factions.red.utility.terms]
+Control = 2.0
+CasualtiesInflicted = 1.0
+CasualtiesSelf = 0.2
+TimeToObjective = 1.0
+ResourceCost = 0.1
+
+[[factions.red.utility.triggers]]
+id = "deadline_pressure"
+description = "Past the halfway mark, red doubles its urgency on TimeToObjective and Control."
+[factions.red.utility.triggers.condition]
+kind = "TickFraction"
+fraction = 0.5
+[factions.red.utility.triggers.adjustments]
+TimeToObjective = 2.0
+Control = 1.5
+
+[factions.blue]
+id = "blue"
+name = "Blue Defender"
+description = "Casualty-averse defender with a morale-panic adaptive trigger."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.7
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.blue.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.blue.forces.blue_infantry]
+id = "blue_infantry"
+name = "Blue 1st Infantry"
+unit_type = "Infantry"
+region = "south_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue.utility]
+# Blue's profile is the inverse of red's: heavy CasualtiesSelf
+# weight (express as "I want to minimize own casualties"), modest
+# Control and TimeToObjective. Defend actions score higher under
+# this profile because the Attack mapping contributes negative
+# CasualtiesSelf via the projected_self_loss heuristic.
+[factions.blue.utility.terms]
+CasualtiesSelf = 2.0
+Control = 0.5
+ForceConcentration = 0.5
+TimeToObjective = 0.2
+ResourceCost = 0.5
+
+[[factions.blue.utility.triggers]]
+id = "panic"
+description = "When effective morale slips below 0.4, blue further doubles CasualtiesSelf weight."
+[factions.blue.utility.triggers.condition]
+kind = "MoraleBelow"
+threshold = 0.4
+[factions.blue.utility.triggers.adjustments]
+CasualtiesSelf = 2.0
+Control = 0.5
+
+# -- Technology (none) ------------------------------------------------------
+
+[technology]
+
+# -- Political Climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.3
+institutional_trust = 0.7
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.3
+disinformation_susceptibility = 0.2
+state_control = 0.1
+social_media_penetration = 0.5
+internet_availability = 0.9
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 100
+monte_carlo_runs = 16
+fog_of_war = false
+snapshot_interval = 10
+seed = 42
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.red_control]
+id = "red_control"
+name = "Red Strategic Control"
+faction = "red"
+
+[victory_conditions.red_control.condition]
+type = "StrategicControl"
+threshold = 0.75
+
+[victory_conditions.blue_control]
+id = "blue_control"
+name = "Blue Strategic Control"
+faction = "blue"
+
+[victory_conditions.blue_control.condition]
+type = "StrategicControl"
+threshold = 0.75

@@ -84,6 +84,7 @@ fn make_faction(id: &str, region: &RegionId, diplomacy: Vec<DiplomaticStance>) -
         defender_capacities: BTreeMap::new(),
         leadership: None,
         alliance_fracture: None,
+        utility: None,
     }
 }
 

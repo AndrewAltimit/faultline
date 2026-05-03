@@ -91,6 +91,7 @@ fn make_blue() -> Faction {
         defender_capacities: BTreeMap::new(),
         leadership: None,
         alliance_fracture: None,
+        utility: None,
     }
 }
 

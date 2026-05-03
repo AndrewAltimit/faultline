@@ -44,6 +44,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         narrative_dominance_ticks: run.narrative_dominance_ticks.clone(),
         narrative_peak_dominance: run.narrative_peak_dominance.clone(),
         displacement_reports: run.displacement_reports.clone(),
+        utility_decisions: run.utility_decisions.clone(),
     }
 }
 
@@ -80,6 +81,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         narrative_dominance_ticks: encoded.narrative_dominance_ticks.clone(),
         narrative_peak_dominance: encoded.narrative_peak_dominance.clone(),
         displacement_reports: encoded.displacement_reports.clone(),
+        utility_decisions: encoded.utility_decisions.clone(),
     }
 }
 
@@ -282,6 +284,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -349,6 +352,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -412,6 +416,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -446,6 +451,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -498,6 +504,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
 
         let encoded = encode_run(&run);
@@ -591,6 +598,7 @@ mod tests {
             narrative_dominance_ticks: std::collections::BTreeMap::new(),
             narrative_peak_dominance: std::collections::BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: std::collections::BTreeMap::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

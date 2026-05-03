@@ -44,6 +44,18 @@ pub struct Region {
     pub initial_control: Option<FactionId>,
     pub strategic_value: f64,
     pub borders: Vec<RegionId>,
+    /// Visualization metadata: optional geographic centroid (lat/lon)
+    /// for placing this region on a real-world map projection in the
+    /// WASM frontend / browser viewer. Not consumed by the engine —
+    /// engine-side adjacency reads `borders`, not centroid distance.
+    /// `None` means the renderer falls back to its grid layout
+    /// (default for `MapSource::Grid`-derived scenarios).
+    ///
+    /// R3-2 round-two follow-up: this field has been documented as
+    /// visualization-only since Epic L. The engine validation matrix
+    /// does not type-check or constrain it because it has no
+    /// behavioral effect; an out-of-range or NaN centroid renders
+    /// poorly but does not corrupt simulation output.
     pub centroid: Option<GeoPoint>,
 }
 

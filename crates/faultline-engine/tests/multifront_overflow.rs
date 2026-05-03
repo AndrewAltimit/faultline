@@ -106,6 +106,7 @@ fn faction(id: &str, capacities: Vec<DefenderCapacity>) -> Faction {
         defender_capacities: caps,
         leadership: None,
         alliance_fracture: None,
+        utility: None,
     }
 }
 

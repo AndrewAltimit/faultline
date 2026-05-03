@@ -105,8 +105,13 @@ impl Engine {
         let events_fired = tick::event_phase(&mut self.state, &self.event_evaluator, &mut self.rng);
 
         // Phase 2: Decision (AI).
-        let queued_actions =
-            tick::decision_phase(&mut self.state, &self.scenario, &self.map, &mut self.rng);
+        let queued_actions = tick::decision_phase(
+            &mut self.state,
+            &self.scenario,
+            &self.map,
+            &self.campaigns,
+            &mut self.rng,
+        );
 
         // Phase 3: Movement.
         tick::movement_phase(&mut self.state, &self.scenario, &self.map, &queued_actions);
@@ -240,6 +245,7 @@ impl Engine {
                     narrative_dominance_ticks: self.state.narrative_dominance_ticks.clone(),
                     narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
+                    utility_decisions: collect_utility_decisions(&self.state),
                 });
             }
 
@@ -269,6 +275,7 @@ impl Engine {
                     narrative_dominance_ticks: self.state.narrative_dominance_ticks.clone(),
                     narrative_peak_dominance: self.state.narrative_peak_dominance.clone(),
                     displacement_reports: collect_displacement_reports(&self.state),
+                    utility_decisions: collect_utility_decisions(&self.state),
                 });
             }
         }
@@ -456,6 +463,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         narrative_dominance_ticks: BTreeMap::new(),
         narrative_peak_dominance: BTreeMap::new(),
         displacement: BTreeMap::new(),
+        utility_decisions: BTreeMap::new(),
     })
 }
 
@@ -630,6 +638,46 @@ fn collect_supply_pressure_reports(
 /// that ever had a non-zero displaced fraction (`peak_displaced > 0`)
 /// across the run; pristine regions are elided so the outer map is
 /// empty for legacy scenarios that don't engage the mechanic.
+/// Convert the engine's runtime per-faction utility decision log into
+/// the post-run [`faultline_types::stats::UtilityDecisionReport`] map.
+///
+/// Only emits a row for factions whose `[utility]` profile actually
+/// contributed at least one decision (`tick_count > 0`). Factions
+/// without a profile, or with a profile that never produced a
+/// non-zero contribution, are elided so the outer map stays empty
+/// for legacy scenarios.
+///
+/// Translates the engine's `UtilityTerm`-keyed `term_sums` to the
+/// stable string keys (`UtilityTerm::as_key()`) the manifest schema
+/// uses — keeps the on-disk shape stable across binary
+/// representations of `UtilityTerm`.
+fn collect_utility_decisions(
+    state: &SimulationState,
+) -> BTreeMap<FactionId, faultline_types::stats::UtilityDecisionReport> {
+    let mut out = BTreeMap::new();
+    for (fid, log) in &state.utility_decisions {
+        if log.tick_count == 0 {
+            continue;
+        }
+        let term_sums = log
+            .term_sums
+            .iter()
+            .map(|(t, v)| (t.as_key().to_string(), *v))
+            .collect();
+        out.insert(
+            fid.clone(),
+            faultline_types::stats::UtilityDecisionReport {
+                faction: fid.clone(),
+                tick_count: log.tick_count,
+                decision_count: log.decision_count,
+                term_sums,
+                trigger_fires: log.trigger_fires.clone(),
+            },
+        );
+    }
+    out
+}
+
 fn collect_displacement_reports(
     state: &SimulationState,
 ) -> BTreeMap<RegionId, RegionDisplacementReport> {

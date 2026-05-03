@@ -34,6 +34,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         calibration: None,
         narrative_dynamics: None,
         displacement_summaries: ::std::collections::BTreeMap::new(),
+        utility_decompositions: BTreeMap::new(),
     }
 }
 

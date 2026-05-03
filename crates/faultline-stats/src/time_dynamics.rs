@@ -657,6 +657,7 @@ mod tests {
             narrative_dominance_ticks: BTreeMap::new(),
             narrative_peak_dominance: BTreeMap::new(),
             displacement_reports: std::collections::BTreeMap::new(),
+            utility_decisions: BTreeMap::new(),
         }
     }
 

@@ -14,6 +14,18 @@ pub struct Faction {
     pub name: String,
     pub faction_type: FactionType,
     pub description: String,
+    /// Visualization metadata: hex color string (e.g. `"#3366CC"`)
+    /// used by the WASM frontend and any external chart producer for
+    /// faction-coded color encoding. Not consumed by the engine —
+    /// every engine path keys on `FactionId`, never on color. The
+    /// field is `String` (not `Color` / `Rgb`) for forward-
+    /// compatibility with arbitrary CSS color spec; renderers parse
+    /// or fall back to a default palette.
+    ///
+    /// R3-2 round-two follow-up: documented as visualization-only.
+    /// Validation does not check format — an unparseable value
+    /// renders as the renderer's fallback color but does not corrupt
+    /// simulation output.
     pub color: String,
     pub forces: BTreeMap<ForceId, ForceUnit>,
     pub tech_access: Vec<TechCardId>,
@@ -68,6 +80,21 @@ pub struct Faction {
     /// thresholds at scenario load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alliance_fracture: Option<AllianceFracture>,
+    /// Optional multi-term utility profile for adaptive AI scoring
+    /// (Epic J round-one). When present, the engine computes a per-
+    /// action utility delta from the faction's perspective and adds
+    /// it to the existing doctrine-based score before action selection.
+    /// `None` (default) preserves the legacy doctrine-only scoring path
+    /// exactly — useful for pre-Epic-J scenarios that should keep their
+    /// established behavior.
+    ///
+    /// Composition is additive on top of the doctrine score so the two
+    /// signals coexist: doctrine remains the dominant signal at low
+    /// term weights, and the utility surface takes over as analysts
+    /// dial weights up. See the "Multi-term utility & adaptive AI"
+    /// section in `CLAUDE.md` for the per-action mapping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utility: Option<FactionUtility>,
 }
 
 /// A faction's leadership cadre — ranks plus succession dynamics.
@@ -535,4 +562,237 @@ pub enum FractureCondition {
         /// condition (the divisor would be zero).
         delta_fraction: f64,
     },
+}
+
+// -----------------------------------------------------------------------
+// Adaptive AI utility (Epic J round-one)
+// -----------------------------------------------------------------------
+
+/// One named term in a faction's multi-term utility function (Epic J
+/// round-one — adaptive AI scaffold). Each term contributes one summand
+/// to the score the AI assigns to a candidate action; the sum is added
+/// on top of the existing doctrine-based score so legacy scenarios
+/// without `[factions.<id>.utility]` are unaffected.
+///
+/// Variants are intentionally analyst-facing axes rather than mechanical
+/// per-action coefficients — an author writes "I want this faction to
+/// trade casualties for control" not "I want a +0.3 bonus per region
+/// taken minus a 0.1 penalty per strength point lost". The engine's
+/// `crate::utility` module maps each axis to a per-action expected
+/// delta; the term weight scales the contribution.
+///
+/// Adding a variant: extend the match arms in
+/// `faultline_engine::utility::evaluate_action_utility` and the
+/// validation matrix in `faultline_engine::validate_scenario`. The
+/// trait derives are deliberately wide so the type can key a `BTreeMap`
+/// for deterministic iteration in the report.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum UtilityTerm {
+    /// Δ(controlled regions / total regions). Attack and Move toward
+    /// unclaimed strategic regions contribute positively; Defend on
+    /// already-controlled ground contributes 0.
+    Control,
+    /// Δ(own strength). Sign-flipped — a positive weight on this term
+    /// expresses self-preservation, since attacks have *negative*
+    /// expected delta against self-strength. Defend actions counter
+    /// projected losses and so contribute positively.
+    CasualtiesSelf,
+    /// Δ(opponent strength). Positive weight expresses preference for
+    /// inflicting damage. Attack actions contribute by their projected
+    /// damage to the controller of the target region.
+    CasualtiesInflicted,
+    /// Δ(attribution risk against this faction). Sign-flipped — a
+    /// positive weight on this term expresses preference for
+    /// minimizing public attribution. Currently the engine only
+    /// surfaces attribution from kill-chain campaigns; the AI scoring
+    /// reads `state.attribution_state` and treats actions that would
+    /// elevate own-faction attribution as costly.
+    AttributionRisk,
+    /// Δ(elapsed-tick distance from objective). Sign-flipped — a
+    /// positive weight expresses urgency, biasing toward decisive
+    /// actions. The default mapping treats Attack and Move toward a
+    /// strategic-value region as positive (progress) and Recruit as
+    /// neutral.
+    TimeToObjective,
+    /// Δ(resource spend). Sign-flipped — a positive weight expresses
+    /// frugality. Recruit contributes negatively (it costs resources);
+    /// other actions are neutral in the round-one mapping.
+    ResourceCost,
+    /// Δ(largest-force concentration). A positive weight biases the
+    /// faction toward consolidating units rather than dispersing them.
+    /// Move actions toward a region with friendly forces present
+    /// contribute positively; moves into empty territory contribute 0.
+    ForceConcentration,
+}
+
+impl UtilityTerm {
+    /// All variants in declaration order. Used by the report renderer
+    /// and the cross-run aggregator so adding a new term flows through
+    /// without explicit list maintenance at every consumer. Returning
+    /// a slice (rather than a fixed-arity array) means adding an
+    /// eighth variant only requires editing the slice contents — the
+    /// return type and call sites are unaffected.
+    pub fn all() -> &'static [UtilityTerm] {
+        &[
+            UtilityTerm::Control,
+            UtilityTerm::CasualtiesSelf,
+            UtilityTerm::CasualtiesInflicted,
+            UtilityTerm::AttributionRisk,
+            UtilityTerm::TimeToObjective,
+            UtilityTerm::ResourceCost,
+            UtilityTerm::ForceConcentration,
+        ]
+    }
+
+    /// Stable identifier for serialization keys and report column
+    /// headers. Matches the lowercase-snake form of the variant name.
+    pub fn as_key(self) -> &'static str {
+        match self {
+            UtilityTerm::Control => "control",
+            UtilityTerm::CasualtiesSelf => "casualties_self",
+            UtilityTerm::CasualtiesInflicted => "casualties_inflicted",
+            UtilityTerm::AttributionRisk => "attribution_risk",
+            UtilityTerm::TimeToObjective => "time_to_objective",
+            UtilityTerm::ResourceCost => "resource_cost",
+            UtilityTerm::ForceConcentration => "force_concentration",
+        }
+    }
+}
+
+/// Faction-level multi-term utility profile (Epic J round-one).
+///
+/// `terms` is the base weight per axis; absent terms default to 0
+/// (pure-no-op for that axis). `triggers` are deterministic adaptive
+/// adjustments — when a trigger's condition holds at the start of a
+/// decision phase, each named term's weight is multiplied by the
+/// corresponding adjustment factor.
+///
+/// Composition with the existing doctrine-based AI weights:
+/// the AI computes its doctrine-based score (unchanged from the legacy
+/// path), then adds a utility score on top — so a faction that declares
+/// `[utility]` carries both signals. The doctrine weights stay the
+/// dominant signal at low weights and the utility surface takes over
+/// as the analyst dials terms up. Pure additive composition keeps
+/// determinism: utility is a pure function of state, contributing
+/// no new RNG draws.
+///
+/// The struct has `Default::default()` so `..Default::default()` spread
+/// in test fixtures lands on the legacy "no profile, doctrine-only"
+/// behavior.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct FactionUtility {
+    /// Base weight per term. Empty `terms` is rejected at scenario load
+    /// (an opt-in empty profile is almost always an unfilled author
+    /// template). Each weight must be finite; values may be negative
+    /// (a negative weight reverses the term's sign — e.g. a faction
+    /// that *wants* to take casualties can declare a negative weight
+    /// on `CasualtiesSelf`).
+    pub terms: BTreeMap<UtilityTerm, f64>,
+    /// Optional adaptive triggers. Empty by default — a faction with
+    /// only static term weights still benefits from utility-driven
+    /// scoring on top of its doctrine. When non-empty, every trigger
+    /// is evaluated each decision phase; matched triggers compose
+    /// multiplicatively against the base term weights to produce the
+    /// "effective" weights the engine actually uses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<AdaptiveTrigger>,
+    /// Optional time horizon override (in ticks). When set, the
+    /// `TimeToObjective` term's denominator becomes `min(scenario.simulation.max_ticks, time_horizon_ticks)`
+    /// rather than `max_ticks`. Models a faction with an externally-
+    /// imposed deadline tighter than the scenario's overall window
+    /// (e.g. a coup attempt that must succeed before the next election
+    /// cycle). `None` falls back to `scenario.simulation.max_ticks`.
+    /// Validation rejects `Some(0)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_horizon_ticks: Option<u32>,
+}
+
+/// One adaptive trigger that re-weights utility terms when a condition
+/// holds.
+///
+/// Triggers are *latched per decision phase*: a trigger that fires
+/// applies its adjustments to that phase's effective weights only.
+/// The next phase re-evaluates from scratch — so a trigger that
+/// fires at tick 5 because morale dropped below 0.3 stops applying at
+/// tick 6 if morale recovered. This is deliberately *not* sticky —
+/// the analyst use case is "react to current conditions", not "remember
+/// past shocks". Sticky reactions belong in scenario-authored events.
+///
+/// Multiple matched triggers compose multiplicatively in declaration
+/// order. A trigger that doubles `CasualtiesSelf` followed by another
+/// that halves it lands at the original weight; the engine takes the
+/// product so order doesn't matter when only one trigger touches a
+/// given term, but does matter when two triggers compose against the
+/// same term (rare in practice).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdaptiveTrigger {
+    /// Stable identifier (e.g. `"low_morale_self_preservation"`,
+    /// `"deadline_pressure"`). Used by the report's per-trigger fire-
+    /// rate column. Must be unique within a faction's `utility.triggers`
+    /// — duplicates would silently shadow under first-match resolution.
+    pub id: String,
+    /// Human-readable description surfaced by the report.
+    #[serde(default)]
+    pub description: String,
+    pub condition: AdaptiveCondition,
+    /// Multiplier per term to apply when the condition holds. A value
+    /// of `1.0` is a no-op; `2.0` doubles the term's weight; `0.0`
+    /// disables the term while the trigger holds; negative values
+    /// invert the term's sign. Empty `adjustments` is rejected at
+    /// scenario load — a trigger without adjustments is a no-op and
+    /// almost always an authoring mistake.
+    pub adjustments: BTreeMap<UtilityTerm, f64>,
+}
+
+/// A condition under which an `AdaptiveTrigger` fires.
+///
+/// All variants are pure functions of `SimulationState` plus the
+/// scenario's static configuration — no RNG, so determinism follows
+/// from the existing engine contract. The conditions are evaluated
+/// at the start of the decision phase, *before* the AI scores any
+/// actions, so the same trigger applies uniformly across every
+/// candidate action that phase.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum AdaptiveCondition {
+    /// This faction's effective combat morale is at or below `threshold`.
+    /// Reads `morale × command_effectiveness` (the same scalar combat
+    /// and AI threat-scoring read), so a faction whose top leader was
+    /// just killed *and* whose rank-and-file morale has slipped will
+    /// trip this condition before either alone would.
+    MoraleBelow { threshold: f64 },
+    /// This faction's effective combat morale is at or above `threshold`.
+    /// Mirror of `MoraleBelow` — useful for "press the advantage when
+    /// morale is high" patterns.
+    MoraleAbove { threshold: f64 },
+    /// Political tension is at or above `threshold`. Models a faction
+    /// that becomes more aggressive (or more cautious) under
+    /// environmental pressure.
+    TensionAbove { threshold: f64 },
+    /// `state.tick / time_horizon_ticks` is at or above `fraction`.
+    /// Reads the faction's `utility.time_horizon_ticks` if set,
+    /// otherwise `scenario.simulation.max_ticks`. Models deadline
+    /// pressure — a faction that realises it's running out of time
+    /// shifts toward objective-seeking actions even if its short-term
+    /// risk calculus argued against them.
+    TickFraction { fraction: f64 },
+    /// This faction's `resources` is at or below `threshold` (in raw
+    /// resource units, not normalized). Models budget exhaustion —
+    /// when resources are scarce, a faction may shift away from
+    /// casualty-trading patterns (high `ResourceCost` weight reaction).
+    ResourcesBelow { threshold: f64 },
+    /// This faction's strength has dropped by at least
+    /// `fraction` of its starting value. Mirror of the
+    /// `FractureCondition::StrengthLossFraction` shape so the same
+    /// "we're taking unsustainable casualties" signal can drive both
+    /// alliance fracture and AI re-weighting.
+    StrengthLossFraction { fraction: f64 },
+    /// Mean attribution against this faction across the scenario's
+    /// kill chains where it is the *attacker* is at or above `threshold`.
+    /// Models a covert operation losing ambiguity — once the operator
+    /// is publicly attributed, the AI can shift weight away from
+    /// attribution-risky moves and toward overt actions. `None` /
+    /// missing attribution state evaluates as `0` (no attribution
+    /// landed yet).
+    AttributionAgainstSelf { threshold: f64 },
 }

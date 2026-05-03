@@ -89,6 +89,7 @@ fn make_faction(id_str: &str, home: &RegionId) -> Faction {
         defender_capacities: BTreeMap::new(),
         leadership: None,
         alliance_fracture: None,
+        utility: None,
     }
 }
 
@@ -329,6 +330,7 @@ fn make_run(
         narrative_dominance_ticks: BTreeMap::new(),
         narrative_peak_dominance: BTreeMap::new(),
         displacement_reports: ::std::collections::BTreeMap::new(),
+        utility_decisions: BTreeMap::new(),
     }
 }
 

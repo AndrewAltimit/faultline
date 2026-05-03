@@ -1343,6 +1343,182 @@ step `tick::update_command_effectiveness` (replacing
   the product) and `r3_4_no_cadre_legacy_path_leaves_morale_and_command_unchanged`
   (legacy fast path still produces `command_effectiveness == 1.0`).
 
+## Multi-term utility & adaptive AI (Epic J round-one)
+
+Closes the first slice of Epic J: factions can now declare a
+`[factions.<id>.utility]` block that re-weights AI action scoring
+along named analyst-facing axes. The utility surface composes
+additively on top of the existing doctrine-based scoring, so
+scenarios without `[utility]` are bit-identical to the legacy path
+(verified by `verify-bundled` across all 21 pre-existing scenarios).
+
+- New types in `crates/faultline-types/src/faction.rs`:
+  - `UtilityTerm` enum with seven analyst-facing axes: `Control`,
+    `CasualtiesSelf`, `CasualtiesInflicted`, `AttributionRisk`,
+    `TimeToObjective`, `ResourceCost`, `ForceConcentration`. Each
+    variant maps to a per-action expected delta in the round-one
+    heuristic table documented at the top of
+    `crates/faultline-engine/src/utility.rs`. The enum derives `Hash`
+    + `Ord` for deterministic `BTreeMap` keys; the wire-stable
+    `as_key()` method (`"control"`, `"casualties_self"`, ...) is
+    used in serialization to keep manifest hashes stable across
+    binary representations of the enum.
+  - `FactionUtility` struct: `terms: BTreeMap<UtilityTerm, f64>`
+    (base weights), `triggers: Vec<AdaptiveTrigger>` (optional
+    adaptive adjustments), `time_horizon_ticks: Option<u32>` (per-
+    faction deadline override).
+  - `AdaptiveTrigger` and `AdaptiveCondition`: seven condition
+    variants (`MoraleBelow`, `MoraleAbove`, `TensionAbove`,
+    `TickFraction`, `ResourcesBelow`, `StrengthLossFraction`,
+    `AttributionAgainstSelf`). Each is a pure function of state +
+    scenario; matched triggers compose multiplicatively against base
+    term weights to produce the effective weights the engine uses.
+
+- `crates/faultline-engine/src/utility.rs` is the producer. Two
+  helpers: `effective_weights(profile, faction, state, scenario,
+  campaigns)` evaluates each declared trigger against current state
+  and returns the per-term effective weights plus the IDs of
+  triggers that fired this phase; `evaluate_action_utility(weights,
+  faction, action, state, scenario, map)` computes the per-action
+  utility delta from the round-one heuristic table. Both are pure
+  functions — no RNG, no `HashMap`, `BTreeMap`-ordered iteration in
+  the hot path.
+
+- AI integration: `crates/faultline-engine/src/ai.rs::evaluate_actions`
+  and `evaluate_actions_fog` now accept a
+  `campaigns: &BTreeMap<KillChainId, CampaignState>` argument and,
+  after the existing doctrine-based scoring loop, apply the utility
+  delta on top via `apply_utility_score`. The doctrine score is
+  unchanged on the legacy fast path (`Faction.utility == None`); when
+  set, `ScoredAction.utility` carries the per-term decomposition for
+  the post-run report.
+
+- Decision-phase orchestration in
+  `crates/faultline-engine/src/tick.rs::decision_phase`: passes
+  `campaigns` through, captures the per-term contributions across the
+  *top-3 selected* actions (the actions the engine actually executes,
+  not the whole candidate set) into a per-faction
+  `state.utility_decisions: BTreeMap<FactionId, UtilityDecisionLog>`,
+  and tracks per-trigger fire counts. `tick.rs::decision_phase` is
+  the only mutation site for `utility_decisions` so the determinism
+  contract is centralized.
+
+- Determinism: every helper is a pure function — no new RNG draws,
+  no `HashMap`, `BTreeMap`-ordered iteration. Adding a `[utility]`
+  block to a scenario *will* change the affected scenario's combat
+  schedule and downstream observable outputs (the score re-ranking
+  shifts which top-3 actions the engine picks), but determinism for
+  any fixed seed holds. The `verify-bundled` CI step pins this
+  across all 21 bundled scenarios.
+
+- Per-run output: `RunResult.utility_decisions` (`BTreeMap<FactionId,
+  UtilityDecisionReport>`) records per-faction `tick_count`,
+  `decision_count`, `term_sums` (keyed by stable string), and
+  `trigger_fires`. Empty when no faction declares `[utility]` so
+  legacy `RunResult` shapes are unchanged.
+
+- Cross-run rollup: `MonteCarloSummary.utility_decompositions`
+  (`BTreeMap<FactionId, UtilityDecompositionSummary>`). Producer:
+  `faultline_stats::utility_decomposition::compute_utility_decompositions`.
+  Per-faction `mean_contributions_per_decision` (per-term mean
+  contribution averaged across all selected actions in all runs),
+  `trigger_fire_rates` (per-trigger firing frequency), and
+  `runs_with_contribution`. Pre-seeds entries for every faction that
+  *declares* a profile, even with zero runs of contribution — so the
+  analyst sees "declared but never fired" explicitly rather than as
+  silent omission.
+
+- Validation rejects nine silent-no-op shapes at scenario load:
+  empty `[utility.terms]`, NaN / non-finite term weights, zero
+  `time_horizon_ticks`, duplicate trigger ids, empty trigger
+  adjustments, NaN / non-finite trigger multipliers, out-of-range /
+  NaN `MoraleBelow` / `MoraleAbove` / `TensionAbove` thresholds,
+  out-of-range `StrengthLossFraction` / `AttributionAgainstSelf`,
+  negative / NaN `ResourcesBelow` threshold, and negative / NaN
+  `TickFraction` (values >1 are *valid* when `time_horizon_ticks`
+  shrinks the denominator below `max_ticks`). Mirrors the
+  load-time-fail-loud pattern from every prior round.
+
+- New `## Utility Decomposition` report section in
+  `crates/faultline-stats/src/report/utility_decomposition.rs`. Two
+  sub-tables: per-faction term means (canonical `UtilityTerm`
+  declaration order, not alphabetic) and per-trigger fire rates
+  (gated on at least one declared trigger). Elides when
+  `summary.utility_decompositions` is empty.
+
+- Bundled archetype: `scenarios/adaptive_utility_demo.toml`. Two
+  factions with contrasting profiles (`red`: control-maximizing
+  aggressor with deadline-pressure trigger; `blue`: cautious
+  defender with morale-panic trigger) on a 4-region square.
+  Demonstrates the full mechanic end-to-end. Demo run shows red's
+  control mean at +1.04 and time_to_objective at +0.63, vs. blue's
+  at +0.12 and +0.08 — a clean signal that the profiles drove the
+  AI behavior.
+
+- Backward-compat: scenarios without `[utility]` see no change.
+  Adding `[utility]` doesn't shift the RNG sequence — the utility
+  evaluator is RNG-free, so the sequence of `r#gen` calls in
+  `evaluate_attack_actions` is unchanged. All 20 pre-existing
+  bundled scenarios verify deterministically with their prior
+  `output_hash`; the new `adaptive_utility_demo.toml` is the
+  21st bundled scenario.
+
+- Coverage:
+  - `crates/faultline-engine/src/utility.rs::tests` (6 tests):
+    base-weights round-trip, unmatched triggers don't adjust,
+    matched triggers multiply, multiple triggers compose,
+    time-horizon override shrinks the TickFraction denominator,
+    StrengthLossFraction fires after measurable loss.
+  - `crates/faultline-engine/src/lib.rs::tests` (8 validation
+    tests): well-formed profile passes; empty terms, NaN weight,
+    zero horizon, duplicate trigger ids, empty adjustments,
+    threshold > 1 on MoraleBelow, negative ResourcesBelow,
+    NaN adjustment multiplier all rejected.
+  - `crates/faultline-engine/tests/utility_adaptive_ai.rs` (7
+    integration tests): legacy no-profile path unchanged,
+    profile produces non-empty decisions, deadline trigger fires
+    past midpoint, same-seed determinism, no-utility legacy
+    determinism unchanged, MoraleBelow trigger fires on combat
+    loss, empty term weights doesn't panic.
+  - `crates/faultline-stats/src/utility_decomposition.rs::tests`
+    (5 tests): empty input, faction with profile gets zeroed row
+    when no runs, run-averaged means, fire-rate computation,
+    determinism.
+  - `crates/faultline-stats/src/report/utility_decomposition.rs::tests`
+    (4 tests): elision on empty, full render with static profile,
+    trigger fire-rate sub-table, em-dash for missing terms.
+  - `crates/faultline-types/src/tests.rs` (3 tests): TOML
+    roundtrip for the full profile, legacy scenario loads with
+    `Faction.utility == None`, each `AdaptiveCondition` variant
+    roundtrips through serde.
+
+## Calibration confidence in methodology (Epic N round-two — partial)
+
+R3-3-style polish on Epic N round-one: the `## Methodology &
+Confidence` section now surfaces a per-scenario `Calibration
+confidence` tag — `[H] Pass`, `[M] Marginal`, `[L] Fail` — when the
+scenario declares a `[meta.historical_analogue]` and the run set is
+non-empty. The tag mirrors the per-observation roll-up shown in the
+standalone Calibration section but lives in the methodology
+appendix where the analyst is reading about how to interpret the
+numbers — making the calibration claim load-bearing on the same
+page as the parameter-defensibility claim.
+
+Wired in `crates/faultline-stats/src/report/methodology.rs`. The
+`Methodology` section's render method now reads
+`scenario.meta.historical_analogue` + `summary.calibration` to
+decide whether to emit the tag; the synthetic-disclaimer / no-runs
+paths are still handled by the standalone Calibration section
+above. A new prose paragraph in the appendix explains how
+calibration confidence relates to the parameter-defensibility tag
+in the header — they answer different trust questions and a
+scenario can in principle Pass one and Fail the other.
+
+This closes one of the two round-two N items; the other (5–10
+cleanly-sourced single-event analogues for the bundled scenario
+set) remains deferred per the priority list — single-event analogue
+research is per-scenario work, not a framework change.
+
 ## Property tests (R3-5)
 
 Determinism + seeded RNG is the substrate property tests are designed

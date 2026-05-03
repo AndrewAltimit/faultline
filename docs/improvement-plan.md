@@ -7,10 +7,11 @@ archive.
 
 The plan was originally derived from a three-angle audit (engine
 analytics, frontend/UX, scenario content — ~190 findings). It has
-since been refreshed twice as epics closed and external reviews
-landed. **Last refresh: 2026-05-02** — incorporating the May 2026
-priority review, the game-middleware reframing, and the Epic N
-calibration scaffold landing.
+since been refreshed three times as epics closed and external reviews
+landed. **Last refresh: 2026-05-03** — incorporating the Epic J
+round-one scaffold landing (multi-term utility AI), Epic N round-two
+methodology-section calibration confidence, and R3-2 viz-metadata
+documentation.
 
 ---
 
@@ -66,12 +67,18 @@ The five highest-leverage open items, in order:
    tech-card costs, visualization metadata (`Region.centroid`,
    `Faction.color`), `force_projection`. Closing the gap maintains
    the trust the round-one audit bought.
-5. **Defer Epic J (adaptive AI) and Epic M (belief states) until
+5. ~~**Defer Epic J (adaptive AI) and Epic M (belief states) until
    N is at least scaffolded.** Both are interesting but produce
    more outputs whose calibration is unknown. They compound the
    trust gap rather than closing it. Moving J/M before N is
    shipping interesting machinery on top of a foundation we
-   haven't justified.
+   haven't justified.~~ **Epic J round-one shipped May 2026** —
+   N scaffold (priority 1) shipped first, unblocking J. The
+   round-one scaffold introduces multi-term `Faction.utility`,
+   adaptive triggers, a per-action utility evaluator, and a new
+   `## Utility Decomposition` report section. M (belief states)
+   remains deferred until at least one more round of N (single-
+   event analogues for the bundled scenario set) lands.
 
 R3-3 (decompose `report.rs`) was on the original priority list and
 shipped before this refresh — see the closed-epics list below. The
@@ -166,7 +173,7 @@ work.
 
 ## Status snapshot
 
-**Closed (27):** A (uncertainty), B (counterfactual), C (time +
+**Closed (29):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -185,11 +192,20 @@ adjacency propagation and 5%/tick absorption; closes Epic D
 entirely), G (reference sanitization),
 H round-one (strategy search), H round-two (adversarial
 co-evolution), I round-one (defender-posture optimization), I
-round-two (robustness analysis), K (defender capacity / queue
-dynamics), L (network primitives), N round-one (calibration scaffold
-— `[meta.historical_analogue]` schema, per-observation Pass / Marginal
-/ Fail verdict computation, `## Calibration` report section gating
-on synthetic-vs-calibrated, one bundled archetype), O (schema
+round-two (robustness analysis), J round-one (multi-term utility
+adaptive AI scaffold — `Faction.utility` with seven analyst-facing
+axes, seven `AdaptiveCondition` variants composing multiplicatively
+against base term weights, per-action utility evaluator wired into
+`evaluate_actions` / `evaluate_actions_fog`, per-faction
+`utility_decisions` log + cross-run rollup + `## Utility
+Decomposition` report section, one bundled archetype), K (defender
+capacity / queue dynamics), L (network primitives), N round-one
+(calibration scaffold — `[meta.historical_analogue]` schema,
+per-observation Pass / Marginal / Fail verdict computation, `##
+Calibration` report section gating on synthetic-vs-calibrated, one
+bundled archetype), N round-two item 2 (per-scenario calibration
+confidence tag in the methodology section, complementing the
+parameter-defensibility tag in the header banner), O (schema
 versioning), P sub-item (`faultline-cli explain` — pure-schema "what
 does this scenario actually model?" view), Q (manifest replay), R3-2
 round-one (unread-parameter audit, three highest-leverage
@@ -204,22 +220,30 @@ activation events tracked end-to-end and surfaced in a new
 `## Civilian Activations` report section), R3-2 round-two item 4
 (`TechCard.deployment_cost` / `cost_per_tick` / `coverage_limit`
 wired into engine init, attrition, and combat phases respectively;
-per-faction tech-cost report added), R3-3 (decompose `report.rs`),
-R3-4 (generalize leadership morale cap into `command_effectiveness`
+per-faction tech-cost report added), R3-2 round-two item 5
+(`Region.centroid` / `Faction.color` documented as
+visualization metadata — explicit doc-comment that they have no
+engine effect), R3-3 (decompose `report.rs`), R3-4 (generalize
+leadership morale cap into `command_effectiveness`
 multiplier, separating rank-and-file morale from chain-of-command
 capacity),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** E (UI polish), F (scenario library +
-tech rebalance), J (adaptive AI), M (belief asymmetry), N (reference
-scenario set + per-scenario calibration confidence — round-two;
-framework round-one shipped), P (authoring depth). Epic D is now
-fully closed with the round-three item 4 landing in May 2026.
+tech rebalance), J (adaptive AI — round-one shipped; round-two
+adds belief states, pairs with M), M (belief asymmetry), N
+(reference scenario set — round-two item 1; framework round-one and
+methodology-tag round-two item 2 shipped), P (authoring depth).
+Epic D is now fully closed with the round-three item 4 landing in
+May 2026.
 
-**Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
-round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
-still deferred: visualization metadata, `force_projection`), R3-6
+**Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial; ~30
+existing struct-literal call sites still on the explicit form;
+opportunistic sweep would benefit Epic M field additions), R3-2
+round-two (audit follow-up — items 1 + 2 + 3 + 4 + 5 closed; one
+item still deferred: `ForceUnit.force_projection` drop-or-wire
+decision — leaning toward drop unless an epic calls for it), R3-6
 (decompose `Scenario`).
 
 Detailed writeups for closed epics live in `CLAUDE.md` (which is the
@@ -334,17 +358,34 @@ opponent behavior. This epic adds explicit utility functions and
 Bayesian belief updating so a faction can change strategy mid-run
 in response to what it has observed.
 
-Items: multi-term `Faction.utility` (control / casualties /
-attribution / time-to-objective with weights); per-tick decision
-step (faction selects from action menu via argmax-utility under
-current belief state); Bayesian belief-state over opponent's
-hidden variables; information events update belief states
-asymmetrically; determinism preserved (belief updates use scenario
-seed).
+- [x] **Multi-term `Faction.utility`** (control / casualties_self /
+      casualties_inflicted / attribution_risk / time_to_objective /
+      resource_cost / force_concentration with weights). Shipped
+      May 2026 as round-one. Pure additive composition on top of the
+      existing doctrine-based scoring — scenarios without
+      `[utility]` are bit-identical to legacy. See the
+      "Multi-term utility & adaptive AI" section in `CLAUDE.md`.
+- [x] **Per-tick decision step** that re-scores the AI's action
+      menu via the utility surface. Shipped May 2026 as round-one;
+      the decision step is the existing `tick::decision_phase` with
+      the post-doctrine utility re-scoring layered in.
+- [x] **Adaptive triggers** — declarative re-weighting based on
+      current state (morale, tension, deadline, resources, strength
+      loss, attribution-against-self). Pure functions of state +
+      scenario; matched triggers compose multiplicatively against
+      base term weights. Shipped May 2026 as round-one.
+- [ ] **Bayesian belief-state** over opponent's hidden variables.
+      Round-two work; pairs with Epic M. The round-one utility
+      surface scores against ground-truth state; round-two would
+      shift to scoring against the faction's *believed* state when
+      M lands.
+- [ ] **Information events update belief states asymmetrically.**
+      Round-two; pairs with M.
 
-Status: **deferred until N at least scaffolded** (May 2026 review).
-Largest engine change in the back half of the plan; partition into
-3+ PRs when picked up. Critical for the game-middleware pivot.
+Status: round-one shipped; round-two (belief states) deferred —
+**pairs with Epic M, not unblocked until at least one more round of
+N (single-event analogues for the bundled scenario set) lands.**
+Critical for the game-middleware pivot.
 
 ### Epic M — Information warfare & belief asymmetry
 
@@ -394,13 +435,16 @@ not claim prediction; disciplines the parameter library.
       aggregate analogue rather than a single named event. Each
       single-event addition is per-scenario research work, not a
       framework change.
-- [ ] **Per-scenario "calibration confidence" surfaced alongside the
-      methodology appendix.** Round-two work. The current `##
-      Calibration` section surfaces per-observation source confidence
-      and a per-scenario verdict; rolling the verdict into a
-      methodology-section "calibration confidence" tag (alongside the
-      existing scenario-level `meta.confidence` parameter-defensibility
-      tag) is the next iteration.
+- [x] **Per-scenario "calibration confidence" surfaced alongside the
+      methodology appendix.** Shipped May 2026 as round-two item 2.
+      The methodology section now emits a `Calibration confidence:
+      [H]/[M]/[L] Pass/Marginal/Fail` tag when the scenario declares
+      a `historical_analogue` and the run set is non-empty,
+      complementing the parameter-defensibility tag (`meta.confidence`)
+      in the header banner. The methodology appendix gained a new
+      "Calibration confidence (Epic N)" subsection explaining how the
+      two trust questions differ. See the "Calibration confidence in
+      methodology" section in `CLAUDE.md`.
 
 **Why hardest, retrospectively.** Round one was tractable because the
 framework only requires the schema + the verdict computation + the
@@ -542,9 +586,16 @@ since closed (R3-2 round-one, R3-3); the rest are tracked here.
      rejects three silent-no-op shapes: non-finite or negative cost
      fields, and `coverage_limit = Some(0)`. See the "Unread-parameter
      audit (R3-2 round two — tech-card costs)" section in `CLAUDE.md`.
-  5. `Region.centroid`, `Faction.color`. Visualization metadata
+  5. ~~`Region.centroid`, `Faction.color`. Visualization metadata
      (used by the WASM frontend). Document as such; not silent
-     no-ops by the engine's standards.
+     no-ops by the engine's standards.~~ **Shipped May 2026.** Both
+     fields now carry explicit doc comments identifying them as
+     visualization-only metadata with no engine effect, and noting
+     that engine validation deliberately doesn't constrain their
+     format (an unparseable color or bad centroid renders poorly but
+     doesn't corrupt simulation output). No code changes; the audit
+     was about closing the documentation gap that left analysts
+     wondering whether the engine consumed these fields.
   6. `ForceUnit.force_projection`. Declared but zero scenarios set
      it. Drop-or-wire decision; lean towards drop unless an epic
      calls for it.

@@ -746,6 +746,7 @@ mod tests {
             defender_capacities: BTreeMap::new(),
             leadership: None,
             alliance_fracture: None,
+            utility: None,
         }
     }
 
@@ -1307,6 +1308,7 @@ mod tests {
             calibration: None,
             narrative_dynamics: None,
             displacement_summaries: ::std::collections::BTreeMap::new(),
+            utility_decompositions: BTreeMap::new(),
         }
     }
 
