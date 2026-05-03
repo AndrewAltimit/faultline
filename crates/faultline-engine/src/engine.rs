@@ -8,11 +8,11 @@ use rand_chacha::ChaCha8Rng;
 use faultline_events::EventEvaluator;
 use faultline_geo::{self, GameMap};
 use faultline_types::campaign::BranchCondition;
-use faultline_types::ids::{EventId, FactionId, KillChainId, TechCardId};
+use faultline_types::ids::{EventId, FactionId, KillChainId, RegionId, TechCardId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    DefenderQueueReport, EventRecord, NetworkReport, Outcome, RunResult, StateSnapshot,
-    SupplyPressureReport, TechCostReport, TechDecommissionEvent,
+    DefenderQueueReport, EventRecord, NetworkReport, Outcome, RegionDisplacementReport, RunResult,
+    StateSnapshot, SupplyPressureReport, TechCostReport, TechDecommissionEvent,
 };
 use faultline_types::strategy::FactionState;
 
@@ -123,6 +123,20 @@ impl Engine {
         // Phase 7: Information warfare.
         tick::information_phase(&mut self.state, &self.scenario);
 
+        // Phase 7a: Narrative competition (Epic D round-three item 4).
+        // Decays the persistent narrative store, scores per-faction
+        // information dominance, and applies sympathy / tension nudges.
+        // No-op for scenarios with no `EventEffect::MediaEvent` ever
+        // fired — short-circuits in O(1) when the store is empty.
+        tick::narrative_phase(&mut self.state, &self.scenario);
+
+        // Phase 7a': Displacement flow (Epic D round-three item 4).
+        // Propagates displaced fractions across adjacent regions and
+        // absorbs a fraction back into the resident population. No-op
+        // for scenarios with no `EventEffect::Displacement` and no
+        // civilian segment ever firing `Flee`.
+        tick::displacement_phase(&mut self.state, &self.scenario);
+
         // Capture an escalation-metric snapshot *before* the campaign
         // phase so a phase that resolves this tick reads `sustained_ticks`
         // counts that include the current tick. The snapshot is dropped
@@ -222,6 +236,8 @@ impl Engine {
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                     civilian_activations: self.state.civilian_activations.clone(),
                     tech_costs: collect_tech_cost_reports(&self.state),
+                    narrative_events: self.state.narrative_events.clone(),
+                    displacement_reports: collect_displacement_reports(&self.state),
                 });
             }
 
@@ -247,6 +263,8 @@ impl Engine {
                     supply_pressure_reports: collect_supply_pressure_reports(&self.state),
                     civilian_activations: self.state.civilian_activations.clone(),
                     tech_costs: collect_tech_cost_reports(&self.state),
+                    narrative_events: self.state.narrative_events.clone(),
+                    displacement_reports: collect_displacement_reports(&self.state),
                 });
             }
         }
@@ -429,6 +447,11 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         initial_faction_strengths,
         fracture_events: Vec::new(),
         civilian_activations: Vec::new(),
+        narratives: BTreeMap::new(),
+        narrative_events: Vec::new(),
+        narrative_dominance_ticks: BTreeMap::new(),
+        narrative_peak_dominance: BTreeMap::new(),
+        displacement: BTreeMap::new(),
     })
 }
 
@@ -591,6 +614,36 @@ fn collect_supply_pressure_reports(
                 mean_pressure: mean,
                 min_pressure: fs.supply_pressure_min,
                 pressured_ticks: fs.supply_pressure_pressured_ticks,
+            },
+        );
+    }
+    out
+}
+
+/// Convert the per-region displacement runtime state into the
+/// post-run [`RegionDisplacementReport`] map (Epic D round-three item
+/// 4 — refugee / displacement flows). Only emits a row for regions
+/// that ever had a non-zero displaced fraction (`peak_displaced > 0`)
+/// across the run; pristine regions are elided so the outer map is
+/// empty for legacy scenarios that don't engage the mechanic.
+fn collect_displacement_reports(
+    state: &SimulationState,
+) -> BTreeMap<RegionId, RegionDisplacementReport> {
+    let mut out = BTreeMap::new();
+    for (rid, st) in &state.displacement {
+        if st.peak_displaced <= 0.0 {
+            continue;
+        }
+        out.insert(
+            rid.clone(),
+            RegionDisplacementReport {
+                region: rid.clone(),
+                stressed_ticks: st.stressed_ticks,
+                peak_displaced: st.peak_displaced,
+                terminal_displaced: st.current_displaced,
+                total_inflow: st.total_inflow,
+                total_outflow: st.total_outflow,
+                total_absorbed: st.total_absorbed,
             },
         );
     }

@@ -158,6 +158,11 @@ fn make_ai_test_state() -> SimulationState {
         initial_faction_strengths: BTreeMap::new(),
         fracture_events: vec![],
         civilian_activations: vec![],
+        narratives: BTreeMap::new(),
+        narrative_events: vec![],
+        narrative_dominance_ticks: BTreeMap::new(),
+        narrative_peak_dominance: BTreeMap::new(),
+        displacement: BTreeMap::new(),
     }
 }
 

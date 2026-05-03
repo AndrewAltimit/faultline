@@ -653,6 +653,8 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         }
     }
 

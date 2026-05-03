@@ -883,19 +883,21 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
         }
     }
 
-    // Network-aware event effects. Each NetworkEdgeCapacity
-    // / NetworkNodeDisrupt / NetworkInfiltrate effect must reference
-    // a declared network, and within it a declared edge / node /
-    // faction. Catching this at load time turns a silent runtime
-    // no-op (the tick handler skips unknown ids) into a loud
-    // configuration error.
+    // Reference-checked event effects: NetworkEdgeCapacity /
+    // NetworkNodeDisrupt / NetworkInfiltrate must reference a declared
+    // network, edge / node / faction; MediaEvent must declare a
+    // non-empty narrative key with credibility / reach in `[0, 1]` and
+    // a known `favors` faction (Epic D round-three item 4); Displacement
+    // must reference a declared region with magnitude in `[0, 1]`.
+    // Catching these at load time turns silent runtime no-ops into
+    // loud configuration errors.
     for (eid, def) in &scenario.events {
         for effect in &def.effects {
-            validate_network_effect(scenario, eid, effect)?;
+            validate_event_effect(scenario, eid, effect)?;
         }
         for option in &def.defender_options {
             for effect in &option.modifier_effects {
-                validate_network_effect(scenario, eid, effect)?;
+                validate_event_effect(scenario, eid, effect)?;
             }
         }
     }
@@ -1020,7 +1022,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     Ok(())
 }
 
-fn validate_network_effect(
+fn validate_event_effect(
     scenario: &Scenario,
     eid: &faultline_types::ids::EventId,
     effect: &faultline_types::events::EventEffect,
@@ -1101,6 +1103,74 @@ fn validate_network_effect(
             }
             if !scenario.factions.contains_key(faction) {
                 return Err(ScenarioError::UnknownFaction(faction.clone()));
+            }
+        },
+        EventEffect::MediaEvent {
+            narrative,
+            credibility,
+            reach,
+            favors,
+        } => {
+            // Epic D round-three item 4 — info-op narrative competition.
+            // Reject silent-no-op shapes at scenario load: empty narrative
+            // (the runtime handler skips it), non-finite or out-of-range
+            // credibility / reach (the runtime clamp would silently mask
+            // an authoring typo), unknown `favors` faction (the dominance
+            // attribution would silently miss).
+            if narrative.is_empty() {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `MediaEvent` with an empty `narrative` string; \
+                     the runtime handler treats empty narrative as a no-op, so this is silently \
+                     dropped. Either provide a non-empty narrative key or remove the effect."
+                )));
+            }
+            if !credibility.is_finite() || !(0.0..=1.0).contains(credibility) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("event {eid} MediaEvent({narrative}) credibility"),
+                    value: *credibility,
+                    expected: "[0.0, 1.0] and finite".into(),
+                });
+            }
+            if !reach.is_finite() || !(0.0..=1.0).contains(reach) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("event {eid} MediaEvent({narrative}) reach"),
+                    value: *reach,
+                    expected: "[0.0, 1.0] and finite".into(),
+                });
+            }
+            if let Some(fid) = favors
+                && !scenario.factions.contains_key(fid)
+            {
+                return Err(ScenarioError::UnknownFaction(fid.clone()));
+            }
+        },
+        EventEffect::Displacement { region, magnitude } => {
+            // Epic D round-three item 4 — refugee / displacement flows.
+            // Reject silent-no-op shapes at scenario load: unknown region
+            // (the runtime handler skips it), non-finite / negative
+            // magnitude (the clamp turns it into 0, silently dropping
+            // the effect), zero magnitude (the runtime handler skips it
+            // — same shape as the others).
+            if !scenario.map.regions.contains_key(region) {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `Displacement` against unknown region `{region}`; \
+                     the runtime handler skips unknown regions, so this is silently dropped. \
+                     Either reference a declared region or remove the effect."
+                )));
+            }
+            if !magnitude.is_finite() || !(0.0..=1.0).contains(magnitude) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("event {eid} Displacement({region}) magnitude"),
+                    value: *magnitude,
+                    expected: "[0.0, 1.0] and finite".into(),
+                });
+            }
+            if *magnitude == 0.0 {
+                return Err(ScenarioError::Custom(format!(
+                    "event `{eid}` declares a `Displacement` against `{region}` with \
+                     `magnitude = 0.0`; the runtime handler treats zero magnitude as a no-op. \
+                     Either set a positive magnitude or remove the effect."
+                )));
             }
         },
         _ => {},

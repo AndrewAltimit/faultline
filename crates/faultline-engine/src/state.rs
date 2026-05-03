@@ -108,6 +108,42 @@ pub struct SimulationState {
     /// activation threshold during the run.
     #[serde(default)]
     pub civilian_activations: Vec<faultline_types::stats::CivilianActivationEvent>,
+    /// Live narrative store (Epic D round-three item 4 — info-op
+    /// narrative competition). Keyed by the narrative string so a
+    /// repeated `EventEffect::MediaEvent` with the same `narrative`
+    /// reinforces the existing entry instead of creating a new one.
+    /// Empty when the scenario authors no `MediaEvent` effects or none
+    /// have fired yet.
+    #[serde(default)]
+    pub narratives: BTreeMap<String, NarrativeRuntimeState>,
+    /// Log of every narrative firing / reinforcement, in emission
+    /// order. Surfaced post-run on
+    /// [`faultline_types::stats::RunResult::narrative_events`].
+    #[serde(default)]
+    pub narrative_events: Vec<faultline_types::stats::NarrativeEvent>,
+    /// Per-faction running counter of ticks during which this faction
+    /// owned the strongest (`strength × credibility`) narrative — i.e.
+    /// the narrative phase attributed information-dominance to them.
+    /// Aggregated across runs into
+    /// `NarrativeDynamics.faction_summaries.dominance_ticks`. Empty when
+    /// no narrative ever fires.
+    #[serde(default)]
+    pub narrative_dominance_ticks: BTreeMap<FactionId, u32>,
+    /// Per-faction running maximum of the narrative phase's
+    /// information-dominance attribution. Captured for the
+    /// `mean_peak_information_dominance` rollup.
+    #[serde(default)]
+    pub narrative_peak_dominance: BTreeMap<FactionId, f64>,
+    /// Per-region displacement runtime state (Epic D round-three item
+    /// 4 — refugee / displacement flows). Keyed by `RegionId`. A region
+    /// with `current_displaced > 0` at any tick stays in the map for
+    /// the rest of the run so the report layer can capture
+    /// `peak_displaced` and the cumulative inflow / outflow / absorbed
+    /// flows. Empty when the scenario authors no
+    /// `EventEffect::Displacement` and no civilian segment fires
+    /// `Flee`.
+    #[serde(default)]
+    pub displacement: BTreeMap<RegionId, RegionDisplacementState>,
 }
 
 /// Per-run runtime state for one declared [`Network`](
@@ -262,6 +298,61 @@ impl DefenderQueueState {
         self.total_serviced += u64::from(to_serve_u32);
         to_serve_u32
     }
+}
+
+/// Per-narrative runtime state for the info-op narrative-competition
+/// mechanic (Epic D round-three item 4).
+///
+/// One entry per active narrative key. Strength accumulates with every
+/// `EventEffect::MediaEvent` reinforcement (clamped to `[0, 1]`) and
+/// decays each tick in `narrative_phase`. The decay rate is
+/// `BASE_NARRATIVE_DECAY` discounted by reach (high-reach narratives
+/// fade slower because their saturation in the media landscape
+/// resists displacement); see `tick::narrative_phase` for the
+/// canonical decay formula.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NarrativeRuntimeState {
+    pub favors: Option<FactionId>,
+    /// Author-supplied credibility, in `[0, 1]`. Tracked because the
+    /// dominance scoring multiplies strength by credibility, so a
+    /// low-credibility narrative needs to dominate by reach alone.
+    pub credibility: f64,
+    /// Author-supplied reach, in `[0, 1]`. Higher reach reinforces
+    /// faster and decays slower.
+    pub reach: f64,
+    /// Cumulative strength in `[0, 1]`. The narrative is dropped from
+    /// the live store once this falls below `NARRATIVE_DROP_EPSILON`.
+    pub strength: f64,
+    pub first_seen_tick: u32,
+    pub last_reinforced_tick: u32,
+    /// Cumulative firings (introductions + reinforcements). Surfaced
+    /// to the cross-run summary so the analyst can read "how often did
+    /// this narrative get pushed?".
+    pub firings: u32,
+    /// Maximum strength reached at any tick — captures the per-run
+    /// peak for the cross-run rollup.
+    pub peak_strength: f64,
+}
+
+/// Per-region displacement runtime state for the refugee /
+/// displacement-flow mechanic (Epic D round-three item 4).
+///
+/// `current_displaced` tracks the live displaced fraction of the
+/// region's population in `[0, 1]`. The cumulative `total_*` flows
+/// support the cross-run summary: a region with high inflow but small
+/// terminal displaced went through a lot of churn (assimilation +
+/// onward propagation), while a region with high terminal displaced
+/// is still under stress at run end.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RegionDisplacementState {
+    pub current_displaced: f64,
+    pub peak_displaced: f64,
+    pub total_inflow: f64,
+    pub total_outflow: f64,
+    pub total_absorbed: f64,
+    /// Number of ticks where `current_displaced > 0`. Captures the
+    /// duration of stress separately from the magnitude.
+    pub stressed_ticks: u32,
 }
 
 /// One row of the rolling metric history. Captured at the end of each

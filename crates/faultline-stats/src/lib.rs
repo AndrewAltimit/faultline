@@ -12,10 +12,12 @@ pub mod civilian_activations;
 pub mod coevolve;
 pub mod counterfactual;
 pub mod delta;
+pub mod displacement;
 pub mod explain;
 pub mod manifest;
 pub(crate) mod markdown;
 pub mod morris;
+pub mod narrative_dynamics;
 pub mod network_metrics;
 pub mod report;
 pub mod robustness;
@@ -146,6 +148,8 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             civilian_activation_summaries: BTreeMap::new(),
             tech_cost_summaries: BTreeMap::new(),
             calibration: None,
+            narrative_dynamics: None,
+            displacement_summaries: BTreeMap::new(),
         };
     }
 
@@ -341,6 +345,20 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // engine.
     let calibration = calibration::compute_calibration(scenario, runs, &win_rates);
 
+    // Narrative-competition rollup (Epic D round-three item 4). Pure
+    // post-processing of per-run `narrative_events` logs and
+    // dominance counters; preserves determinism. `None` when no run
+    // produced any narrative event — the report section emits no
+    // section header in that case.
+    let narrative_dynamics = narrative_dynamics::compute_narrative_dynamics(runs);
+
+    // Displacement-flow rollup (Epic D round-three item 4). Pure
+    // post-processing of per-run `displacement_reports`; preserves
+    // determinism. Empty when no run had any non-zero displaced
+    // fraction in any region — the report section elides on that
+    // signal.
+    let displacement_summaries = displacement::compute_displacement_summaries(runs);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -361,6 +379,8 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         civilian_activation_summaries,
         tech_cost_summaries,
         calibration,
+        narrative_dynamics,
+        displacement_summaries,
     }
 }
 
@@ -1151,6 +1171,8 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1351,6 +1373,8 @@ mod tests {
             supply_pressure_reports: std::collections::BTreeMap::new(),
             civilian_activations: Vec::new(),
             tech_costs: std::collections::BTreeMap::new(),
+            narrative_events: Vec::new(),
+            displacement_reports: std::collections::BTreeMap::new(),
         }
     }
 

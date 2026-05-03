@@ -166,7 +166,7 @@ work.
 
 ## Status snapshot
 
-**Closed (26):** A (uncertainty), B (counterfactual), C (time +
+**Closed (27):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -175,7 +175,14 @@ interdiction phase), D round-three item 3 (multi-front resource
 contention — `DefenderCapacity.overflow_to` /
 `overflow_threshold` extends the Epic K single-queue silo into a
 declarative cross-role escalation chain with conservation
-guarantees on the spillover counters), G (reference sanitization),
+guarantees on the spillover counters), D round-three item 4
+(narrative competition + refugee / displacement flows —
+persistent `MediaEvent`-driven narrative store with reach-
+discounted decay and per-faction dominance scoring; new
+`EventEffect::Displacement` variant paired with civilian
+`Flee` actions drives per-region displacement with 10%/tick
+adjacency propagation and 5%/tick absorption; closes Epic D
+entirely), G (reference sanitization),
 H round-one (strategy search), H round-two (adversarial
 co-evolution), I round-one (defender-posture optimization), I
 round-two (robustness analysis), K (defender capacity / queue
@@ -204,12 +211,11 @@ capacity),
 R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
-**Deferred / open epics:** D round-three (1 remaining item — info-op
-narrative competition + refugee flows; lower priority, lean game-
-design rather than analytical), E (UI polish), F (scenario library +
+**Deferred / open epics:** E (UI polish), F (scenario library +
 tech rebalance), J (adaptive AI), M (belief asymmetry), N (reference
 scenario set + per-scenario calibration confidence — round-two;
-framework round-one shipped), P (authoring depth).
+framework round-one shipped), P (authoring depth). Epic D is now
+fully closed with the round-three item 4 landing in May 2026.
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial), R3-2
 round-two (audit follow-up — items 1 + 2 + 3 + 4 closed; two items
@@ -224,12 +230,16 @@ PR descriptions on `main`. This doc no longer carries them.
 
 ## Open epics
 
-### Epic D round three — engine model depth (remaining)
+### Epic D round three — engine model depth (closed May 2026)
 
 Round one shipped `OrAny`, the environment schedule, and leadership
 decapitation. Round two added coalition fracture (analytical
-accounting only). Round three opens with diplomacy behavioral
-coupling for combat and AI; three items remain.
+accounting only). Round three closed Epic D entirely with: diplomacy
+behavioral coupling for combat + AI; supply-network interdiction;
+multi-front resource contention with cross-role escalation; and
+narrative competition + refugee / displacement flows. Detailed
+per-item writeups live in `CLAUDE.md`. The four checked items below
+are kept here as a closing manifest of what shipped.
 
 - [x] **Behavioral coupling for diplomacy (combat + AI).** Shipped
       May 2026. Mutually-Allied pairs skip combat; Cooperative
@@ -269,10 +279,21 @@ coupling for combat and AI; three items remain.
       (3-tier SOC: tier-1 triage → tier-2 IR → tier-3 forensics).
       See the "Multi-front resource contention" section in
       `CLAUDE.md`.
-- [ ] Info-op narrative competition so `MediaEvent` isn't
-      fire-and-forget; refugee / displacement flows with cross-regional
-      propagation. Lower priority — both lean game-design rather than
-      analytical.
+- [x] **Info-op narrative competition + refugee / displacement flows.**
+      Shipped May 2026. Persistent narrative store with per-tick decay
+      (reach-discounted), per-faction information-dominance scoring, and
+      sympathy / tension nudges; new `EventEffect::Displacement` variant
+      paired with the existing civilian-segment `Flee` action drives a
+      per-region displacement store with cross-regional propagation
+      (10%/tick split across `Region.borders`) and absorption (5%/tick).
+      Six validation rejections cover the silent-no-op shapes (empty
+      narrative, out-of-range credibility / reach, unknown faction,
+      unknown region, negative / NaN / zero magnitude). New `## Narrative
+      Dynamics` and `## Displacement Flows` report sections gate on
+      per-mechanic data presence. Bundled archetype:
+      `scenarios/narrative_competition_demo.toml`. See the "Narrative
+      competition + displacement flows" section in `CLAUDE.md`. Closes
+      Epic D entirely.
 
 ### Epic E — UI identity & analytical density
 
