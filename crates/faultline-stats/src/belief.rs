@@ -108,11 +108,10 @@ pub fn compute_belief_summaries(
             } else {
                 0.0
             };
-            // Per-run mean force-belief confidence (round-two). Defaults
-            // to 1.0 when there were force beliefs but no confidence was
-            // recorded (legacy snapshot with the field defaulted to 0)
-            // would read 0; with the engine populating it, round-one
-            // fidelity yields ≈ 1.0.
+            // Per-run mean force-belief confidence (round-two). Evaluates to
+            // 0.0 on legacy snapshots where `force_confidence_sum` is missing
+            // (serde defaults the field to 0); for runs populated by the
+            // engine, round-one fidelity yields ≈ 1.0.
             let conf_mean = if report.force_belief_ticks > 0 {
                 report.force_confidence_sum / f64::from(report.force_belief_ticks)
             } else {
