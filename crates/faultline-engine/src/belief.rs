@@ -397,10 +397,22 @@ fn observe_into_belief(
         BeliefScalar::fresh(self_state.resources, tick),
     );
 
-    // Refresh visible regions (control attribution).
+    // Refresh visible regions (control attribution). Own-controlled
+    // regions are a fact about self, so they stay perfect (confidence
+    // 1.0, `DirectObservation`) regardless of weighting — mirroring the
+    // own-force guard below. Only foreign-controlled (or contested)
+    // regions are intelligence-capped under weighting.
     for rid in &visible {
         let controller = state.region_control.get(rid).cloned().unwrap_or(None);
-        refresh_region_belief(belief, rid, controller, weighting, obs_conf, tick);
+        let own_region = controller.as_ref() == Some(faction_id);
+        refresh_region_belief(
+            belief,
+            rid,
+            controller,
+            weighting && !own_region,
+            obs_conf,
+            tick,
+        );
     }
 
     // Refresh visible foreign forces + all own forces. Visibility-
@@ -463,9 +475,11 @@ fn faction_intelligence(scenario: &Scenario, faction_id: &FactionId) -> f64 {
 /// `obs_conf` (intelligence-derived). When the prior belief is about
 /// the *same location*, the new estimate is a precision-weighted
 /// (Bayesian) blend of prior and observation, and the confidence
-/// combines as independent evidence (`1 - (1-a)(1-b)`, capped at
-/// `0.99`). When the force has moved (or there is no usable prior),
-/// the observation establishes a fresh estimate at `obs_conf`. Any
+/// settles at `obs_conf` — the observer's intelligence is a hard
+/// ceiling, so repeated observation of the same hidden state does not
+/// manufacture certainty (see [`blend`]). When the force has moved (or
+/// there is no usable prior), the observation establishes a fresh
+/// estimate at `obs_conf`. Any
 /// foreign-force belief touched under weighting is tagged
 /// [`BeliefSource::Inferred`] — under intelligence weighting nothing
 /// about an opponent is ever "perfect direct observation". A prior
@@ -525,9 +539,7 @@ fn refresh_force_belief(
 /// Round-two (`weighting = true`): region control is more observable
 /// than force strength (flags, checkpoints), so the observed
 /// controller is always adopted, but confidence is intelligence-capped
-/// — reinforced toward `0.99` when the observation agrees with the
-/// prior, otherwise established at `obs_conf`. Tagged
-/// [`BeliefSource::Inferred`].
+/// — established at `obs_conf`. Tagged [`BeliefSource::Inferred`].
 fn refresh_region_belief(
     belief: &mut FactionBelief,
     region: &RegionId,
@@ -567,14 +579,18 @@ fn refresh_region_belief(
 /// entirely to the fresh observation, while a low-intelligence one
 /// moves only partway — so its belief *lags* a changing ground truth,
 /// the analytical payoff that makes belief error scale with
-/// intelligence. The resulting confidence is exactly `obs_c`: the
-/// observer's capability is a hard ceiling, so repeated observation
-/// does not manufacture certainty beyond what the intelligence stat
-/// supports (no false `1.0`).
+/// intelligence. The resulting confidence is the clamped gain (`obs_c`
+/// clamped to `[0, 1]`): the observer's capability is a hard ceiling,
+/// so repeated observation does not manufacture certainty beyond what
+/// the intelligence stat supports (no false `1.0`).
 fn blend(prior_v: f64, obs_v: f64, obs_c: f64) -> (f64, f64) {
     let gain = obs_c.clamp(0.0, 1.0);
     let value = prior_v + gain * (obs_v - prior_v);
-    (value, obs_c)
+    // Return the clamped `gain` (not raw `obs_c`) so the confidence is
+    // always in `[0, 1]` and stays consistent with the gain used for
+    // the value update, even if a caller ever passes an out-of-range
+    // `obs_c`.
+    (value, gain)
 }
 
 /// Apply an [`EventEffect::AmbientIntel`] radiation: every faction
@@ -641,11 +657,14 @@ pub fn apply_ambient_intel(
                 faction: fid.clone(),
                 ..Default::default()
             });
+        // Own-controlled regions stay perfect (a fact about self),
+        // mirroring the own-region guard in `observe_into_belief`.
+        let own_region = controller.as_ref() == Some(&fid);
         refresh_region_belief(
             belief,
             region,
             controller.clone(),
-            weighting,
+            weighting && !own_region,
             obs_conf,
             tick,
         );
