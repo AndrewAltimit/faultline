@@ -1,0 +1,353 @@
+# Recon Fidelity Demo — Epic M / J round-two archetype
+#
+# Demonstrates the round-two belief mechanics end-to-end:
+#
+#   1. Intelligence-weighted observation fidelity
+#      (`simulation.belief_model.intelligence_weighting = true`).
+#      Direct observation of an opponent is no longer perfect — each
+#      faction's observation confidence is capped by its `intelligence`
+#      stat, and new sightings are Bayesian-blended with the prior
+#      belief (tagged `Inferred`). A high-intelligence faction tracks
+#      ground truth tightly; a low-intelligence one lags it.
+#
+#   2. Asymmetric, proximity-driven information (`EventEffect::AmbientIntel`).
+#      An observable field event at a contested region radiates
+#      intelligence to *every* faction with a force in or adjacent to
+#      it, at fidelity scaled by each listener's `intelligence`.
+#
+#   3. Belief-driven utility (Epic J round-two). Because belief mode
+#      runs with `intelligence_weighting`, the AI's utility evaluator
+#      discounts opponent-strength reads by their belief confidence —
+#      a faction treats what it isn't sure of as a smaller threat.
+#
+# Two factions of deliberately lopsided intelligence contest the two
+# middle regions of a 2x2 grid. `recon_corps` (intelligence 0.9)
+# should show high mean belief confidence and low force-strength
+# error; `fog_division` (intelligence 0.2) should show the opposite.
+# The report's `## Belief Asymmetry` section gains a "Belief fidelity
+# (round-two)" sub-section surfacing the per-faction confidence,
+# ambient-intel pickups, and terminal `Inferred` belief counts.
+#
+# Run with:
+#   cargo run -p faultline-cli -- scenarios/recon_fidelity_demo.toml -n 16
+
+[meta]
+schema_version = 1
+name = "Recon Fidelity — Belief Round-Two Demo"
+description = """
+Two-faction archetype for the round-two belief model. Lopsided
+`intelligence` stats (0.9 vs 0.2) drive intelligence-weighted
+observation fidelity and Bayesian belief blending; repeatable
+`AmbientIntel` events radiate asymmetric field intelligence about the
+contested middle regions. The AI's utility evaluator consumes the
+resulting uncertain beliefs (confidence-discounted threat reads). The
+report's `## Belief Asymmetry` section surfaces a round-two fidelity
+sub-section contrasting the high- and low-intelligence factions.
+"""
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["belief", "fog-of-war", "intelligence", "info-ops", "epic-m", "epic-j", "round-two"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500000
+urbanization = 0.5
+initial_control = "recon_corps"
+strategic_value = 0.4
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East (Contested)"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.8
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West (Contested)"
+population = 500000
+urbanization = 0.5
+strategic_value = 0.8
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500000
+urbanization = 0.5
+initial_control = "fog_division"
+strategic_value = 0.4
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.recon_corps]
+id = "recon_corps"
+name = "Recon Corps — High Intelligence"
+description = "Well-resourced ISR faction; observes opponents near-perfectly (intelligence = 0.9)."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 120.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.9
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.recon_corps.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.recon_corps.forces.recon_infantry]
+id = "recon_infantry"
+name = "Recon 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.recon_corps.forces.recon_armor]
+id = "recon_armor"
+name = "Recon Armored Column"
+unit_type = "Armor"
+region = "north_west"
+strength = 90.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.recon_corps.utility]
+# Control-seeking aggressor: pushes toward the high-value contested
+# middle regions. With round-two confidence weighting active, its
+# accurate (high-confidence) beliefs mean its threat reads are barely
+# discounted — it commits decisively.
+[factions.recon_corps.utility.terms]
+Control = 2.0
+CasualtiesInflicted = 1.0
+CasualtiesSelf = 0.3
+TimeToObjective = 0.8
+ResourceCost = 0.1
+
+[[factions.recon_corps.utility.triggers]]
+id = "deadline_pressure"
+description = "Past the halfway mark, recon corps doubles urgency on TimeToObjective and Control."
+[factions.recon_corps.utility.triggers.condition]
+kind = "TickFraction"
+fraction = 0.5
+[factions.recon_corps.utility.triggers.adjustments]
+TimeToObjective = 2.0
+Control = 1.5
+
+[factions.fog_division]
+id = "fog_division"
+name = "Fog Division — Low Intelligence"
+description = "Poorly-equipped faction operating largely blind; observes opponents at low confidence (intelligence = 0.2)."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.75
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.2
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.fog_division.faction_type]
+kind = "Military"
+branch = "Army"
+
+[factions.fog_division.forces.fog_infantry]
+id = "fog_infantry"
+name = "Fog 1st Infantry"
+unit_type = "Infantry"
+region = "south_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.fog_division.forces.fog_militia]
+id = "fog_militia"
+name = "Fog Militia Battalion"
+unit_type = "Infantry"
+region = "south_east"
+strength = 80.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.fog_division.utility]
+# Casualty-averse defender. With round-two confidence weighting, its
+# low-confidence beliefs about recon_corps' strength get heavily
+# discounted — it systematically *underestimates* the threat it can't
+# clearly see, an emergent consequence of poor intelligence.
+[factions.fog_division.utility.terms]
+CasualtiesSelf = 2.0
+Control = 0.6
+ForceConcentration = 0.5
+TimeToObjective = 0.2
+ResourceCost = 0.4
+
+[[factions.fog_division.utility.triggers]]
+id = "panic"
+description = "When effective morale slips below 0.4, fog division further doubles CasualtiesSelf weight."
+[factions.fog_division.utility.triggers.condition]
+kind = "MoraleBelow"
+threshold = 0.4
+[factions.fog_division.utility.triggers.adjustments]
+CasualtiesSelf = 2.0
+
+# -- Technology (none) ------------------------------------------------------
+
+[technology]
+
+# -- Political Climate (minimal) -------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.4
+disinformation_susceptibility = 0.4
+state_control = 0.2
+social_media_penetration = 0.5
+internet_availability = 0.9
+
+# -- Events: asymmetric field intelligence ----------------------------------
+
+# From tick 2 onward, an observable engagement at the contested
+# North-East region radiates field intelligence every tick. Both
+# factions border North-East, so both pick it up — but `recon_corps`
+# (intelligence 0.9) integrates it at high confidence while
+# `fog_division` (intelligence 0.2) gets only a low-confidence
+# glimpse. Repeatable so the radiation is sustained across the run.
+[events.ne_field_intel]
+id = "ne_field_intel"
+name = "North-East Field Intelligence"
+description = "Sustained activity at the contested North-East region radiates intelligence to nearby forces."
+probability = 1.0
+repeatable = true
+
+[[events.ne_field_intel.conditions]]
+condition = "TickAtLeast"
+tick = 2
+
+[[events.ne_field_intel.effects]]
+effect = "AmbientIntel"
+region = "north_east"
+
+# Likewise for the South-West contested region.
+[events.sw_field_intel]
+id = "sw_field_intel"
+name = "South-West Field Intelligence"
+description = "Sustained activity at the contested South-West region radiates intelligence to nearby forces."
+probability = 1.0
+repeatable = true
+
+[[events.sw_field_intel.conditions]]
+condition = "TickAtLeast"
+tick = 2
+
+[[events.sw_field_intel.effects]]
+effect = "AmbientIntel"
+region = "south_west"
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 40
+monte_carlo_runs = 16
+fog_of_war = false
+snapshot_interval = 0
+seed = 11
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# Belief-asymmetry model with round-two intelligence weighting enabled.
+# Without `intelligence_weighting = true` this scenario would run on
+# round-one fidelity (perfect direct observation) and the AmbientIntel
+# events would refresh beliefs at confidence 1.0 regardless of who is
+# listening — defeating the point of the demo.
+[simulation.belief_model]
+enabled = true
+intelligence_weighting = true
+force_decay_per_tick = 0.08
+region_decay_per_tick = 0.04
+scalar_decay_per_tick = 0.05
+prune_threshold = 0.05
+snapshot_interval = 0
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.recon_control]
+id = "recon_control"
+name = "Recon Corps Strategic Control"
+faction = "recon_corps"
+
+[victory_conditions.recon_control.condition]
+type = "StrategicControl"
+threshold = 0.75
+
+[victory_conditions.fog_control]
+id = "fog_control"
+name = "Fog Division Strategic Control"
+faction = "fog_division"
+
+[victory_conditions.fog_control.condition]
+type = "StrategicControl"
+threshold = 0.75

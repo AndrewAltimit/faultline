@@ -64,6 +64,14 @@ pub struct EffectiveWeights {
     /// IDs of triggers that fired this phase, in declaration order.
     /// Empty when no trigger matched.
     pub fired_triggers: Vec<String>,
+    /// Round-two (Epic J): discount opponent-strength reads by their
+    /// belief/fog *confidence* when scoring. Derived once per phase
+    /// from `simulation.belief_model.intelligence_weighting` — when the
+    /// round-two belief model runs, the AI reasons against *uncertain*
+    /// beliefs, so an uncertain detection is treated as a
+    /// proportionally smaller threat. `false` (round-one / no belief
+    /// model) preserves face-value summation bit-identically.
+    pub confidence_weighted: bool,
 }
 
 /// Compute the effective utility weights for a faction this phase.
@@ -106,9 +114,16 @@ pub fn effective_weights(
             *entry *= multiplier;
         }
     }
+    let confidence_weighted = scenario
+        .simulation
+        .belief_model
+        .as_ref()
+        .map(|c| c.enabled && c.intelligence_weighting)
+        .unwrap_or(false);
     EffectiveWeights {
         weights,
         fired_triggers,
+        confidence_weighted,
     }
 }
 
@@ -224,7 +239,12 @@ pub fn evaluate_action_utility(
             // strength scores ~0.67 capture probability.
             let own_strength = fs.forces.get(force).map_or(0.0, |f| f.strength);
             let opp_strength = match world_view {
-                Some(wv) => enemy_strength_in_region_fog(wv, faction_id, target_region),
+                Some(wv) => enemy_strength_in_region_fog(
+                    wv,
+                    faction_id,
+                    target_region,
+                    weights.confidence_weighted,
+                ),
                 None => enemy_strength_in_region(state, faction_id, target_region),
             };
             let p_capture = if own_strength + opp_strength <= f64::EPSILON {
@@ -281,7 +301,13 @@ pub fn evaluate_action_utility(
             // compress to zero (defending an unthreatened region is
             // wasted attention).
             let threat = match world_view {
-                Some(wv) => enemy_strength_in_adjacent_fog(wv, faction_id, region, map),
+                Some(wv) => enemy_strength_in_adjacent_fog(
+                    wv,
+                    faction_id,
+                    region,
+                    map,
+                    weights.confidence_weighted,
+                ),
                 None => enemy_strength_in_adjacent(state, faction_id, region, map),
             };
             let own_strength = fs.forces.get(force).map_or(0.0, |f| f.strength);
@@ -460,6 +486,7 @@ fn enemy_strength_in_region_fog(
     world_view: &FactionWorldView,
     faction_id: &FactionId,
     region: &faultline_types::ids::RegionId,
+    confidence_weighted: bool,
 ) -> f64 {
     let mut sum = 0.0;
     for df in &world_view.detected_forces {
@@ -469,7 +496,13 @@ fn enemy_strength_in_region_fog(
         if df.region != *region {
             continue;
         }
-        sum += df.estimated_strength;
+        // Round-two: discount uncertain detections by their confidence
+        // so the AI treats what it isn't sure of as a smaller threat.
+        if confidence_weighted {
+            sum += df.estimated_strength * df.confidence;
+        } else {
+            sum += df.estimated_strength;
+        }
     }
     sum
 }
@@ -496,11 +529,12 @@ fn enemy_strength_in_adjacent_fog(
     faction_id: &FactionId,
     region: &faultline_types::ids::RegionId,
     map: &GameMap,
+    confidence_weighted: bool,
 ) -> f64 {
     let neighbors = adjacent_regions(region, map);
     let mut sum = 0.0;
     for n in &neighbors {
-        sum += enemy_strength_in_region_fog(world_view, faction_id, n);
+        sum += enemy_strength_in_region_fog(world_view, faction_id, n, confidence_weighted);
     }
     sum
 }

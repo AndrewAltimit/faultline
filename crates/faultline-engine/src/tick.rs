@@ -39,6 +39,7 @@ pub struct TickResult {
 pub fn event_phase(
     state: &mut SimulationState,
     scenario: &Scenario,
+    map: &GameMap,
     evaluator: &EventEvaluator,
     rng: &mut impl Rng,
 ) -> Vec<String> {
@@ -60,7 +61,7 @@ pub fn event_phase(
 
         if let Some(effects) = faultline_events::fire_event(def, rng) {
             tracing::info!(event = %eid, "event fired");
-            apply_event_effects(state, scenario, &effects);
+            apply_event_effects(state, scenario, map, &effects);
             fired.push(def.name.clone());
             state.events_fired_this_tick.push(eid.clone());
 
@@ -71,7 +72,7 @@ pub fn event_phase(
             // Follow event chain (depth limit is defense-in-depth for
             // non-repeatable chains; cycles are prevented by DFS in
             // EventEvaluator::new).
-            fire_event_chain(state, scenario, evaluator, rng, def, &mut fired, 10);
+            fire_event_chain(state, scenario, map, evaluator, rng, def, &mut fired, 10);
         }
     }
 
@@ -79,9 +80,11 @@ pub fn event_phase(
 }
 
 /// Follow an event's chain, firing chained events if their conditions are met.
+#[allow(clippy::too_many_arguments)]
 fn fire_event_chain(
     state: &mut SimulationState,
     scenario: &Scenario,
+    map: &GameMap,
     evaluator: &EventEvaluator,
     rng: &mut impl Rng,
     parent: &faultline_types::events::EventDefinition,
@@ -113,7 +116,7 @@ fn fire_event_chain(
 
         if let Some(effects) = faultline_events::fire_event(&chained_def, rng) {
             tracing::info!(event = %chain_id, "chained event fired");
-            apply_event_effects(state, scenario, &effects);
+            apply_event_effects(state, scenario, map, &effects);
             fired.push(chained_def.name.clone());
             state.events_fired_this_tick.push(chain_id.clone());
 
@@ -157,7 +160,12 @@ fn build_sim_state(state: &SimulationState) -> SimState {
 }
 
 /// Apply a list of event effects to the simulation state.
-fn apply_event_effects(state: &mut SimulationState, scenario: &Scenario, effects: &[EventEffect]) {
+fn apply_event_effects(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+    effects: &[EventEffect],
+) {
     for effect in effects {
         match effect {
             EventEffect::TensionShift { delta } => {
@@ -404,6 +412,11 @@ fn apply_event_effects(state: &mut SimulationState, scenario: &Scenario, effects
                 payload,
             } => {
                 crate::belief::apply_intelligence_share(state, scenario, target_faction, payload);
+            },
+            EventEffect::AmbientIntel { region } => {
+                // Round-two — asymmetric, proximity-driven belief
+                // update. No-op when belief mode is disabled.
+                crate::belief::apply_ambient_intel(state, scenario, map, region);
             },
             // Effects that require more complex handling are logged
             // but not fully resolved in this skeleton.

@@ -94,7 +94,11 @@ sections rendered in this fixed order:
     fire rates. Elides when no faction declares a `[utility]` block.
 25. **Belief Asymmetry** — per-faction mean force-strength error,
     deception event counts, and terminal-deceived belief counts.
-    Elides when the scenario does not opt into `belief_model`.
+    Elides when the scenario does not opt into `belief_model`. A
+    round-two **Belief fidelity** sub-section (mean belief confidence,
+    ambient-intel pickups, terminal `Inferred` belief counts) appears
+    only when there is round-two activity (any `AmbientIntel` pickup or
+    `Inferred` belief), keeping round-one scenarios' output unchanged.
 26. **Calibration** — back-testing verdict against a declared
     `[meta.historical_analogue]` (Pass/Marginal/Fail per observation
     plus a roll-up), or a "purely synthetic" disclaimer when no

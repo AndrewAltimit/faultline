@@ -112,6 +112,7 @@ impl Engine {
         let events_fired = tick::event_phase(
             &mut self.state,
             &self.scenario,
+            &self.map,
             &self.event_evaluator,
             &mut self.rng,
         );
@@ -722,24 +723,22 @@ fn collect_belief_accuracy(state: &SimulationState) -> BTreeMap<FactionId, Belie
         let any_activity = counters.force_belief_ticks > 0
             || counters.region_belief_ticks > 0
             || counters.deception_events_received > 0
-            || counters.intel_shares_received > 0;
+            || counters.intel_shares_received > 0
+            || counters.ambient_intel_received > 0;
         if !any_activity {
             continue;
         }
         let belief = state.belief_states.get(fid);
-        let deceived_terminal = belief
-            .map(|b| {
-                u32::try_from(
-                    b.forces
-                        .values()
-                        .filter(|f| {
-                            matches!(f.source, faultline_types::belief::BeliefSource::Deceived)
-                        })
-                        .count(),
-                )
-                .unwrap_or(u32::MAX)
-            })
-            .unwrap_or(0);
+        let count_terminal = |src: faultline_types::belief::BeliefSource| -> u32 {
+            belief
+                .map(|b| {
+                    u32::try_from(b.forces.values().filter(|f| f.source == src).count())
+                        .unwrap_or(u32::MAX)
+                })
+                .unwrap_or(0)
+        };
+        let deceived_terminal = count_terminal(faultline_types::belief::BeliefSource::Deceived);
+        let inferred_terminal = count_terminal(faultline_types::belief::BeliefSource::Inferred);
         out.insert(
             fid.clone(),
             BeliefAccuracyReport {
@@ -751,6 +750,9 @@ fn collect_belief_accuracy(state: &SimulationState) -> BTreeMap<FactionId, Belie
                 deception_events_received: counters.deception_events_received,
                 intel_shares_received: counters.intel_shares_received,
                 deceived_beliefs_terminal: deceived_terminal,
+                force_confidence_sum: counters.force_confidence_sum,
+                ambient_intel_received: counters.ambient_intel_received,
+                inferred_beliefs_terminal: inferred_terminal,
             },
         );
     }

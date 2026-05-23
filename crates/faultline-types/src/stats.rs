@@ -201,6 +201,27 @@ pub struct BeliefAccuracyReport {
     /// resets the source tag, so this counts only *unrefreshed*
     /// deceptions.
     pub deceived_beliefs_terminal: u32,
+    /// Round-two: cumulative per-tick mean force-belief *confidence*
+    /// summed across the ticks counted by `force_belief_ticks`. Divide
+    /// by `force_belief_ticks` for the run-mean confidence. Under
+    /// round-one fidelity (`intelligence_weighting = false`) this is
+    /// `≈ force_belief_ticks` (every observed entry sits at confidence
+    /// 1.0); under intelligence weighting it drops with observer
+    /// intelligence and staleness. `#[serde(default)]` so older
+    /// runtime snapshots without the field deserialize as 0.
+    #[serde(default)]
+    pub force_confidence_sum: f64,
+    /// Round-two: count of [`crate::events::EventEffect::AmbientIntel`]
+    /// radiations this faction picked up across the run (it had a force
+    /// in or adjacent to the radiating region).
+    #[serde(default)]
+    pub ambient_intel_received: u32,
+    /// Round-two: number of force-belief entries tagged
+    /// [`crate::belief::BeliefSource::Inferred`] at run end — beliefs
+    /// the faction held as *estimates under uncertainty* (blended,
+    /// intelligence-weighted) rather than perfect direct observations.
+    #[serde(default)]
+    pub inferred_beliefs_terminal: u32,
 }
 
 /// One captured snapshot of a faction's belief state at a tick (Epic
@@ -832,6 +853,21 @@ pub struct BeliefAsymmetrySummary {
     /// Largest per-run mean force-strength error observed across all
     /// runs — the "worst-case" belief drift for this faction.
     pub max_force_strength_error: f64,
+    /// Round-two: cross-run mean of the per-run mean force-belief
+    /// confidence. `1.0` ≈ perfect direct observation (round-one
+    /// fidelity); lower values reflect intelligence-weighted
+    /// estimation under uncertainty. `#[serde(default)]` for
+    /// backward-compatible summary deserialization.
+    #[serde(default)]
+    pub mean_force_confidence: f64,
+    /// Round-two: cross-run mean count of `AmbientIntel` radiations
+    /// this faction picked up.
+    #[serde(default)]
+    pub mean_ambient_intel: f64,
+    /// Round-two: cross-run mean count of `Inferred`-source force
+    /// beliefs persisting at run end.
+    #[serde(default)]
+    pub mean_terminal_inferred_beliefs: f64,
 }
 
 /// Per-faction utility-decomposition summary across runs (Epic J

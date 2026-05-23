@@ -749,6 +749,7 @@ Tagged enum (`effect = "..."`):
 | `Displacement` (Epic D round-three item 4) | `region`, `magnitude` — adds `magnitude.clamp(0, 1)` displaced fraction to the region. Validation rejects unknown region, non-finite or out-of-range / zero magnitude. |
 | `DeceptionOp` (Epic M round-one) | `source_faction`, `target_faction`, `payload` — plants a false belief in `target_faction`'s persistent `BeliefState`. The payload is a tagged enum (`kind = "..."`); see "DeceptionPayload" below. No-op when `simulation.belief_model.enabled = false`. Validation rejects unknown source / target / payload references and self-targeting. |
 | `IntelligenceShare` (Epic M round-one) | `source_faction`, `target_faction`, `payload` — same shape as `DeceptionOp` but lands as a truthful belief sourced from current ground truth. Models alliance intel sharing, captured prisoners. See "IntelligencePayload" below. |
+| `AmbientIntel` (Epic M / J round-two) | `region` — radiates field intelligence about `region` to every faction with a force in or adjacent to it, at fidelity scaled by each listener's `intelligence` (round-two) or full confidence (round-one). Models an observable field event that nearby actors learn about asymmetrically. No-op when `simulation.belief_model.enabled = false`; validation rejects an unknown `region`. |
 
 #### `DeceptionPayload` variants (`kind = "..."`)
 
@@ -770,9 +771,9 @@ Tagged enum (`effect = "..."`):
 
 ---
 
-## `[simulation.belief_model]` (Epic M round-one)
+## `[simulation.belief_model]` (Epic M round-one; round-two adds `intelligence_weighting`)
 
-Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When `enabled = false` (or the block is omitted entirely), the engine takes the legacy fast path: belief phase short-circuits in O(1), `RunResult.belief_accuracy` / `belief_snapshots` stay empty, and the AI consumes ground truth (or `simulation.fog_of_war`-filtered ground truth, if set). When `enabled = true`, the engine carries a per-faction `BeliefState` updated each tick from current observations, applies decay to unrefreshed entries, and consumes the belief-derived world view in the AI's decision phase. `EventEffect::DeceptionOp` and `EventEffect::IntelligenceShare` are no-ops when belief mode is off.
+Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When `enabled = false` (or the block is omitted entirely), the engine takes the legacy fast path: belief phase short-circuits in O(1), `RunResult.belief_accuracy` / `belief_snapshots` stay empty, and the AI consumes ground truth (or `simulation.fog_of_war`-filtered ground truth, if set). When `enabled = true`, the engine carries a per-faction `BeliefState` updated each tick from current observations, applies decay to unrefreshed entries, and consumes the belief-derived world view in the AI's decision phase. `EventEffect::DeceptionOp`, `IntelligenceShare`, and `AmbientIntel` are no-ops when belief mode is off.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -782,6 +783,7 @@ Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When 
 | `scalar_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.03`. Per-tick confidence decay for scalar beliefs (faction morale, faction resources). |
 | `prune_threshold` | `f64 ∈ [0, 1]` | Default `0.05`. Belief entries with confidence strictly below this are dropped from the persistent state. Set to `0.0` to never prune. |
 | `snapshot_interval` | `u32` | Default `0` (no snapshot stream). When `> 0`, the engine appends one belief-shape snapshot per faction every `N` ticks plus one terminal snapshot. |
+| `intelligence_weighting` | `bool` | Default `false` (round-one fidelity — perfect direct observation). When `true`, foreign observations are capped at an intelligence-derived confidence ceiling and Bayesian-blended with the prior (tagged `Inferred`); own-faction facts stay perfect. Also enables the AI's confidence-weighted threat reads. See [engine-model.md](engine-model.md). |
 
 ```toml
 [simulation.belief_model]
@@ -791,6 +793,7 @@ region_decay_per_tick = 0.02
 scalar_decay_per_tick = 0.03
 prune_threshold = 0.05
 snapshot_interval = 0
+intelligence_weighting = false  # round-two: set true for fog-of-war fidelity
 ```
 
 Validation rejects: non-finite or out-of-`[0, 1]` decay rates / prune threshold, including when `enabled = false` (a typo in a disabled-but-authored block surfaces at load time).
