@@ -11,12 +11,17 @@ of `CLAUDE.md` in the May 2026 docs reorganization).
 
 The plan was originally derived from a three-angle audit (engine
 analytics, frontend/UX, scenario content — ~190 findings). It has
-since been refreshed four times as epics closed and external reviews
-landed. **Last refresh: 2026-05-03** — incorporating the Epic M
-round-one scaffold landing (belief asymmetry & deception), the Epic
-J round-one scaffold (multi-term utility AI), Epic N round-two
-methodology-section calibration confidence, and R3-2 viz-metadata
-documentation.
+since been refreshed five times as epics closed and external reviews
+landed. **Last refresh: 2026-05-23** — incorporating the paired
+Epic J round-two + Epic M round-two landing (intelligence-weighted
+belief fidelity via `belief_model.intelligence_weighting`, the
+Kalman belief blend producing `BeliefSource::Inferred`, the
+network-driven `EventEffect::AmbientIntel`, and belief-driven /
+confidence-discounted utility scoring; bundled
+`recon_fidelity_demo.toml`). Epic J is effectively closed; Epic M
+has only believed-attribution rolls remaining. Prior refresh
+(2026-05-03) covered the Epic M / J round-one scaffolds, Epic N
+round-two methodology calibration confidence, and R3-2 viz-metadata.
 
 ---
 
@@ -88,7 +93,9 @@ The five highest-leverage open items, in order:
    consumption via the existing fog-of-war path, and a new
    `## Belief Asymmetry` report section. Round-two for both
    (Bayesian belief updating from indirect signals, utility scoring
-   against believed state) pairs naturally and remains deferred.
+   against believed state) shipped together May 2026 — see the J /
+   M round-two entries in the closed-epics list. Only M's
+   believed-attribution-roll item remains deferred.
 
 R3-3 (decompose `report.rs`) was on the original priority list and
 shipped before this refresh — see the closed-epics list below. The
@@ -183,7 +190,7 @@ work.
 
 ## Status snapshot
 
-**Closed (30):** A (uncertainty), B (counterfactual), C (time +
+**Closed (32):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -208,7 +215,11 @@ axes, seven `AdaptiveCondition` variants composing multiplicatively
 against base term weights, per-action utility evaluator wired into
 `evaluate_actions` / `evaluate_actions_fog`, per-faction
 `utility_decisions` log + cross-run rollup + `## Utility
-Decomposition` report section, one bundled archetype), K (defender
+Decomposition` report section, one bundled archetype), J round-two
+(belief-driven utility — the utility evaluator scores against the
+intelligence-weighted belief overlay and discounts opponent-strength
+reads by detection confidence via `EffectiveWeights.confidence_weighted`;
+shared `AmbientIntel` event with M round-two), K (defender
 capacity / queue dynamics), L (network primitives), M round-one
 (belief asymmetry scaffold — persistent `BeliefState` per faction
 with observation-driven refresh + per-tick decay, two new
@@ -216,7 +227,15 @@ with observation-driven refresh + per-tick decay, two new
 `BeliefSource` provenance tagging through decay, AI consumption via
 the existing fog-of-war path, per-faction `belief_accuracy` log +
 cross-run `belief_summaries` rollup + `## Belief Asymmetry` report
-section, one bundled archetype `false_flag_demo.toml`),
+section, one bundled archetype `false_flag_demo.toml`), M round-two
+(intelligence-weighted observation fidelity via
+`belief_model.intelligence_weighting` — confidence ceiling
+`observation_confidence(intelligence)` + Kalman belief blend +
+`BeliefSource::Inferred`; network-driven `EventEffect::AmbientIntel`;
+round-two belief-fidelity report sub-section + `force_confidence_sum`
+/ `ambient_intel_received` / `inferred_beliefs_terminal` counters;
+bundled archetype `recon_fidelity_demo.toml`; only believed-attribution
+rolls remain open),
 N round-one (calibration scaffold — `[meta.historical_analogue]`
 schema, per-observation Pass / Marginal / Fail verdict computation,
 `## Calibration` report section gating on synthetic-vs-calibrated,
@@ -248,15 +267,18 @@ R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** E (UI polish), F (scenario library +
-tech rebalance), J (adaptive AI — round-one shipped; round-two
-adds Bayesian belief-state-driven utility scoring, pairs with M
-round-two), M (belief asymmetry — round-one shipped; round-two
-adds Bayesian updating from indirect signals, intelligence-stat
-estimation noise, fabricated-narrative integration with the
-narrative store, pairs with J round-two), N (reference scenario
-set — round-two item 1; framework round-one and methodology-tag
-round-two item 2 shipped), P (authoring depth). Epic D is now
-fully closed with the round-three item 4 landing in May 2026.
+tech rebalance), J (adaptive AI — round-one *and* round-two shipped
+May 2026; round-two added belief-driven utility scoring against
+intelligence-weighted beliefs + confidence-discounted threat reads;
+**Epic J is now effectively closed**), M (belief asymmetry —
+round-one shipped; round-two shipped May 2026 — intelligence-weighted
+observation fidelity + Kalman belief blending + the network-driven
+`AmbientIntel` event; one item still open: believed-attribution
+rolls, a separable kill-chain subsystem; fabricated-narrative
+integration also remains future work), N (reference scenario set —
+round-two item 1; framework round-one and methodology-tag round-two
+item 2 shipped), P (authoring depth). Epic D is now fully closed with
+the round-three item 4 landing in May 2026.
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial; ~30
 existing struct-literal call sites still on the explicit form;
@@ -398,28 +420,27 @@ in response to what it has observed.
       loss, attribution-against-self). Pure functions of state +
       scenario; matched triggers compose multiplicatively against
       base term weights. Shipped May 2026 as round-one.
-- [ ] **Bayesian belief-state** over opponent's hidden variables.
-      Round-two work; pairs with Epic M round-two. Epic M
-      round-one (May 2026) shipped the persistent `BeliefState`
-      substrate that this item plugs into; what remains is wiring
-      the utility evaluator to score against
-      `state.belief_states.get(faction_id)` rather than
-      ground-truth `state.faction_states`. The round-one utility
-      evaluator already takes a `world_view: Option<&FactionWorldView>`
-      argument that's belief-derived when belief mode is enabled —
-      the round-two work is making the utility evaluator's
-      opponent-strength reads consult the belief overlay.
-- [ ] **Information events update belief states asymmetrically.**
-      Round-two; pairs with M round-two. Epic M round-one shipped
-      the unilateral `IntelligenceShare` event variant ("alpha
-      hands bravo a piece of intel"); the round-two pairing is the
-      network-driven form where an event's information value
-      attenuates by `Faction.intelligence` and physical proximity.
+- [x] **Bayesian belief-state** over opponent's hidden variables.
+      Shipped May 2026 as round-two (paired with Epic M round-two).
+      With `simulation.belief_model.intelligence_weighting = true`,
+      foreign beliefs are intelligence-capped and Bayesian-blended,
+      so the belief-derived `FactionWorldView` the utility evaluator
+      consumes via `evaluate_actions_fog` carries *uncertain*
+      opponent state — the utility scoring now reads believed, not
+      ground-truth, strength. The evaluator additionally discounts
+      each detection by its confidence (`EffectiveWeights.confidence_weighted`),
+      so an uncertain detection is a proportionally smaller threat.
+- [x] **Information events update belief states asymmetrically.**
+      Shipped May 2026 as round-two (shared with Epic M round-two).
+      New `EventEffect::AmbientIntel { region }` radiates field
+      intelligence to every faction with a force in or adjacent to
+      the region, at fidelity scaled by each listener's
+      `Faction.intelligence` and physical proximity.
 
-Status: round-one shipped; round-two (belief states) deferred —
-**pairs with Epic M round-two, both unblocked once the
-single-event analogues for the bundled scenario set (N round-two
-item 1) lands.** Critical for the game-middleware pivot.
+Status: round-one and round-two shipped. Remaining belief-driven
+work lives on Epic M (believed-attribution rolls). Bundled
+round-two archetype: `scenarios/recon_fidelity_demo.toml`. Critical
+for the game-middleware pivot.
 
 ### Epic M — Information warfare & belief asymmetry
 
@@ -466,26 +487,30 @@ misperception, OPSEC as decision-affecting rather than narrative.
       Currently kill-chain attribution rolls read ground truth.
       Round-two would route them through belief, so a defender that
       misattributes an attack acts on the misattribution.
-- [ ] **Bayesian belief updating from indirect signals.** Round-two
-      work. Round-one models direct observation as perfectly
-      accurate; round-two would introduce intelligence-stat-driven
-      estimation noise (the `Faction.intelligence` scalar would
-      attenuate observed force-strength to a believed value) and
-      indirect-signal updates (captured prisoners, surveillance
-      tech, third-party reporting that's neither directly observed
-      nor explicitly shared). The `BeliefSource::Inferred` variant
-      is reserved for this round.
-- [ ] **Information events update belief states asymmetrically.**
-      Round-two work; pairs with the bayesian-updating item above.
-      Round-one's `IntelligenceShare` event is the unilateral form
-      ("alpha hands bravo a piece of intel"); round-two would add
-      the network-driven form (an event in `frontier_north` is seen
-      by every faction with a force in `frontier_north` *or*
-      adjacent, with confidence varying by `Faction.intelligence`).
+- [x] **Bayesian belief updating from indirect signals.** Shipped
+      May 2026 as round-two. The opt-in
+      `simulation.belief_model.intelligence_weighting` flag caps
+      foreign-observation confidence at an intelligence-derived
+      ceiling (`observation_confidence(intelligence) ∈ [0.3, 0.95]`)
+      and performs a Kalman-style update toward each new observation
+      with `gain = obs_conf` — so a low-intelligence faction's belief
+      lags a changing ground truth (estimation noise as
+      capability-bounded lag rather than RNG, preserving
+      determinism). Blended entries finally produce the
+      `BeliefSource::Inferred` variant. Own-faction facts stay
+      perfect.
+- [x] **Information events update belief states asymmetrically.**
+      Shipped May 2026 as round-two. `EventEffect::AmbientIntel { region }`
+      is the network-driven form — an event at a region is "seen" by
+      every faction with a force in *or* adjacent to it, with
+      confidence varying by `Faction.intelligence`.
 
-Status: round-one shipped; round-two deferred — pairs with Epic J
-round-two (utility scoring against believed state). Critical for the
-game-middleware pivot (deception, fog of war = good gameplay).
+Status: round-two shipped except believed-attribution (the first
+item above — kill-chain attribution in `campaign.rs` and the
+fracture accounting that reads it remain a separable subsystem).
+Bundled round-two archetype: `scenarios/recon_fidelity_demo.toml`.
+Critical for the game-middleware pivot (deception, fog of war = good
+gameplay).
 
 ### Epic N — Validation harness & calibration discipline
 

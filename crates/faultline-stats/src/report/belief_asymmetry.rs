@@ -65,7 +65,50 @@ impl ReportSection for BeliefAsymmetry {
             );
         }
         let _ = writeln!(out);
+
+        render_fidelity_subsection(summary, out);
     }
+}
+
+/// Round-two belief-fidelity sub-section (Epic M / J round-two).
+///
+/// Gated on *round-two activity* — at least one faction picked up an
+/// `AmbientIntel` radiation or held an `Inferred`-source belief at run
+/// end. Scenarios on round-one fidelity
+/// (`intelligence_weighting = false`, no `AmbientIntel` events) have
+/// neither, so this sub-section is elided and their report output —
+/// hence their manifest `output_hash` — is unchanged.
+fn render_fidelity_subsection(summary: &MonteCarloSummary, out: &mut String) {
+    let any_round_two = summary
+        .belief_summaries
+        .values()
+        .any(|r| r.mean_ambient_intel > 0.0 || r.mean_terminal_inferred_beliefs > 0.0);
+    if !any_round_two {
+        return;
+    }
+
+    let _ = writeln!(out, "### Belief fidelity (round-two)");
+    let _ = writeln!(
+        out,
+        "When `simulation.belief_model.intelligence_weighting = true`, direct observation of an opponent is no longer perfect: observation confidence is capped by the observer's `intelligence` and new sightings are Bayesian-blended with the prior belief (tagged `Inferred`). `AmbientIntel` events radiate field intelligence about a region to every faction with a force in or adjacent to it, at intelligence-scaled fidelity. **Mean confidence** is the headline fidelity signal — `1.0` ≈ perfect direct observation; lower values mean the faction was acting on estimates. Compare against **mean force-Δ** above: a low-intelligence faction shows lower confidence *and* higher error."
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "| Faction | Mean confidence | Mean ambient-intel | Mean terminal-inferred |"
+    );
+    let _ = writeln!(out, "|---|---|---|---|");
+    for row in summary.belief_summaries.values() {
+        let _ = writeln!(
+            out,
+            "| `{}` | {:.2} | {:.2} | {:.2} |",
+            escape_md_cell(&row.faction.0),
+            row.mean_force_confidence,
+            row.mean_ambient_intel,
+            row.mean_terminal_inferred_beliefs,
+        );
+    }
+    let _ = writeln!(out);
 }
 
 #[cfg(test)]
@@ -102,6 +145,9 @@ mod tests {
                 mean_deception_events: 2.0,
                 mean_intel_shares: 0.5,
                 mean_terminal_deceived_beliefs: 1.25,
+                mean_force_confidence: 1.0,
+                mean_ambient_intel: 0.0,
+                mean_terminal_inferred_beliefs: 0.0,
             },
         );
         let scenario = minimal_scenario();
@@ -111,6 +157,11 @@ mod tests {
         assert!(out.contains("`blue`"), "got: {out}");
         assert!(out.contains("12.50"), "got: {out}");
         assert!(out.contains("0.85"), "got: {out}");
+        // No round-two activity → the fidelity sub-section is elided.
+        assert!(
+            !out.contains("Belief fidelity"),
+            "round-two sub-section should be elided when no ambient/inferred activity: {out}"
+        );
     }
 
     #[test]
@@ -129,6 +180,9 @@ mod tests {
                 mean_deception_events: 0.0,
                 mean_intel_shares: 0.0,
                 mean_terminal_deceived_beliefs: 0.0,
+                mean_force_confidence: 0.0,
+                mean_ambient_intel: 0.0,
+                mean_terminal_inferred_beliefs: 0.0,
             },
         );
         let scenario = minimal_scenario();
@@ -136,5 +190,34 @@ mod tests {
         BeliefAsymmetry.render(&summary, &scenario, &mut out);
         assert!(out.contains("`red`"), "got: {out}");
         assert!(out.contains("0/0"), "got: {out}");
+    }
+
+    #[test]
+    fn renders_round_two_fidelity_subsection() {
+        let mut summary = empty_summary();
+        summary.total_runs = 8;
+        summary.belief_summaries.insert(
+            FactionId::from("scouts"),
+            BeliefAsymmetrySummary {
+                faction: FactionId::from("scouts"),
+                runs_with_belief: 8,
+                mean_force_strength_error: 5.0,
+                max_force_strength_error: 9.0,
+                mean_region_accuracy: 0.9,
+                mean_deception_events: 0.0,
+                mean_intel_shares: 0.0,
+                mean_terminal_deceived_beliefs: 0.0,
+                mean_force_confidence: 0.82,
+                mean_ambient_intel: 3.5,
+                mean_terminal_inferred_beliefs: 2.0,
+            },
+        );
+        let scenario = minimal_scenario();
+        let mut out = String::new();
+        BeliefAsymmetry.render(&summary, &scenario, &mut out);
+        assert!(out.contains("Belief fidelity"), "got: {out}");
+        assert!(out.contains("`scouts`"), "got: {out}");
+        assert!(out.contains("0.82"), "got: {out}");
+        assert!(out.contains("3.50"), "got: {out}");
     }
 }

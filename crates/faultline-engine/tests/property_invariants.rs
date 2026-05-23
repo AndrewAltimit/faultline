@@ -186,3 +186,55 @@ proptest! {
         prop_assert_eq!(j1, j2);
     }
 }
+
+/// Round-two belief-fidelity fixture: the bundled `recon_fidelity_demo`
+/// runs the intelligence-weighted belief model with `AmbientIntel`
+/// radiation, so it exercises the Epic M / J round-two code paths.
+fn belief_fixture() -> Scenario {
+    let src = include_str!("../../../scenarios/recon_fidelity_demo.toml");
+    load_scenario_str(src)
+        .expect("bundled recon_fidelity_demo must load")
+        .scenario
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: 16,
+        .. ProptestConfig::default()
+    })]
+
+    /// **Invariant: belief confidence is always a finite value in
+    /// `[0, 1]` for any seed under the round-two model.** Observation
+    /// caps at the intelligence-derived ceiling (`< 1`), decay only
+    /// shrinks confidence, and the Kalman blend never pushes it out of
+    /// range — so the per-tick mean force-belief confidence
+    /// (`force_confidence_sum / force_belief_ticks`) must stay within
+    /// `[0, 1]` regardless of seed.
+    #[test]
+    fn belief_confidence_in_unit_interval(seed in any::<u64>()) {
+        let scenario = belief_fixture();
+        let mut engine = Engine::with_seed(scenario, seed)
+            .expect("engine must construct");
+        let result = engine.run().expect("engine must complete");
+
+        for (fid, report) in &result.belief_accuracy {
+            prop_assert!(
+                report.force_confidence_sum.is_finite(),
+                "{}: force_confidence_sum non-finite for seed {}",
+                fid,
+                seed
+            );
+            if report.force_belief_ticks == 0 {
+                continue;
+            }
+            let mean = report.force_confidence_sum / f64::from(report.force_belief_ticks);
+            prop_assert!(
+                (0.0..=1.0).contains(&mean),
+                "{}: mean belief confidence {} out of [0,1] for seed {}",
+                fid,
+                mean,
+                seed
+            );
+        }
+    }
+}

@@ -72,6 +72,9 @@ pub fn compute_belief_summaries(
                 mean_intel_shares: 0.0,
                 mean_terminal_deceived_beliefs: 0.0,
                 max_force_strength_error: 0.0,
+                mean_force_confidence: 0.0,
+                mean_ambient_intel: 0.0,
+                mean_terminal_inferred_beliefs: 0.0,
             },
         );
     }
@@ -88,6 +91,10 @@ pub fn compute_belief_summaries(
     let mut intel_sum: BTreeMap<FactionId, u64> = BTreeMap::new();
     let mut terminal_deceived_sum: BTreeMap<FactionId, u64> = BTreeMap::new();
     let mut runs_with_belief: BTreeMap<FactionId, u32> = BTreeMap::new();
+    // Round-two accumulators.
+    let mut force_conf_sum: BTreeMap<FactionId, f64> = BTreeMap::new();
+    let mut ambient_sum: BTreeMap<FactionId, u64> = BTreeMap::new();
+    let mut terminal_inferred_sum: BTreeMap<FactionId, u64> = BTreeMap::new();
 
     for run in runs {
         for (fid, report) in &run.belief_accuracy {
@@ -98,6 +105,15 @@ pub fn compute_belief_summaries(
             };
             let region_mean = if report.region_belief_ticks > 0 {
                 report.region_accuracy_sum / f64::from(report.region_belief_ticks)
+            } else {
+                0.0
+            };
+            // Per-run mean force-belief confidence (round-two). Evaluates to
+            // 0.0 on legacy snapshots where `force_confidence_sum` is missing
+            // (serde defaults the field to 0); for runs populated by the
+            // engine, round-one fidelity yields ≈ 1.0.
+            let conf_mean = if report.force_belief_ticks > 0 {
+                report.force_confidence_sum / f64::from(report.force_belief_ticks)
             } else {
                 0.0
             };
@@ -113,6 +129,11 @@ pub fn compute_belief_summaries(
             *intel_sum.entry(fid.clone()).or_default() += u64::from(report.intel_shares_received);
             *terminal_deceived_sum.entry(fid.clone()).or_default() +=
                 u64::from(report.deceived_beliefs_terminal);
+            *force_conf_sum.entry(fid.clone()).or_default() += conf_mean;
+            *ambient_sum.entry(fid.clone()).or_default() +=
+                u64::from(report.ambient_intel_received);
+            *terminal_inferred_sum.entry(fid.clone()).or_default() +=
+                u64::from(report.inferred_beliefs_terminal);
             *runs_with_belief.entry(fid.clone()).or_default() += 1;
         }
     }
@@ -132,6 +153,10 @@ pub fn compute_belief_summaries(
         summary.mean_intel_shares = intel_sum.get(fid).copied().unwrap_or(0) as f64 / denom;
         summary.mean_terminal_deceived_beliefs =
             terminal_deceived_sum.get(fid).copied().unwrap_or(0) as f64 / denom;
+        summary.mean_force_confidence = force_conf_sum.get(fid).copied().unwrap_or(0.0) / denom;
+        summary.mean_ambient_intel = ambient_sum.get(fid).copied().unwrap_or(0) as f64 / denom;
+        summary.mean_terminal_inferred_beliefs =
+            terminal_inferred_sum.get(fid).copied().unwrap_or(0) as f64 / denom;
     }
 
     out
@@ -235,6 +260,9 @@ mod tests {
                 deception_events_received: 2,
                 intel_shares_received: 1,
                 deceived_beliefs_terminal: 1,
+                force_confidence_sum: 9.0, // mean 0.9 / tick
+                ambient_intel_received: 0,
+                inferred_beliefs_terminal: 0,
             },
         );
         let mut run_b = minimal_run();
@@ -249,6 +277,9 @@ mod tests {
                 deception_events_received: 4,
                 intel_shares_received: 1,
                 deceived_beliefs_terminal: 3,
+                force_confidence_sum: 7.0, // mean 0.7 / tick
+                ambient_intel_received: 2,
+                inferred_beliefs_terminal: 1,
             },
         );
         let out = compute_belief_summaries(&[run_a, run_b], &s);
@@ -262,6 +293,11 @@ mod tests {
         assert!((red.mean_deception_events - 3.0).abs() < 1e-9);
         assert!((red.mean_intel_shares - 1.0).abs() < 1e-9);
         assert!((red.mean_terminal_deceived_beliefs - 2.0).abs() < 1e-9);
+        // Round-two: mean of run-means (0.9 + 0.7) / 2 = 0.8.
+        assert!((red.mean_force_confidence - 0.8).abs() < 1e-9);
+        // Ambient (0 + 2) / 2 = 1.0; inferred terminal (0 + 1) / 2 = 0.5.
+        assert!((red.mean_ambient_intel - 1.0).abs() < 1e-9);
+        assert!((red.mean_terminal_inferred_beliefs - 0.5).abs() < 1e-9);
     }
 
     #[test]
@@ -279,6 +315,9 @@ mod tests {
                 deception_events_received: 1,
                 intel_shares_received: 0,
                 deceived_beliefs_terminal: 0,
+                force_confidence_sum: 5.0,
+                ambient_intel_received: 1,
+                inferred_beliefs_terminal: 0,
             },
         );
         let runs = vec![run.clone(), run.clone(), run.clone()];

@@ -223,6 +223,35 @@ pub struct BeliefModelConfig {
     /// faction every N ticks plus one terminal snapshot at run end.
     #[serde(default)]
     pub snapshot_interval: u32,
+    /// Round-two: enable intelligence-weighted observation fidelity.
+    ///
+    /// When `false` (default — preserves round-one behavior
+    /// bit-identically), every direct observation overwrites the
+    /// belief at `confidence = 1.0` and `source = DirectObservation`,
+    /// so a faction's belief about a *visible* opponent is always
+    /// exactly ground truth.
+    ///
+    /// When `true`, the per-tick observation step instead:
+    /// - caps observation confidence below `1.0` by an amount driven
+    ///   by the observer's [`crate::faction::Faction::intelligence`]
+    ///   (a high-intelligence faction observes near-perfectly; a
+    ///   low-intelligence faction observes at a confidence floor),
+    /// - performs a precision-weighted Bayesian blend of the new
+    ///   observation against the prior belief rather than overwriting,
+    ///   so a low-confidence observer's belief *lags* a changing
+    ///   ground truth (the analytical payoff: belief error becomes a
+    ///   function of intelligence, not just observation recency), and
+    /// - tags blended entries [`BeliefSource::Inferred`] so the
+    ///   cross-run report can distinguish "perfectly observed" from
+    ///   "estimated under uncertainty".
+    ///
+    /// Own-faction facts (own forces, own controlled regions, own
+    /// morale / resources) stay at `confidence = 1.0` —
+    /// a faction always knows its own posture exactly. Deception
+    /// entries erode toward truth as real observations blend in,
+    /// modelling "the lie is being corrected by reality".
+    #[serde(default)]
+    pub intelligence_weighting: bool,
 }
 
 impl Default for BeliefModelConfig {
@@ -234,8 +263,33 @@ impl Default for BeliefModelConfig {
             scalar_decay_per_tick: default_scalar_decay(),
             prune_threshold: default_prune_threshold(),
             snapshot_interval: 0,
+            intelligence_weighting: false,
         }
     }
+}
+
+/// Observation confidence ceiling for a foreign fact given the
+/// observer's `intelligence` stat (round-two intelligence weighting).
+///
+/// Maps `intelligence ∈ [0, 1]` to a confidence in `[0.3, 0.95]` —
+/// even a maximally-capable observer never reaches `1.0` confidence
+/// about an *opponent's* hidden state (the irreducible fog of war),
+/// while a minimally-capable one still gleans something (a `0.3`
+/// floor). Mirrors the legacy `build_world_view` mapping
+/// (`intelligence * 0.6 + 0.2`) but with a higher floor and ceiling
+/// because the persistent belief blends across ticks, so the
+/// per-observation confidence should be a touch more generous.
+///
+/// Pure, total, deterministic; `NaN`/out-of-range `intelligence`
+/// clamps into range (validation already constrains the field, this
+/// is defensive).
+pub fn observation_confidence(intelligence: f64) -> f64 {
+    let intel = if intelligence.is_finite() {
+        intelligence.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    (0.3 + 0.65 * intel).clamp(0.3, 0.95)
 }
 
 fn default_force_decay() -> f64 {
@@ -357,6 +411,21 @@ mod tests {
         assert_eq!(cfg.scalar_decay_per_tick, 0.03);
         assert_eq!(cfg.prune_threshold, 0.05);
         assert_eq!(cfg.snapshot_interval, 0);
+        assert!(!cfg.intelligence_weighting);
+    }
+
+    #[test]
+    fn observation_confidence_monotone_and_bounded() {
+        let low = observation_confidence(0.0);
+        let mid = observation_confidence(0.5);
+        let high = observation_confidence(1.0);
+        assert!((low - 0.3).abs() < 1e-9, "floor at 0.3, got {low}");
+        assert!((high - 0.95).abs() < 1e-9, "ceiling at 0.95, got {high}");
+        assert!(low < mid && mid < high, "monotone increasing in intel");
+        // Out-of-range / non-finite clamps defensively.
+        assert_eq!(observation_confidence(2.0), 0.95);
+        assert_eq!(observation_confidence(-1.0), 0.3);
+        assert!(observation_confidence(f64::NAN).is_finite());
     }
 
     #[test]

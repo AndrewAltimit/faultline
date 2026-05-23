@@ -198,6 +198,15 @@ pub struct BeliefRunCounters {
     pub region_accuracy_sum: f64,
     pub deception_events_received: u32,
     pub intel_shares_received: u32,
+    /// Round-two: cumulative per-tick mean force-belief confidence
+    /// (summed over the `force_belief_ticks` ticks). Divide by
+    /// `force_belief_ticks` for the run-mean confidence. Round-one
+    /// fidelity holds this at `≈ force_belief_ticks`; intelligence
+    /// weighting drives it down.
+    pub force_confidence_sum: f64,
+    /// Round-two: count of `EventEffect::AmbientIntel` radiations this
+    /// faction picked up (force in / adjacent to the radiating region).
+    pub ambient_intel_received: u32,
 }
 
 /// Per-faction running log of utility-driven decisions (Epic J round-one).

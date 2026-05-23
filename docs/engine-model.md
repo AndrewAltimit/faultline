@@ -15,7 +15,7 @@ Source: `crates/faultline-engine/src/engine.rs` (`tick()`) and `crates/faultline
 
 The following 17-step sequence is executed once per simulation tick. Every phase is a deterministic pure function of `(state, scenario, rng)` unless noted otherwise. Phases are numbered for reference; the names match the function identifiers in `tick.rs` / `engine.rs`.
 
-1. **`event_phase`** — Fires all scripted `[[events]]` scheduled for this tick, applying `EventEffect`s (including `DiplomacyChange`, `MediaEvent`, `Displacement`, `DeceptionOp`, `IntelligenceShare`, network mutations, etc.) to `SimulationState`.
+1. **`event_phase`** — Fires all scripted `[[events]]` scheduled for this tick, applying `EventEffect`s (including `DiplomacyChange`, `MediaEvent`, `Displacement`, `DeceptionOp`, `IntelligenceShare`, `AmbientIntel`, network mutations, etc.) to `SimulationState`.
 2. **`decision_phase`** — Each faction's AI selects its top-3 actions via doctrine scoring optionally combined with multi-term utility scoring. Captures `utility_decisions` for post-run reporting.
 3. **`movement_phase`** — Queued `MoveUnit` actions are resolved using the effective-mobility gate (`mobility × terrain_modifier × env_factor`), accumulating into `ForceUnit.move_progress`.
 4. **`combat_phase`** — Lanchester-attrition combat between faction pairs in contested regions. Respects `combat_blocked` (Allied pairs skip) and tech `coverage_limit` counters.
@@ -262,9 +262,11 @@ Coverage: `crates/faultline-engine/tests/integration.rs` (updated Epic D round-o
 
 ---
 
-## Multi-term utility and adaptive AI (Epic J round one)
+## Multi-term utility and adaptive AI (Epic J rounds one and two)
 
 Factions may declare a `[factions.<id>.utility]` block that re-weights AI action scoring along named analyst-facing axes. The utility surface composes *additively* on top of the existing doctrine-based scoring; scenarios without `[utility]` are bit-identical to the legacy path.
+
+Round two (paired with the round-two belief model) closes the "score against believed state" item: when `simulation.belief_model.intelligence_weighting = true`, the evaluator consumes the belief-derived (uncertain) world view *and* discounts opponent-strength reads by detection confidence. See the belief-asymmetry section below for the integration.
 
 ### Types (`crates/faultline-types/src/faction.rs`)
 
@@ -291,49 +293,62 @@ Bundled archetype: `scenarios/adaptive_utility_demo.toml`.
 
 ---
 
-## Belief asymmetry and deception (Epic M round one)
+## Belief asymmetry and deception (Epic M / J — rounds one and two)
 
-The engine carries a persistent per-faction belief state separate from ground truth, with observation-driven refresh, per-tick decay, deception / intel-share event hooks, and AI consumption.
+The engine carries a persistent per-faction belief state separate from ground truth, with observation-driven refresh, per-tick decay, deception / intel-share event hooks, and AI consumption. Round two (Epic M / J) layers intelligence-weighted observation fidelity, asymmetric proximity-driven information, and belief-driven utility scoring on top — all opt-in so round-one scenarios are bit-identical.
 
 ### Types (`crates/faultline-types/src/belief.rs`)
 
-- **`BeliefSource`** — `DirectObservation`, `Stale`, `Inferred` (reserved for round two), `Deceived`. Tracks provenance so post-run analytics can distinguish "saw the truth", "saw it once and aged out", "got planted by a deception event".
+- **`BeliefSource`** — `DirectObservation`, `Stale`, `Inferred`, `Deceived`. Tracks provenance so post-run analytics can distinguish "saw the truth", "saw it once and aged out", "estimated under uncertainty" (round two), "got planted by a deception event". Round two finally produces `Inferred`: any foreign belief touched under intelligence weighting is an estimate, not a perfect observation.
 - **`BeliefScalar` / `BeliefForce` / `BeliefRegion`** — per-axis belief entries with `value`, `confidence ∈ [0, 1]`, `last_observed_tick`, and `source`. `BeliefForce` carries `region` + `estimated_strength`; `BeliefRegion` carries `controller` (option-typed).
 - **`FactionBelief`** — `BTreeMap`-keyed maps for regions, forces, faction morale, faction resources. Plus `last_updated_tick` and `deception_events_received`.
-- **`BeliefModelConfig`** — opt-in toggle (`enabled: bool` defaults `false`), per-axis decay rates (`force_decay_per_tick = 0.05`, `region_decay_per_tick = 0.02`, `scalar_decay_per_tick = 0.03`), `prune_threshold = 0.05`, optional `snapshot_interval`. All fields `#[serde(default)]`. Config fields are validated unconditionally — even when `enabled = false` — so a typo in a disabled-but-authored config surfaces at load time.
+- **`BeliefModelConfig`** — opt-in toggle (`enabled: bool` defaults `false`), per-axis decay rates (`force_decay_per_tick = 0.05`, `region_decay_per_tick = 0.02`, `scalar_decay_per_tick = 0.03`), `prune_threshold = 0.05`, optional `snapshot_interval`, and the round-two `intelligence_weighting: bool` (default `false`). All fields `#[serde(default)]`. Config fields are validated unconditionally — even when `enabled = false` — so a typo in a disabled-but-authored config surfaces at load time.
+- **`observation_confidence(intelligence)`** — maps `intelligence ∈ [0, 1]` to a foreign-observation confidence ceiling in `[0.3, 0.95]` (`0.3 + 0.65·intel`, clamped). Even a maximally-capable observer never reaches `1.0` confidence about an opponent's hidden state (irreducible fog of war).
 - **`DeceptionPayload`** — four variants: `FalseForceStrength`, `FalseRegionControl`, `FalseFactionMorale`, `FalseFactionResources`.
 - **`IntelligencePayload`** — four variants: `ForceObservation`, `RegionControl`, `FactionMorale`, `FactionResources`.
 
 ### EventEffect variants
 
-- **`DeceptionOp { source_faction, target_faction, payload }`** — plants a `BeliefSource::Deceived`-tagged entry in the target's belief at confidence 1.0. Seamless from the AI's perspective (the world view it consumes cannot distinguish deception from direct observation), but the source tag persists through decay so terminal deceived beliefs are countable.
-- **`IntelligenceShare { source_faction, target_faction, payload }`** — same shape but lands as `DirectObservation` at confidence 1.0, populated from the *current ground truth* of the referenced entity. Models alliance intel sharing, captured prisoners, third-party reporting.
+- **`DeceptionOp { source_faction, target_faction, payload }`** — plants a `BeliefSource::Deceived`-tagged entry in the target's belief at confidence 1.0. Seamless from the AI's perspective (the world view it consumes cannot distinguish deception from direct observation), but the source tag persists through decay so terminal deceived beliefs are countable. Under round-two intelligence weighting, repeated direct observation blends the planted value *toward* the truth and re-tags the entry `Inferred` — "the lie is corrected by reality".
+- **`IntelligenceShare { source_faction, target_faction, payload }`** — unilateral source→target transfer; lands as `DirectObservation` at confidence 1.0 (round-one) or intelligence-weighted (round-two), populated from the *current ground truth* of the referenced entity. Models alliance intel sharing, captured prisoners, third-party reporting.
+- **`AmbientIntel { region }`** (round two) — radiates field intelligence about `region` to *every* faction with a force in or adjacent to it, at fidelity scaled by each listener's `intelligence`. Models an observable field event (a firefight, a moving column, a sensor trip) that anyone nearby learns about asymmetrically. A faction's belief about its own forces is left untouched.
 
-Both are wired in `tick::apply_event_effects` (step 1) and are no-ops when the belief model is disabled.
+All three are wired in `tick::apply_event_effects` and are no-ops when the belief model is disabled.
 
 ### `belief_phase` (step 15)
 
 `crates/faultline-engine/src/belief.rs::belief_phase` runs at step 15, after `campaign_phase` (step 10), `update_command_effectiveness` (step 11), `fracture_phase` (step 12), network sample capture (step 13), and `update_region_control` (step 14). It operates in three steps:
 
-1. **Decay** — every entry's confidence is reduced by the per-axis rate; non-`Deceived` entries are marked `Stale`.
-2. **Refresh** — every entry visible to the believer from current ground truth is reset to confidence 1.0 with `DirectObservation` source, clearing any prior `Deceived` tag.
+1. **Decay** — every entry's confidence is reduced by the per-axis rate; non-`Deceived` entries are marked `Stale` (`Inferred` entries keep their tag through decay).
+2. **Refresh** — every entry visible to the believer from current ground truth is refreshed. Round-one fidelity: reset to confidence 1.0 with `DirectObservation` source, clearing any prior `Deceived` tag. Round-two (see below): intelligence-weighted.
 3. **Prune** — entries with confidence strictly below `prune_threshold` are removed.
 
-Per-faction accuracy counters in `SimulationState.belief_counters` are updated in lock-step.
+Per-faction accuracy counters in `SimulationState.belief_counters` are updated in lock-step, including the round-two `force_confidence_sum` and `ambient_intel_received`.
 
-### AI consumption
+### Round-two: intelligence-weighted fidelity
 
-`world_view_from_belief` constructs a `FactionWorldView` from a persistent `FactionBelief` so the existing `evaluate_actions_fog` evaluator can consume beliefs as if they were observations.
+When `intelligence_weighting = true`, the refresh step (and `AmbientIntel`) route foreign observations through `refresh_force_belief` / `refresh_region_belief` with the observer's confidence ceiling `obs_conf = observation_confidence(intelligence)`:
+
+- **Force strength** is a Kalman-style update toward the new observation, `value = prior + gain·(obs − prior)` with `gain = obs_conf`. A high-intelligence observer (`gain ≈ 0.88`) snaps its estimate to truth; a low-intelligence one (`gain ≈ 0.43`) moves only partway, so its belief *lags* a changing ground truth — making belief error scale with intelligence. The resulting confidence is exactly `obs_conf`: capability is a hard ceiling, so repeated observation never manufactures false `1.0` certainty.
+- **Region control** adopts the observed controller at confidence `obs_conf` (control is more observable than strength).
+- **Own-faction facts** stay perfect (confidence 1.0, `DirectObservation`) — a faction always knows its own posture.
+- Any foreign entry touched under weighting is tagged `Inferred`; a prior `Deceived` value blends toward truth.
+
+### AI consumption (Epic J)
+
+`world_view_from_belief` constructs a `FactionWorldView` from a persistent `FactionBelief` so the existing `evaluate_actions_fog` evaluator can consume beliefs as if they were observations. Under round-two weighting the beliefs it carries are *uncertain* (capped confidence, lagging estimates), so the AI already scores against believed — not ground-truth — state (Epic J round-two item 1).
+
+In addition, when `intelligence_weighting = true` the utility evaluator's `EffectiveWeights.confidence_weighted` flag is set, and `enemy_strength_in_region_fog` / `enemy_strength_in_adjacent_fog` discount each detection's `estimated_strength` by its `confidence`. A faction running the round-two model treats what it isn't sure of as a proportionally smaller threat — appropriately cautious decisioning under uncertainty.
 
 `decision_phase` (step 2) consults `belief::belief_enabled(scenario)` to choose between:
 1. Belief path (takes precedence when `enabled = true`).
 2. Fog-of-war path (when `simulation.fog_of_war = true`).
 3. Ground-truth path (default).
 
-**Validation** rejects nine shapes: unknown source/target faction in `DeceptionOp` / `IntelligenceShare`; self-targeting; unknown region/faction references in payloads; empty force ID in payloads; out-of-range/NaN morale or resources in deception payloads; out-of-range/NaN/negative decay rates; out-of-range/NaN prune threshold.
+**Validation** rejects ten shapes: unknown source/target faction in `DeceptionOp` / `IntelligenceShare`; self-targeting; unknown region/faction references in payloads; empty force ID in payloads; out-of-range/NaN morale or resources in deception payloads; out-of-range/NaN/negative decay rates; out-of-range/NaN prune threshold; and (round two) an `AmbientIntel` referencing an unknown region.
 
-**Backward-compat** — `None` or `enabled = false` means the belief phase short-circuits in O(1), `belief_states` / `belief_counters` stay empty, and the AI takes the unchanged ground-truth or fog-of-war path.
+**Backward-compat** — `None` or `enabled = false` means the belief phase short-circuits in O(1); `intelligence_weighting = false` keeps the round-one perfect-observation path bit-identical. `AmbientIntel` is a no-op when belief mode is off.
 
-Per-run output: `RunResult.belief_accuracy` and `RunResult.belief_snapshots`. Cross-run rollup and report section documented in `docs/analytics.md`.
+Per-run output: `RunResult.belief_accuracy` (now carrying `force_confidence_sum`, `ambient_intel_received`, `inferred_beliefs_terminal`) and `RunResult.belief_snapshots`. Cross-run rollup and report section documented in `docs/analytics.md`.
 
-Bundled archetype: `scenarios/false_flag_demo.toml` (Alpha plants a phantom 500-strength force in Bravo's belief; actual infantry is 100; mid-run `IntelligenceShare::FactionResources` refreshes Bravo's resource belief from ground truth).
+Bundled archetypes: `scenarios/false_flag_demo.toml` (round one — Alpha plants a phantom 500-strength force in Bravo's belief; mid-run `IntelligenceShare::FactionResources` refreshes Bravo's resource belief from ground truth) and `scenarios/recon_fidelity_demo.toml` (round two — a high-intelligence vs low-intelligence pair under `intelligence_weighting` with `AmbientIntel` radiation over two contested regions; the report's belief-fidelity sub-section contrasts the two).

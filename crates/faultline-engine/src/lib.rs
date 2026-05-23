@@ -1314,6 +1314,15 @@ fn validate_event_effect(
             }
             validate_intelligence_payload(scenario, eid, payload)?;
         },
+        // Round-two — asymmetric belief radiation. Reject the
+        // silent-no-op shape: an unknown region has no listeners and no
+        // forces, so the effect would do nothing at runtime.
+        EventEffect::AmbientIntel { region } if !scenario.map.regions.contains_key(region) => {
+            return Err(ScenarioError::Custom(format!(
+                "event `{eid}` declares an `AmbientIntel` referencing unknown region \
+                 `{region}`. Reference a declared region."
+            )));
+        },
         _ => {},
     }
     Ok(())

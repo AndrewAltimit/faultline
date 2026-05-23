@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 use faultline_geo::GameMap;
 use faultline_types::belief::{
     BeliefForce, BeliefModelConfig, BeliefRegion, BeliefScalar, BeliefSource, DeceptionPayload,
-    FactionBelief, IntelligencePayload,
+    FactionBelief, IntelligencePayload, observation_confidence,
 };
 use faultline_types::ids::{FactionId, ForceId, RegionId};
 use faultline_types::scenario::Scenario;
@@ -154,8 +154,10 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
     let take_snapshot_this_tick = snapshot_interval > 0 && tick.is_multiple_of(snapshot_interval);
 
     // Pre-compute the per-tick error contributions while only
-    // immutably borrowing state. Then apply mutations.
-    let mut counter_updates: BTreeMap<FactionId, (u32, f64, u32, f64)> = BTreeMap::new();
+    // immutably borrowing state. Then apply mutations. Tuple is
+    // (force_n, force_err_sum, region_n, region_fraction,
+    // force_confidence_sum).
+    let mut counter_updates: BTreeMap<FactionId, (u32, f64, u32, f64, f64)> = BTreeMap::new();
 
     // First pass: decay + refresh for each faction.
     for fid in &faction_ids {
@@ -175,12 +177,18 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
         belief.last_updated_tick = tick;
 
         // Compute per-tick error contributions for this faction.
-        let (force_err_n, force_err_sum, region_n, region_sum) =
+        let (force_err_n, force_err_sum, region_n, region_sum, force_conf_sum) =
             compute_accuracy_contribution(&belief, fid, state);
         if force_err_n > 0 || region_n > 0 {
             counter_updates.insert(
                 fid.clone(),
-                (force_err_n, force_err_sum, region_n, region_sum),
+                (
+                    force_err_n,
+                    force_err_sum,
+                    region_n,
+                    region_sum,
+                    force_conf_sum,
+                ),
             );
         }
 
@@ -192,11 +200,15 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
     }
 
     // Apply counter updates after all beliefs have been refreshed.
-    for (fid, (force_n, force_sum, region_n, region_sum)) in counter_updates {
+    for (fid, (force_n, force_sum, region_n, region_sum, force_conf_sum)) in counter_updates {
         let counter = state.belief_counters.entry(fid).or_default();
         if force_n > 0 {
             counter.force_belief_ticks += 1;
             counter.force_strength_error_sum += force_sum / f64::from(force_n);
+            // Per-tick mean foreign-force belief confidence. Round-one
+            // fidelity holds this at 1.0; intelligence weighting drops
+            // it with observer intelligence + staleness.
+            counter.force_confidence_sum += force_conf_sum / f64::from(force_n);
         }
         if region_n > 0 {
             counter.region_belief_ticks += 1;
@@ -216,8 +228,8 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
 
 /// Compute the per-tick accuracy contribution for a faction's
 /// belief. Returns `(force_count, force_sum_abs_error, region_count,
-/// region_sum_correct_fraction)` so the caller can update the run
-/// counters in one batch.
+/// region_sum_correct_fraction, force_confidence_sum)` so the caller
+/// can update the run counters in one batch.
 ///
 /// Force-strength error excludes own-force entries (trivially zero)
 /// and entries whose `force` no longer exists in ground truth (the
@@ -226,14 +238,19 @@ pub fn belief_phase(state: &mut SimulationState, scenario: &Scenario, map: &Game
 ///
 /// Region accuracy is the fraction of believed regions whose
 /// `controller` matches current ground truth.
+///
+/// `force_confidence_sum` is the sum of foreign-force belief
+/// confidences (denominator `force_count`), surfaced as the
+/// round-two belief-fidelity signal.
 fn compute_accuracy_contribution(
     belief: &FactionBelief,
     self_id: &FactionId,
     state: &SimulationState,
-) -> (u32, f64, u32, f64) {
+) -> (u32, f64, u32, f64, f64) {
     // Force strength error.
     let mut force_n: u32 = 0;
     let mut force_err_sum: f64 = 0.0;
+    let mut force_conf_sum: f64 = 0.0;
     for bf in belief.forces.values() {
         if &bf.owner == self_id {
             continue;
@@ -244,6 +261,7 @@ fn compute_accuracy_contribution(
             None => bf.estimated_strength.abs(),
         };
         force_err_sum += err;
+        force_conf_sum += bf.confidence;
         force_n = force_n.saturating_add(1);
     }
     // Region accuracy.
@@ -261,7 +279,13 @@ fn compute_accuracy_contribution(
     } else {
         0.0
     };
-    (force_n, force_err_sum, region_n, region_fraction)
+    (
+        force_n,
+        force_err_sum,
+        region_n,
+        region_fraction,
+        force_conf_sum,
+    )
 }
 
 /// Look up a force unit by id across all factions in ground truth.
@@ -340,10 +364,7 @@ fn observe_into_belief(
     belief: &mut FactionBelief,
     faction_id: &FactionId,
     state: &SimulationState,
-    // TODO(round-two): consume scenario for intelligence-stat-driven
-    // estimation noise — pre-wired so the call sites don't need to
-    // change when round-two lands.
-    _scenario: &Scenario,
+    scenario: &Scenario,
     map: &GameMap,
     tick: u32,
 ) {
@@ -352,8 +373,21 @@ fn observe_into_belief(
     };
     let visible = compute_visible_regions(self_state, map);
 
+    // Round-two intelligence weighting (off by default — round-one
+    // fidelity). When on, foreign observations are confidence-capped
+    // by the observer's `intelligence` and Bayesian-blended with the
+    // prior belief; own-faction facts stay perfect.
+    let weighting = belief_enabled(scenario)
+        && scenario
+            .simulation
+            .belief_model
+            .as_ref()
+            .map(|c| c.intelligence_weighting)
+            .unwrap_or(false);
+    let obs_conf = observation_confidence(faction_intelligence(scenario, faction_id));
+
     // Refresh own faction's morale + resources (always observable to
-    // self; truth at confidence 1.0).
+    // self; truth at confidence 1.0 regardless of weighting).
     belief.faction_morale.insert(
         faction_id.clone(),
         BeliefScalar::fresh(self_state.morale, tick),
@@ -363,26 +397,28 @@ fn observe_into_belief(
         BeliefScalar::fresh(self_state.resources, tick),
     );
 
-    // Refresh visible regions (control attribution).
+    // Refresh visible regions (control attribution). Own-controlled
+    // regions are a fact about self, so they stay perfect (confidence
+    // 1.0, `DirectObservation`) regardless of weighting — mirroring the
+    // own-force guard below. Only foreign-controlled (or contested)
+    // regions are intelligence-capped under weighting.
     for rid in &visible {
         let controller = state.region_control.get(rid).cloned().unwrap_or(None);
-        belief.regions.insert(
-            rid.clone(),
-            BeliefRegion {
-                controller,
-                confidence: 1.0,
-                last_observed_tick: tick,
-                source: BeliefSource::DirectObservation,
-            },
+        let own_region = controller.as_ref() == Some(faction_id);
+        refresh_region_belief(
+            belief,
+            rid,
+            controller,
+            weighting && !own_region,
+            obs_conf,
+            tick,
         );
     }
 
-    // Refresh visible foreign forces. Visibility-filtered: a force in a
-    // non-visible region keeps any prior belief entry (with decayed
-    // confidence), it does not get refreshed. Force estimation
-    // confidence is full 1.0 — round-one models direct observation as
-    // perfectly accurate; round-two will introduce an intelligence-
-    // dependent estimation noise.
+    // Refresh visible foreign forces + all own forces. Visibility-
+    // filtered for foreign forces: a force in a non-visible region
+    // keeps any prior belief entry (with decayed confidence), it does
+    // not get refreshed. Own forces are always perfect.
     for (fid, fs) in &state.faction_states {
         for (force_id, force) in &fs.forces {
             let is_self = fid == faction_id;
@@ -390,19 +426,258 @@ fn observe_into_belief(
             if !visible_now && !is_self {
                 continue;
             }
-            belief.forces.insert(
-                force_id.clone(),
-                BeliefForce {
-                    force: force_id.clone(),
-                    owner: fid.clone(),
-                    region: force.region.clone(),
-                    estimated_strength: force.strength,
-                    confidence: 1.0,
-                    last_observed_tick: tick,
-                    source: BeliefSource::DirectObservation,
-                },
+            if is_self {
+                // The faction always knows its own forces exactly.
+                belief.forces.insert(
+                    force_id.clone(),
+                    BeliefForce {
+                        force: force_id.clone(),
+                        owner: fid.clone(),
+                        region: force.region.clone(),
+                        estimated_strength: force.strength,
+                        confidence: 1.0,
+                        last_observed_tick: tick,
+                        source: BeliefSource::DirectObservation,
+                    },
+                );
+            } else {
+                refresh_force_belief(
+                    belief,
+                    force_id,
+                    fid,
+                    &force.region,
+                    force.strength,
+                    weighting,
+                    obs_conf,
+                    tick,
+                );
+            }
+        }
+    }
+}
+
+/// Observer's `intelligence` stat, defaulting to `0.5` when the
+/// faction is missing from the scenario (degenerate; defensive).
+fn faction_intelligence(scenario: &Scenario, faction_id: &FactionId) -> f64 {
+    scenario
+        .factions
+        .get(faction_id)
+        .map_or(0.5, |f| f.intelligence)
+}
+
+/// Refresh a single foreign-force belief from a fresh observation.
+///
+/// Round-one fidelity (`weighting = false`): overwrite at
+/// `confidence = 1.0` / `DirectObservation` — bit-identical to the
+/// pre-round-two engine.
+///
+/// Round-two (`weighting = true`): the observation is capped at
+/// `obs_conf` (intelligence-derived). When the prior belief is about
+/// the *same location*, the new estimate is a precision-weighted
+/// (Bayesian) blend of prior and observation, and the confidence
+/// settles at `obs_conf` — the observer's intelligence is a hard
+/// ceiling, so repeated observation of the same hidden state does not
+/// manufacture certainty (see [`blend`]). When the force has moved (or
+/// there is no usable prior), the observation establishes a fresh
+/// estimate at `obs_conf`. Any
+/// foreign-force belief touched under weighting is tagged
+/// [`BeliefSource::Inferred`] — under intelligence weighting nothing
+/// about an opponent is ever "perfect direct observation". A prior
+/// `Deceived` entry blends *toward* the truth, modelling deception
+/// eroding as reality is observed.
+#[allow(clippy::too_many_arguments)]
+fn refresh_force_belief(
+    belief: &mut FactionBelief,
+    force_id: &ForceId,
+    owner: &FactionId,
+    region: &RegionId,
+    true_strength: f64,
+    weighting: bool,
+    obs_conf: f64,
+    tick: u32,
+) {
+    if !weighting {
+        belief.forces.insert(
+            force_id.clone(),
+            BeliefForce {
+                force: force_id.clone(),
+                owner: owner.clone(),
+                region: region.clone(),
+                estimated_strength: true_strength,
+                confidence: 1.0,
+                last_observed_tick: tick,
+                source: BeliefSource::DirectObservation,
+            },
+        );
+        return;
+    }
+    let (estimated_strength, confidence) = match belief.forces.get(force_id) {
+        Some(prior) if &prior.region == region => {
+            blend(prior.estimated_strength, true_strength, obs_conf)
+        },
+        _ => (true_strength, obs_conf),
+    };
+    belief.forces.insert(
+        force_id.clone(),
+        BeliefForce {
+            force: force_id.clone(),
+            owner: owner.clone(),
+            region: region.clone(),
+            estimated_strength,
+            confidence,
+            last_observed_tick: tick,
+            source: BeliefSource::Inferred,
+        },
+    );
+}
+
+/// Refresh a single region-control belief from a fresh observation.
+///
+/// Round-one fidelity (`weighting = false`): overwrite at
+/// `confidence = 1.0` / `DirectObservation`.
+///
+/// Round-two (`weighting = true`): region control is more observable
+/// than force strength (flags, checkpoints), so the observed
+/// controller is always adopted, but confidence is intelligence-capped
+/// — established at `obs_conf`. Tagged [`BeliefSource::Inferred`].
+fn refresh_region_belief(
+    belief: &mut FactionBelief,
+    region: &RegionId,
+    controller: Option<FactionId>,
+    weighting: bool,
+    obs_conf: f64,
+    tick: u32,
+) {
+    if !weighting {
+        belief.regions.insert(
+            region.clone(),
+            BeliefRegion {
+                controller,
+                confidence: 1.0,
+                last_observed_tick: tick,
+                source: BeliefSource::DirectObservation,
+            },
+        );
+        return;
+    }
+    belief.regions.insert(
+        region.clone(),
+        BeliefRegion {
+            controller,
+            confidence: obs_conf,
+            last_observed_tick: tick,
+            source: BeliefSource::Inferred,
+        },
+    );
+}
+
+/// Kalman-style update of a prior strength estimate toward a new
+/// observation. Returns the blended `(value, confidence)`.
+///
+/// The update gain is the observation confidence `obs_c`: a
+/// high-intelligence observer (high `obs_c`) snaps its estimate almost
+/// entirely to the fresh observation, while a low-intelligence one
+/// moves only partway — so its belief *lags* a changing ground truth,
+/// the analytical payoff that makes belief error scale with
+/// intelligence. The resulting confidence is the clamped gain (`obs_c`
+/// clamped to `[0, 1]`): the observer's capability is a hard ceiling,
+/// so repeated observation does not manufacture certainty beyond what
+/// the intelligence stat supports (no false `1.0`).
+fn blend(prior_v: f64, obs_v: f64, obs_c: f64) -> (f64, f64) {
+    let gain = obs_c.clamp(0.0, 1.0);
+    let value = prior_v + gain * (obs_v - prior_v);
+    // Return the clamped `gain` (not raw `obs_c`) so the confidence is
+    // always in `[0, 1]` and stays consistent with the gain used for
+    // the value update, even if a caller ever passes an out-of-range
+    // `obs_c`.
+    (value, gain)
+}
+
+/// Apply an [`EventEffect::AmbientIntel`] radiation: every faction
+/// with a force *in* or *adjacent to* `region` refreshes its belief
+/// about the region's control and the foreign forces located there,
+/// at fidelity governed by its own `intelligence` (round-two) or at
+/// full confidence (round-one). Models an observable field event
+/// whose information radiates to nearby actors asymmetrically.
+///
+/// No-op when belief mode is disabled. Unknown regions are rejected at
+/// scenario load; at runtime an unknown region simply has no listeners
+/// and no forces, so it is a safe no-op.
+pub fn apply_ambient_intel(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+    region: &RegionId,
+) {
+    if !belief_enabled(scenario) {
+        return;
+    }
+    let tick = state.tick;
+    let weighting = belief_config(scenario).intelligence_weighting;
+
+    // Regions from which the radiation can be picked up: the event
+    // region plus its neighbors.
+    let mut listen_set: std::collections::BTreeSet<RegionId> =
+        faultline_geo::adjacent_regions(region, map)
+            .into_iter()
+            .collect();
+    listen_set.insert(region.clone());
+
+    // Ground truth in the region, snapshotted once (immutable borrow
+    // released before the per-faction mutation loop).
+    let controller = state.region_control.get(region).cloned().unwrap_or(None);
+    let forces_in_region: Vec<(ForceId, FactionId, f64)> = state
+        .faction_states
+        .iter()
+        .flat_map(|(fid, fs)| {
+            fs.forces.values().filter_map(move |f| {
+                if &f.region == region {
+                    Some((f.id.clone(), fid.clone(), f.strength))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+    // Factions that can hear the radiation (own a force in listen_set).
+    let qualifying: Vec<FactionId> = state
+        .faction_states
+        .iter()
+        .filter(|(_, fs)| fs.forces.values().any(|f| listen_set.contains(&f.region)))
+        .map(|(fid, _)| fid.clone())
+        .collect();
+
+    for fid in qualifying {
+        let obs_conf = observation_confidence(faction_intelligence(scenario, &fid));
+        let belief = state
+            .belief_states
+            .entry(fid.clone())
+            .or_insert_with(|| FactionBelief {
+                faction: fid.clone(),
+                ..Default::default()
+            });
+        // Own-controlled regions stay perfect (a fact about self),
+        // mirroring the own-region guard in `observe_into_belief`.
+        let own_region = controller.as_ref() == Some(&fid);
+        refresh_region_belief(
+            belief,
+            region,
+            controller.clone(),
+            weighting && !own_region,
+            obs_conf,
+            tick,
+        );
+        for (force_id, owner, strength) in &forces_in_region {
+            if owner == &fid {
+                continue;
+            }
+            refresh_force_belief(
+                belief, force_id, owner, region, *strength, weighting, obs_conf, tick,
             );
         }
+        let counter = state.belief_counters.entry(fid).or_default();
+        counter.ambient_intel_received = counter.ambient_intel_received.saturating_add(1);
     }
 }
 
@@ -1007,7 +1282,7 @@ mod tests {
         };
 
         let observer = FactionId::from("observer");
-        let (_, _, region_n, region_sum) =
+        let (_, _, region_n, region_sum, _) =
             compute_accuracy_contribution(&belief, &observer, &state);
         assert_eq!(region_n, 2);
         // 2 regions, 2 correct → fraction is 1.0 (not 0.5, which would
@@ -1016,6 +1291,129 @@ mod tests {
             (region_sum - 1.0).abs() < 1e-9,
             "region_sum={region_sum} expected 1.0"
         );
+    }
+
+    #[test]
+    fn blend_gain_is_observation_confidence() {
+        // High gain (capable observer) snaps almost all the way to the
+        // new observation; low gain lags.
+        let (hi_v, hi_c) = blend(100.0, 200.0, 0.9);
+        assert!((hi_v - 190.0).abs() < 1e-9, "100 + 0.9*(200-100) = 190");
+        assert!((hi_c - 0.9).abs() < 1e-9, "confidence is the gain ceiling");
+        let (lo_v, lo_c) = blend(100.0, 200.0, 0.3);
+        assert!((lo_v - 130.0).abs() < 1e-9, "100 + 0.3*(200-100) = 130");
+        assert!((lo_c - 0.3).abs() < 1e-9);
+        // Low-intel estimate lags further from the true 200 than high-intel.
+        assert!((200.0 - lo_v) > (200.0 - hi_v));
+    }
+
+    #[test]
+    fn refresh_force_round_one_is_perfect_direct_observation() {
+        let mut belief = FactionBelief::default();
+        refresh_force_belief(
+            &mut belief,
+            &ForceId::from("f1"),
+            &FactionId::from("red"),
+            &RegionId::from("r1"),
+            120.0,
+            false, // round-one fidelity
+            0.4,   // obs_conf ignored on the round-one path
+            3,
+        );
+        let f = belief.forces.get(&ForceId::from("f1")).expect("entry");
+        assert_eq!(f.estimated_strength, 120.0);
+        assert_eq!(f.confidence, 1.0);
+        assert_eq!(f.source, BeliefSource::DirectObservation);
+    }
+
+    #[test]
+    fn refresh_force_weighted_is_inferred_and_capped() {
+        let mut belief = FactionBelief::default();
+        // First sighting: no prior at this location → value = truth,
+        // confidence = obs_conf, tagged Inferred.
+        refresh_force_belief(
+            &mut belief,
+            &ForceId::from("f1"),
+            &FactionId::from("red"),
+            &RegionId::from("r1"),
+            100.0,
+            true,
+            0.5,
+            1,
+        );
+        let f = belief.forces.get(&ForceId::from("f1")).expect("entry");
+        assert_eq!(f.estimated_strength, 100.0);
+        assert_eq!(f.confidence, 0.5);
+        assert_eq!(f.source, BeliefSource::Inferred);
+
+        // Second sighting at same location, truth moved to 200 → blend.
+        refresh_force_belief(
+            &mut belief,
+            &ForceId::from("f1"),
+            &FactionId::from("red"),
+            &RegionId::from("r1"),
+            200.0,
+            true,
+            0.5,
+            2,
+        );
+        let f = belief.forces.get(&ForceId::from("f1")).expect("entry");
+        // 100 + 0.5*(200-100) = 150.
+        assert!((f.estimated_strength - 150.0).abs() < 1e-9);
+        assert_eq!(f.confidence, 0.5, "confidence stays at the intel ceiling");
+    }
+
+    #[test]
+    fn weighted_observation_erodes_deception_toward_truth() {
+        // A planted deception (Deceived, confidence 1.0) blends toward
+        // the truth once the believer observes the real force, and the
+        // source tag transitions to Inferred.
+        let mut belief = FactionBelief::default();
+        belief.forces.insert(
+            ForceId::from("f1"),
+            BeliefForce {
+                force: ForceId::from("f1"),
+                owner: FactionId::from("red"),
+                region: RegionId::from("r1"),
+                estimated_strength: 500.0, // planted lie
+                confidence: 1.0,
+                last_observed_tick: 0,
+                source: BeliefSource::Deceived,
+            },
+        );
+        refresh_force_belief(
+            &mut belief,
+            &ForceId::from("f1"),
+            &FactionId::from("red"),
+            &RegionId::from("r1"),
+            100.0, // truth
+            true,
+            0.6,
+            5,
+        );
+        let f = belief.forces.get(&ForceId::from("f1")).expect("entry");
+        // 500 + 0.6*(100-500) = 260 — moving toward the truth.
+        assert!((f.estimated_strength - 260.0).abs() < 1e-9);
+        assert_eq!(f.source, BeliefSource::Inferred, "lie corrected by reality");
+        assert!(f.estimated_strength < 500.0);
+    }
+
+    #[test]
+    fn refresh_region_weighted_caps_confidence_at_intel_ceiling() {
+        let mut belief = FactionBelief::default();
+        let red = FactionId::from("red");
+        refresh_region_belief(
+            &mut belief,
+            &RegionId::from("r1"),
+            Some(red.clone()),
+            true,
+            0.45,
+            2,
+        );
+        let r = belief.regions.get(&RegionId::from("r1")).expect("entry");
+        assert_eq!(r.controller, Some(red));
+        assert_eq!(r.confidence, 0.45);
+        assert_eq!(r.source, BeliefSource::Inferred);
     }
 
     #[test]

@@ -245,4 +245,26 @@ pub enum EventEffect {
         target_faction: FactionId,
         payload: IntelligencePayload,
     },
+    /// Radiate field intelligence about `region` to every faction with
+    /// a force *in* `region` or *adjacent* to it (Epic M / J round-two
+    /// — asymmetric, network-driven information). Unlike
+    /// [`Self::IntelligenceShare`] (a unilateral source→target
+    /// transfer), `AmbientIntel` models an *observable event* — a
+    /// firefight, a column on the move, a sensor trip — that anyone
+    /// nearby learns about, but with fidelity proportional to their
+    /// own [`crate::faction::Faction::intelligence`]. Each qualifying
+    /// faction's belief about the region's control and the forces
+    /// currently located there is refreshed:
+    /// - at `confidence = 1.0` / `DirectObservation` when the belief
+    ///   model's `intelligence_weighting` is off (round-one fidelity), or
+    /// - intelligence-weighted and Bayesian-blended (tagged
+    ///   `Inferred`) when `intelligence_weighting` is on.
+    ///
+    /// A faction's belief about its *own* forces in the region is
+    /// untouched (it already knows them). No-op when
+    /// `simulation.belief_model.enabled = false`; validation rejects an
+    /// unknown `region` at scenario load.
+    AmbientIntel {
+        region: RegionId,
+    },
 }
