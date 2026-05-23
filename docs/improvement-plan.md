@@ -1,9 +1,13 @@
 # Faultline Improvement Plan
 
 Living tracker for cross-cutting improvement work. Individual PR/epic
-writeups live in `CLAUDE.md` and the git history; this doc is the
-*ordering* of what's left and *why* — the running narrative, not the
-archive.
+writeups now live in the subsystem docs under `docs/` (engine-model,
+analytics, parameter-audit, testing-and-ci) and the git history; this
+doc is the *ordering* of what's left and *why* — the running
+narrative, not the archive. Older closeout notes below that say "see
+the … section in `CLAUDE.md`" now resolve to the correspondingly-named
+section in one of those `docs/` files (the feature log was split out
+of `CLAUDE.md` in the May 2026 docs reorganization).
 
 The plan was originally derived from a three-angle audit (engine
 analytics, frontend/UX, scenario content — ~190 findings). It has
@@ -262,9 +266,13 @@ item still deferred: `ForceUnit.force_projection` drop-or-wire
 decision — leaning toward drop unless an epic calls for it), R3-6
 (decompose `Scenario`).
 
-Detailed writeups for closed epics live in `CLAUDE.md` (which is the
-authoritative description of what currently ships) and in the merged
-PR descriptions on `main`. This doc no longer carries them.
+Detailed writeups for closed epics live in the subsystem docs under
+`docs/` — [engine-model.md](engine-model.md) (simulation mechanics),
+[analytics.md](analytics.md) (reporting + cross-run analysis),
+[parameter-audit.md](parameter-audit.md) (R3-2), and
+[testing-and-ci.md](testing-and-ci.md) — which together are the
+authoritative description of what currently ships, plus the merged PR
+descriptions on `main`. This doc no longer carries them.
 
 ---
 

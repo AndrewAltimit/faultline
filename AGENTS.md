@@ -1,75 +1,88 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working with code in this repository.
+This is the canonical guide for both AI coding agents and humans working in
+this repository. `CLAUDE.md` imports this file, so the two never drift.
 
 ## Project Overview
 
-Faultline is an analytical research tool for conflict simulation. It takes TOML scenario configurations and runs deterministic Monte Carlo simulations producing probability distributions of outcomes. Primary targets: WASM (browser) and native CLI.
+Faultline is an analytical research tool for conflict simulation. It takes TOML
+scenario configurations and runs deterministic Monte Carlo simulations that
+produce probability distributions of outcomes. Primary targets: WASM (browser)
+and native CLI.
 
-All scenario data must be derived from publicly available open-source intelligence (OSINT). See [LEGAL.md](LEGAL.md) for sourcing requirements and export control analysis.
+Faultline is **not** a predictive model — it is a tool for exploring the
+consequence space of user-defined assumptions.
 
-All code is authored by AI agents under human direction. No external contributions are accepted (see `CONTRIBUTING.md`).
+All scenario data must be derived from publicly available open-source
+intelligence (OSINT). See [LEGAL.md](LEGAL.md) for sourcing requirements and
+export control analysis. All code is authored by AI agents under human
+direction; no external contributions are accepted (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Documentation map
+
+The detailed, subsystem-level documentation lives under [`docs/`](docs/). Start
+here when you need depth on a particular area:
+
+| Doc | Covers |
+|-----|--------|
+| [docs/cli.md](docs/cli.md) | Full CLI reference — every flag, run mode, output artifact, and bundled-archetype demo command. |
+| [docs/engine-model.md](docs/engine-model.md) | The per-tick simulation model: phase order, combat, diplomacy, supply, defender capacity, leadership, narrative/displacement, command effectiveness, multi-term utility AI, belief asymmetry. |
+| [docs/analytics.md](docs/analytics.md) | What Faultline computes across runs: the 27 Monte Carlo report sections, report module layout, search / robustness / co-evolution, calibration, and scenario explain. |
+| [docs/parameter-audit.md](docs/parameter-audit.md) | The R3-2 effort to wire up previously-silent scenario parameters, plus the closed-vs-deferred status. |
+| [docs/testing-and-ci.md](docs/testing-and-ci.md) | How to run tests, the property-test suites, the 10-stage CI pipeline, the GitHub Actions workflows, and the advisory exemption. |
+| [docs/scenario_schema.md](docs/scenario_schema.md) | The complete scenario TOML schema reference. |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Phase/epic history and forward plan. |
+| [docs/improvement-plan.md](docs/improvement-plan.md) | Active priorities, open epics, and round-three follow-ups. |
 
 ## Build and Test Commands
 
-This is a Cargo workspace. All CI runs containerized via Docker but the commands work locally:
+This is a Cargo workspace. CI runs containerized via Docker, but the commands
+work locally too. See [docs/cli.md](docs/cli.md) for the full CLI surface and
+[docs/testing-and-ci.md](docs/testing-and-ci.md) for the complete pipeline.
 
 ```bash
-# Format check
+# Format check, lint (warnings are errors in CI), test, release build, audit
 cargo fmt --all -- --check
-
-# Lint (warnings are errors in CI)
 cargo clippy --all-targets -- -D warnings
-
-# Run all tests
 cargo test
-
-# Run a single crate's tests
-cargo test -p faultline-types
-
-# Run a specific test by name
-cargo test -p faultline-engine -- combat_lanchester
-
-# Build release
 cargo build --release
-
-# License and advisory audit
 cargo deny check
 
-# Run a single simulation
+# Single crate / single test
+cargo test -p faultline-types
+cargo test -p faultline-engine -- combat_lanchester
+
+# Run a single simulation, then a Monte Carlo batch
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml --single-run
-
-# Run Monte Carlo batch
 cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000
-
-# Counterfactual override (Epic B): patches a single parameter and reports
-# the delta against baseline using the same seed.
-cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
-    --counterfactual "faction.alpha.initial_morale=0.3"
-
-# Side-by-side comparison (Epic B): runs two scenarios with matching
-# seed/run-count and emits a delta report.
-cargo run -p faultline-cli -- scenarios/tutorial_symmetric.toml -n 1000 \
-    --compare scenarios/tutorial_asymmetric.toml
 
 # Build WASM
 wasm-pack build crates/faultline-backend-wasm --target web --out-dir ../../site/pkg --no-typescript
-```
 
-CI pipeline order: **fmt -> clippy -> test -> build -> cargo-deny**.
+# Frontend JS unit tests (Node 22+; uses node:test, no install required)
+node --test tests/integration/*.test.mjs
 
-To match CI exactly (containerized):
-```bash
+# Match CI exactly (containerized)
 docker compose --profile ci run --rm rust-ci cargo test
 ```
 
+The other run modes — counterfactual, compare, `--search`, `--sensitivity`,
+`--robustness`, `--coevolve`, `--migrate`, `--explain`, `--verify` — are
+documented with runnable examples in [docs/cli.md](docs/cli.md).
+
 ## Code Style
 
-- Rust Edition 2024. Formatting enforced by `rustfmt.toml`: 100-char max line width, 4-space indentation, Unix newlines, `Tall` fn params layout.
+- Rust Edition 2024. Formatting enforced by `rustfmt.toml`: 100-char max line
+  width, 4-space indentation, Unix newlines, `Tall` fn params layout.
 - Run `cargo fmt --all` before committing. CI rejects unformatted code.
-- Clippy warnings treated as errors in CI: `cargo clippy --all-targets -- -D warnings`.
-- Workspace-level lints in root `Cargo.toml`: `clippy::dbg_macro`, `clippy::todo`, `clippy::unimplemented`, `clippy::clone_on_ref_ptr` are warnings; `clippy::unwrap_used` is deny. `unsafe_op_in_unsafe_fn` is a warning.
-- **No `unwrap()` anywhere** — including tests. Use `expect("descriptive reason")` instead.
+- Clippy warnings are errors in CI: `cargo clippy --all-targets -- -D warnings`.
+- Workspace-level lints in root `Cargo.toml`: `clippy::dbg_macro`,
+  `clippy::todo`, `clippy::unimplemented`, `clippy::clone_on_ref_ptr` are
+  warnings; `clippy::unwrap_used` is **deny**. `unsafe_op_in_unsafe_fn` is a
+  warning.
+- **No `unwrap()` anywhere** — including tests. Use
+  `expect("descriptive reason")` instead.
 - Edition 2024: `gen` is a keyword — use `r#gen` for random generation calls.
 
 ## Workspace Structure
@@ -89,41 +102,73 @@ crates/
 
 ## Architecture
 
-- **Determinism is non-negotiable.** Same config + same seed = identical output on native and WASM. Uses `ChaCha8Rng`. Use `BTreeMap` for deterministic iteration (never `HashMap`).
-- **No `unwrap()`.** Workspace-level `clippy::unwrap_used = "deny"`. All error paths must be handled.
-- **WASM-compatible engine.** `faultline-engine` must compile to `wasm32-unknown-unknown`. No `std::fs`, no `std::thread`, no `rayon` in the engine crate. Parallelism lives only in `faultline-cli` (rayon) and `faultline-backend-wasm` (web workers).
-- All IDs are newtypes wrapping `String` (defined via `define_id!` macro in `faultline-types/src/ids.rs`).
+- **Determinism is non-negotiable.** Same config + same seed = identical output
+  on native and WASM. Uses `ChaCha8Rng`. Use `BTreeMap` for deterministic
+  iteration (**never** `HashMap`). The rendered Markdown report is part of the
+  manifest content hash, so any change to report output (section ordering, new
+  unconditional text) flips every bundled scenario's `output_hash` and breaks
+  `--verify`; the `verify-bundled` CI stage catches this.
+- **No `unwrap()`.** Workspace-level `clippy::unwrap_used = "deny"`. All error
+  paths must be handled.
+- **WASM-compatible engine.** `faultline-engine` must compile to
+  `wasm32-unknown-unknown`. No `std::fs`, no `std::thread`, no `rayon` in the
+  engine crate. Parallelism lives only in `faultline-cli` (rayon) and
+  `faultline-backend-wasm` (web workers).
+- All IDs are newtypes wrapping `String` (via the `define_id!` macro in
+  `faultline-types/src/ids.rs`).
 - All config structs derive `Serialize, Deserialize, Clone, Debug`.
-- Technology modifiers are "capability cards" — named bundles of statistical effects derived from OSINT.
-- Scenarios are TOML files in `scenarios/`.
+- Technology modifiers are "capability cards" — named bundles of statistical
+  effects derived from OSINT.
+- Scenarios are TOML files in `scenarios/`. The browser app reads them via
+  `site/scenarios/`, a symlink to `../scenarios` so the source of truth lives
+  in one place. The GitHub Pages deploy workflow materializes the symlink
+  (replaces it with a real copy) before uploading, since the upload only
+  includes `site/`.
+
+The per-tick phase order and the contract for each engine behavior are
+documented in [docs/engine-model.md](docs/engine-model.md). When adding a new
+feature, follow the project pattern: **fail loud at scenario load** (reject
+silent-no-op shapes in validation) rather than silently no-op at tick N.
 
 ## Scenario Data Policy
 
-Faultline models aggregate statistical effects of real-world systems. When writing or reviewing scenarios:
+Faultline models aggregate statistical effects of real-world systems. When
+writing or reviewing scenarios:
 
-- **All capability parameters must be sourceable from public OSINT** (IISS Military Balance, CRS reports, congressional testimony, published defense analyses, academic literature).
-- **Describe effects, not implementations.** A tech card says "detection range 300km against 1m² RCS" (published spec), not "use X-band phased array with Y waveform" (technical data).
-- **No classified, CUI, or export-controlled information.** If you can't find it in a public source, don't include it.
+- **All capability parameters must be sourceable from public OSINT** (IISS
+  Military Balance, CRS reports, congressional testimony, published defense
+  analyses, academic literature).
+- **Describe effects, not implementations.** A tech card says "detection range
+  300km against 1m² RCS" (published spec), not "use X-band phased array with Y
+  waveform" (technical data).
+- **No classified, CUI, or export-controlled information.** If you can't find
+  it in a public source, don't include it.
 
 ## Security Considerations
 
-- No OpenAI/Codex integrations — disabled due to security concerns (government surveillance partnerships).
+- No OpenAI/Codex integrations — disabled due to security concerns (government
+  surveillance partnerships).
 - No Google/Gemini integrations — same concerns.
-- PR reviews use Claude Code (security + quality profiles) and Qwen 3.5 via OpenRouter.
+- PR reviews use Claude Code (security + quality profiles) and Qwen 3.7
+  (`qwen/qwen3.7-max`) via OpenRouter.
 
 ## CI/CD Pipeline
 
-Two GitHub Actions workflows on self-hosted runners:
+Pipeline stage order: **fmt → clippy → test → build → cargo-deny → grep-guard →
+verify-bundled → verify-migration → verify-robustness → js-tests**.
 
-- **`main-ci.yml`** — Runs on main push and tags. CI stages (fmt, clippy, test, build, cargo-deny), WASM build via wasm-pack, GitHub Pages deployment. Auto-creates GitHub issues on failure.
-- **`pr-validation.yml`** — Runs on PRs. CI stages + Claude Code AI review (security + quality profiles) + OpenRouter/Qwen 3.5 general review + automated agent fix iterations (max 5, extendable with `[CONTINUE]` comment). Add `no-auto-fix` label to disable automated fixes.
+Two GitHub Actions workflows run on self-hosted runners:
+
+- **`main-ci.yml`** — runs on main push and tags. CI stages + WASM build via
+  wasm-pack + GitHub Pages deployment. Auto-creates GitHub issues on failure.
+- **`pr-validation.yml`** — runs on PRs. CI stages + Claude Code AI review
+  (security + quality profiles) + OpenRouter/Qwen 3.7 general review +
+  automated agent fix iterations (max 5, extendable with a `[CONTINUE]`
+  comment). Add the `no-auto-fix` label to disable automated fixes.
 
 Agent commit authors: `AI Review Agent`, `AI Pipeline Agent`, `AI Agent Bot`.
 
-## Known Advisory Exemptions
-
-One advisory is currently exempted in `deny.toml`:
-
-- `RUSTSEC-2026-0097` — rand 0.8 unsound only when a custom logger calls `rand::rng()` and `ThreadRng` reseeds inside that logger. Faultline uses `tracing` (not `log`) and never calls rand from a logging context. Upgrading to rand 0.9+ requires coordinated updates across `rand_chacha`, `rand_distr`, `statrs`, and `nalgebra` and is planned for a future release.
-
-`cargo deny check` otherwise passes clean.
+The custom CI stages (grep-guard, verify-bundled, verify-migration,
+verify-robustness, js-tests) and the one active advisory exemption
+(`RUSTSEC-2026-0097`) are documented in
+[docs/testing-and-ci.md](docs/testing-and-ci.md).
