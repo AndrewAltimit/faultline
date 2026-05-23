@@ -189,7 +189,7 @@ Triggered on pull requests. Runs:
 
 1. The full 10-stage CI pipeline.
 2. Claude Code AI review (security and quality profiles).
-3. OpenRouter / Qwen 3.5 general code review.
+3. OpenRouter / Qwen 3.7 (`qwen/qwen3.7-max`) general code review.
 4. Automated agent fix iterations — up to 5 rounds, extendable by posting a `[CONTINUE]`
    comment on the PR. Add the `no-auto-fix` label to disable automated fixes entirely.
 

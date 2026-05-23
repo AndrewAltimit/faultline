@@ -67,9 +67,9 @@ node --test tests/integration/*.test.mjs
 docker compose --profile ci run --rm rust-ci cargo test
 ```
 
-The other run modes — counterfactual, compare, `--search`, `--robustness`,
-`--coevolve`, `--migrate`, `--explain`, `--verify` — are documented with
-runnable examples in [docs/cli.md](docs/cli.md).
+The other run modes — counterfactual, compare, `--search`, `--sensitivity`,
+`--robustness`, `--coevolve`, `--migrate`, `--explain`, `--verify` — are
+documented with runnable examples in [docs/cli.md](docs/cli.md).
 
 ## Code Style
 
@@ -149,8 +149,8 @@ writing or reviewing scenarios:
 - No OpenAI/Codex integrations — disabled due to security concerns (government
   surveillance partnerships).
 - No Google/Gemini integrations — same concerns.
-- PR reviews use Claude Code (security + quality profiles) and Qwen 3.5 via
-  OpenRouter.
+- PR reviews use Claude Code (security + quality profiles) and Qwen 3.7
+  (`qwen/qwen3.7-max`) via OpenRouter.
 
 ## CI/CD Pipeline
 
@@ -162,7 +162,7 @@ Two GitHub Actions workflows run on self-hosted runners:
 - **`main-ci.yml`** — runs on main push and tags. CI stages + WASM build via
   wasm-pack + GitHub Pages deployment. Auto-creates GitHub issues on failure.
 - **`pr-validation.yml`** — runs on PRs. CI stages + Claude Code AI review
-  (security + quality profiles) + OpenRouter/Qwen 3.5 general review +
+  (security + quality profiles) + OpenRouter/Qwen 3.7 general review +
   automated agent fix iterations (max 5, extendable with a `[CONTINUE]`
   comment). Add the `no-auto-fix` label to disable automated fixes.
 
