@@ -197,22 +197,20 @@ See `docs/improvement-plan.md` Epic B for the closeout note.
 
 See `docs/improvement-plan.md` Epic C for the closeout note.
 
-### 8.D — Engine model depth — IN PROGRESS
+### 8.D — Engine model depth — COMPLETE
 
-Round one shipped 3 of 7 items (the "pick 2–3" bar):
+All seven items shipped across three rounds (closed May 2026):
 
 - [x] `BranchCondition::OrAny` with short-circuit evaluation + recursive escalation-window walker
 - [x] Weather / time-of-day modifiers via optional `EnvironmentSchedule` (Always / TickRange / Cycle activation, multiplicative defense + global detection factors)
-- [x] Leadership decapitation + succession via `LeadershipCadre` + `PhaseOutput::LeadershipDecapitation` + per-tick morale-cap helper
+- [x] Leadership decapitation + succession via `LeadershipCadre` + `PhaseOutput::LeadershipDecapitation` (the morale-cap helper was later generalized into `command_effectiveness` in R3-4)
+- [x] Coalition / alliance fracture mechanic (round two) + diplomatic stance behavioral coupling for combat & AI (round three item 1)
+- [x] Supply-network graph + interdiction (round three item 2)
+- [x] Multi-front resource contention via cross-role escalation chains (round three item 3)
+- [x] Info-op narrative competition + refugee / displacement flows (round three item 4)
 
-Deferred:
-- [ ] Supply-network graph + interdiction
-- [ ] Multi-front resource contention
-- [ ] Info-op narrative competition
-- [ ] Coalition / alliance fracture mechanic
-- [ ] Refugee / displacement flows
-
-See `docs/improvement-plan.md` Epic D for the closeout note on round one.
+See [docs/engine-model.md](engine-model.md) for the shipped contracts and
+`docs/improvement-plan.md` Epic D for the round-by-round closeout notes.
 
 ### 8.E — UI identity & analytical density — DEFERRED
 

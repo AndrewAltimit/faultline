@@ -43,7 +43,7 @@ docker compose --profile ci run --rm rust-ci cargo build --release
 docker compose --profile ci run --rm rust-ci cargo deny check
 ```
 
-CI pipeline order: **fmt check -> clippy -> test -> build -> cargo-deny**
+CI pipeline order: **fmt → clippy → test → build → cargo-deny → grep-guard → verify-bundled → verify-migration → verify-robustness → js-tests**. See [docs/testing-and-ci.md](docs/testing-and-ci.md) for what each stage does.
 
 ## Crate Architecture
 
@@ -73,6 +73,15 @@ faultline-types          (shared data structures — no logic, no deps)
 | `faultline-stats` | Monte Carlo runner, win probabilities, distribution stats |
 | `faultline-backend-wasm` | WASM API (load, validate, run scenarios from browser) |
 | `faultline-cli` | Headless CLI with rayon parallelism for batch runs |
+
+## Documentation
+
+- [AGENTS.md](AGENTS.md) — canonical project guide (build, code style, architecture, data policy, CI) with a map of the docs below.
+- [docs/cli.md](docs/cli.md) — full CLI reference: every flag, run mode, and bundled-archetype demo.
+- [docs/engine-model.md](docs/engine-model.md) — the per-tick simulation model and engine mechanics.
+- [docs/analytics.md](docs/analytics.md) — Monte Carlo report sections, search/robustness/co-evolution, calibration.
+- [docs/scenario_schema.md](docs/scenario_schema.md) — the scenario TOML schema reference.
+- [docs/testing-and-ci.md](docs/testing-and-ci.md) — test suites and the CI pipeline.
 
 ## Design Philosophy
 

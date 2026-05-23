@@ -2006,8 +2006,8 @@ pub fn effective_leadership_factor(
 /// the broader R3-4 morale/command split *does* shift cadre-bearing
 /// scenario hashes (raw morale is no longer clamped by the
 /// leadership factor, so combat outcomes diverge); see the PR
-/// description and `CLAUDE.md`'s R3-4 section for the full hash
-/// movement.
+/// description and the "Command effectiveness as a separate axis"
+/// section in `docs/engine-model.md` for the full hash movement.
 pub fn update_command_effectiveness(state: &mut SimulationState, scenario: &Scenario) {
     // Legacy scenarios with no cadres pay only this scan; the
     // command_effectiveness field stays at its 1.0 default.

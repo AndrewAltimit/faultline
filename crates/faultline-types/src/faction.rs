@@ -91,8 +91,8 @@ pub struct Faction {
     /// Composition is additive on top of the doctrine score so the two
     /// signals coexist: doctrine remains the dominant signal at low
     /// term weights, and the utility surface takes over as analysts
-    /// dial weights up. See the "Multi-term utility & adaptive AI"
-    /// section in `CLAUDE.md` for the per-action mapping.
+    /// dial weights up. See the "Multi-term utility and adaptive AI"
+    /// section in `docs/engine-model.md` for the per-action mapping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub utility: Option<FactionUtility>,
 }
