@@ -63,6 +63,10 @@ fn set_panic_hook() {
 /// the static `index.html`, which instantiates the module but never calls
 /// `init()`) — still surfaces a diagnostic to the console instead of aborting
 /// opaquely.
+///
+/// This is purely an implementation artifact: wasm-bindgen invokes it
+/// automatically at instantiation, so JS consumers should **not** call it.
+/// It is idempotent, so an accidental manual call is harmless.
 #[wasm_bindgen(start)]
 pub fn start() {
     set_panic_hook();
