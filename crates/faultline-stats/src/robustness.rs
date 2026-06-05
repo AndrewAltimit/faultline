@@ -571,17 +571,21 @@ fn pick_extreme<F>(values: &[(String, f64)], cmp_values: F) -> (String, f64)
 where
     F: Fn(&f64, &f64) -> std::cmp::Ordering,
 {
-    // `values` is non-empty here — caller iterates over a non-empty
-    // profile slice. The fold's seed is the first entry.
-    values
-        .iter()
-        .skip(1)
-        .fold(values[0].clone(), |acc, current| {
-            match cmp_values(&current.1, &acc.1) {
-                std::cmp::Ordering::Greater => current.clone(),
-                _ => acc,
-            }
-        })
+    // Callers reach this only with a non-empty profile slice, but make the
+    // function total at its own boundary rather than relying on a non-local
+    // invariant behind a panicking `values[0]` index: seed the fold from the
+    // iterator's first element and return a neutral sentinel on empty. This is
+    // behavior-identical for every reachable (non-empty) input.
+    let mut iter = values.iter();
+    let Some(first) = iter.next() else {
+        return ("—".to_string(), f64::NAN);
+    };
+    iter.fold(first.clone(), |acc, current| {
+        match cmp_values(&current.1, &acc.1) {
+            std::cmp::Ordering::Greater => current.clone(),
+            _ => acc,
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------

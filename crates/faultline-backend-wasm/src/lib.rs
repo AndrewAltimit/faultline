@@ -45,6 +45,17 @@ fn parse_scenario(toml_str: &str) -> Result<Scenario, JsValue> {
 /// Initialize the WASM module (console logging, panic hook, etc.).
 #[wasm_bindgen]
 pub fn init() {
+    // Install a panic hook that surfaces the panic payload and location to the
+    // browser console. Without it, an unexpected panic aborts the WASM
+    // instance with an opaque `unreachable executed` RuntimeError and no
+    // diagnostic — invisible to anyone debugging from the browser. This is
+    // dependency-free (no `console_error_panic_hook` crate): `PanicHookInfo`'s
+    // Display impl already includes the message and source location, so we
+    // route it straight through `console.error`.
+    std::panic::set_hook(Box::new(|info| {
+        web_sys::console::error_1(&format!("faultline-backend-wasm panic: {info}").into());
+    }));
+
     // Log initialization to the browser console.
     web_sys::console::log_1(&"faultline-backend-wasm initialized".into());
 }

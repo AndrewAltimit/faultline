@@ -1487,9 +1487,13 @@ pub fn narrative_phase(state: &mut SimulationState, scenario: &Scenario) {
     let leading: Option<(FactionId, f64)> = faction_scores
         .iter()
         .max_by(|a, b| {
-            a.1.partial_cmp(b.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| b.0.cmp(a.0))
+            // `total_cmp` (matching ai.rs / narrative_dynamics ranking) rather
+            // than `partial_cmp().unwrap_or(Equal)`: a total, NaN-deterministic
+            // order. The scores here are `strength * credibility` products of
+            // `[0, 1]`-clamped finite inputs, so for every reachable value the
+            // two comparators agree bit-for-bit; this only removes the
+            // NaN-collapses-to-Equal asymmetry the rest of the engine avoids.
+            a.1.total_cmp(b.1).then_with(|| b.0.cmp(a.0))
         })
         .map(|(fid, score)| (fid.clone(), *score));
 

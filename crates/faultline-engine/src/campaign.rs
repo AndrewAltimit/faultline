@@ -667,7 +667,12 @@ fn apply_leadership_decapitation(
         .factions
         .get(target)
         .and_then(|f| f.leadership.as_ref())
-        .map(|c| c.ranks.len() as u32);
+        // Saturating conversion rather than a truncating `as` cast: matches
+        // the codebase convention for len()->u32 (cf. belief.rs, network.rs)
+        // and turns the (unreachable) > u32::MAX case into saturation, which
+        // is strictly safer than silent wraparound for the rank-count
+        // comparison this feeds.
+        .map(|c| u32::try_from(c.ranks.len()).unwrap_or(u32::MAX));
 
     // `command_resilience` ∈ [0.0, 1.0] attenuates the one-shot morale
     // drop from a successful decapitation strike: 0.0 = full shock
