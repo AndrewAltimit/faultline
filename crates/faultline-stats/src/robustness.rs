@@ -571,17 +571,23 @@ fn pick_extreme<F>(values: &[(String, f64)], cmp_values: F) -> (String, f64)
 where
     F: Fn(&f64, &f64) -> std::cmp::Ordering,
 {
-    // `values` is non-empty here — caller iterates over a non-empty
-    // profile slice. The fold's seed is the first entry.
-    values
-        .iter()
-        .skip(1)
-        .fold(values[0].clone(), |acc, current| {
-            match cmp_values(&current.1, &acc.1) {
-                std::cmp::Ordering::Greater => current.clone(),
-                _ => acc,
-            }
-        })
+    // Callers reach this only with a non-empty profile slice (`compute_rollups`
+    // returns early when `n_profiles == 0`). Seed the fold from the iterator's
+    // first element rather than a panicking `values[0]` index, and fail loud on
+    // the impossible empty case instead of injecting a NaN sentinel into report
+    // output — the latter would silently corrupt results, the exact failure mode
+    // the load-time validation in this audit prevents upstream. Behavior is
+    // identical for every reachable (non-empty) input.
+    let mut iter = values.iter();
+    let Some(first) = iter.next() else {
+        unreachable!("pick_extreme called with an empty values slice");
+    };
+    iter.fold(first.clone(), |acc, current| {
+        match cmp_values(&current.1, &acc.1) {
+            std::cmp::Ordering::Greater => current.clone(),
+            _ => acc,
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------

@@ -86,6 +86,76 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     }
 
     for (fid, faction) in &scenario.factions {
+        // Core faction scalars. These flow straight into runtime state
+        // (`engine::initialize` copies `initial_morale`, `initial_resources`,
+        // `resource_rate`, `logistics_capacity` into `RuntimeFactionState`;
+        // `command_resilience` and `intelligence` drive AI / command-
+        // effectiveness math). A non-finite authored value propagates through
+        // combat / morale / resource accounting and silently poisons the whole
+        // distribution — the exact "silent corruption at tick N" the project
+        // forbids. Some downstream sites clamp defensively (e.g.
+        // `command_resilience.clamp(0,1)`, the `intelligence` confidence
+        // clamp), but a value that needs clamping is almost always an
+        // authoring error, so fail loud at load. Bounds match each field's
+        // documented range: morale / command_resilience / intelligence are
+        // `[0, 1]`; the capacity / resource quantities are unbounded above but
+        // must be finite and non-negative (a negative income or logistics
+        // ceiling is physically meaningless).
+        for (label, value) in [
+            ("initial_morale", faction.initial_morale),
+            ("command_resilience", faction.command_resilience),
+            ("intelligence", faction.intelligence),
+        ] {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("faction {fid} {label}"),
+                    value,
+                    expected: "[0.0, 1.0] and finite".into(),
+                });
+            }
+        }
+        for (label, value) in [
+            ("initial_resources", faction.initial_resources),
+            ("resource_rate", faction.resource_rate),
+            ("logistics_capacity", faction.logistics_capacity),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(ScenarioError::ValueOutOfRange {
+                    field: format!("faction {fid} {label}"),
+                    value,
+                    expected: ">= 0.0 and finite".into(),
+                });
+            }
+        }
+
+        // Recruitment config. When present, `base_strength * rate` becomes the
+        // strength of every recruited unit (`tick::recruitment_phase`); a
+        // non-finite or negative `base_strength` / `rate` injects corrupt force
+        // strength mid-run with no diagnostic. `population_threshold` gates
+        // whether recruitment fires and `cost` is debited from resources —
+        // both must be finite and non-negative for the gate / accounting to
+        // mean anything. No downstream site validates these, so this is the
+        // only guard.
+        if let Some(recruit) = &faction.recruitment {
+            for (label, value) in [
+                ("recruitment.rate", recruit.rate),
+                ("recruitment.base_strength", recruit.base_strength),
+                ("recruitment.cost", recruit.cost),
+                (
+                    "recruitment.population_threshold",
+                    recruit.population_threshold,
+                ),
+            ] {
+                if !value.is_finite() || value < 0.0 {
+                    return Err(ScenarioError::ValueOutOfRange {
+                        field: format!("faction {fid} {label}"),
+                        value,
+                        expected: ">= 0.0 and finite".into(),
+                    });
+                }
+            }
+        }
+
         for unit in faction.forces.values() {
             if !scenario.map.regions.contains_key(&unit.region) {
                 return Err(ScenarioError::ForceRegionMismatch {
@@ -997,6 +1067,30 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     // be surprised by silent clamping.
     if let Some(cfg) = &scenario.simulation.belief_model {
         faultline_types::belief::validate_belief_model(cfg).map_err(ScenarioError::Custom)?;
+    }
+
+    // Top-level political climate scalars. `tension` feeds event-condition
+    // evaluation (`TensionAbove` / `TensionBelow`) and the loyalty model
+    // (`evaluate_loyalty` reads `tension * 0.3`); `institutional_trust` feeds
+    // the same loyalty / fracture machinery. Both are documented `[0, 1]`. A
+    // NaN `tension` is especially insidious: every `TensionAbove` / `Below`
+    // comparison is `false` for NaN, so the authored events silently never
+    // fire with no error. Reject non-finite or out-of-range values at load,
+    // alongside the media-landscape block below.
+    for (label, value) in [
+        ("tension", scenario.political_climate.tension),
+        (
+            "institutional_trust",
+            scenario.political_climate.institutional_trust,
+        ),
+    ] {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ScenarioError::ValueOutOfRange {
+                field: format!("political_climate.{label}"),
+                value,
+                expected: "[0.0, 1.0] and finite".into(),
+            });
+        }
     }
 
     // Media landscape. The three media-amplification fields are
@@ -2093,6 +2187,77 @@ mod tests {
             }],
         };
         let err = validate_scenario(&scenario).expect_err("NaN factor must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_nan_faction_morale() {
+        let mut scenario = minimal_scenario();
+        scenario
+            .factions
+            .get_mut(&FactionId::from("gov"))
+            .expect("gov faction present")
+            .initial_morale = f64::NAN;
+        let err = validate_scenario(&scenario).expect_err("NaN morale must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_faction_intelligence() {
+        let mut scenario = minimal_scenario();
+        scenario
+            .factions
+            .get_mut(&FactionId::from("gov"))
+            .expect("gov faction present")
+            .intelligence = 1.5;
+        let err = validate_scenario(&scenario).expect_err("intelligence > 1 must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_negative_faction_resource_rate() {
+        let mut scenario = minimal_scenario();
+        scenario
+            .factions
+            .get_mut(&FactionId::from("gov"))
+            .expect("gov faction present")
+            .resource_rate = -1.0;
+        let err = validate_scenario(&scenario).expect_err("negative resource_rate must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_nan_recruitment_base_strength() {
+        use faultline_types::faction::{RecruitmentConfig, UnitType};
+        let mut scenario = minimal_scenario();
+        scenario
+            .factions
+            .get_mut(&FactionId::from("gov"))
+            .expect("gov faction present")
+            .recruitment = Some(RecruitmentConfig {
+            rate: 1.0,
+            population_threshold: 0.0,
+            unit_type: UnitType::Infantry,
+            base_strength: f64::NAN,
+            cost: 1.0,
+        });
+        let err = validate_scenario(&scenario).expect_err("NaN base_strength must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_political_tension() {
+        let mut scenario = minimal_scenario();
+        scenario.political_climate.tension = 2.0;
+        let err = validate_scenario(&scenario).expect_err("tension > 1 must reject");
+        assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
+    }
+
+    #[test]
+    fn validate_rejects_nan_political_institutional_trust() {
+        let mut scenario = minimal_scenario();
+        scenario.political_climate.institutional_trust = f64::NAN;
+        let err = validate_scenario(&scenario).expect_err("NaN institutional_trust must reject");
         assert!(matches!(err, ScenarioError::ValueOutOfRange { .. }));
     }
 

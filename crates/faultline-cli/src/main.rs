@@ -1019,6 +1019,17 @@ fn parse_sensitivity_range(range: &str) -> Result<(f64, f64, u32)> {
     let steps: u32 = parts[2]
         .parse()
         .with_context(|| format!("invalid steps value: '{}'", parts[2]))?;
+    // Reject non-finite bounds at the CLI boundary. `"nan:1:5"` parses to a
+    // valid f64 (NaN) and would otherwise sweep the parameter through a range
+    // of NaN values with no diagnostic, producing an all-NaN sensitivity
+    // result. A finite, graceful error here is far more useful than garbage
+    // downstream. (`low > high` is left permissive — sweeping a range
+    // backwards is a deliberate, if unusual, request; `steps == 0` is already
+    // rejected in the sensitivity driver.)
+    anyhow::ensure!(
+        low.is_finite() && high.is_finite(),
+        "sensitivity range bounds must be finite, got low={low}, high={high}"
+    );
     Ok((low, high, steps))
 }
 
