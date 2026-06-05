@@ -42,19 +42,40 @@ fn parse_scenario(toml_str: &str) -> Result<Scenario, JsValue> {
 // Initialization
 // ---------------------------------------------------------------------------
 
-/// Initialize the WASM module (console logging, panic hook, etc.).
-#[wasm_bindgen]
-pub fn init() {
-    // Install a panic hook that surfaces the panic payload and location to the
-    // browser console. Without it, an unexpected panic aborts the WASM
-    // instance with an opaque `unreachable executed` RuntimeError and no
-    // diagnostic — invisible to anyone debugging from the browser. This is
-    // dependency-free (no `console_error_panic_hook` crate): `PanicHookInfo`'s
-    // Display impl already includes the message and source location, so we
-    // route it straight through `console.error`.
+/// Install a panic hook that surfaces the panic payload and location to the
+/// browser console. Without it, an unexpected panic aborts the WASM instance
+/// with an opaque `unreachable executed` RuntimeError and no diagnostic —
+/// invisible to anyone debugging from the browser. This is dependency-free (no
+/// `console_error_panic_hook` crate): `PanicHookInfo`'s Display impl already
+/// includes the message and source location, so we route it straight through
+/// `console.error`. Idempotent: calling it more than once simply re-installs
+/// the same hook.
+fn set_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         web_sys::console::error_1(&format!("faultline-backend-wasm panic: {info}").into());
     }));
+}
+
+/// Install the panic hook automatically at module instantiation.
+///
+/// `#[wasm_bindgen(start)]` runs this before any other export, so a panic in
+/// any code path — even one reached before a JS consumer calls [`init`] (e.g.
+/// the static `index.html`, which instantiates the module but never calls
+/// `init()`) — still surfaces a diagnostic to the console instead of aborting
+/// opaquely.
+#[wasm_bindgen(start)]
+pub fn start() {
+    set_panic_hook();
+}
+
+/// Initialize the WASM module (console logging, panic hook, etc.).
+///
+/// Retained for the JS consumers that call it explicitly. The panic hook is
+/// already installed automatically at instantiation by [`start`]; this
+/// re-installs it idempotently and logs readiness to the browser console.
+#[wasm_bindgen]
+pub fn init() {
+    set_panic_hook();
 
     // Log initialization to the browser console.
     web_sys::console::log_1(&"faultline-backend-wasm initialized".into());
