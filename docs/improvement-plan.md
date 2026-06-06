@@ -395,7 +395,26 @@ browser editor.
 
 `historical_precedent` here overlaps `historical_analogue` in Epic
 N — same field, different motivations. If N moves first, F
-inherits the field for free. Status: deferred.
+inherits the field for free. Status: partially shipped.
+
+**Tech-library rebalance — shipped (round one).** The under-represented
+categories called out above are now covered by a balanced
+offensive/defensive set of new capability cards bundled in
+`scenarios/tech_rebalance_demo.toml`: SIGINT (`passive_sigint_collection`,
+`comms_metadata_geolocation` vs. `sigint_emcon_discipline`),
+supply-chain weaponization (`supplychain_implant` vs.
+`sbom_supplychain_assurance`), SCADA/ICS (`scada_ics_manipulation` vs.
+`ot_network_segmentation`), GPS/PNT denial (`gnss_denial_jamming`,
+`gnss_spoofing` vs. `resilient_pnt_holdover`), and deepfakes / synthetic
+media (`synthetic_media_influence` vs. `synthetic_media_provenance`).
+Each card is an aggregate-statistical-effect bundle sourced from public
+specifications only (effect-level, no implementation detail); the card
+vocabulary is documented in the "Bundled capability-card categories"
+subsection of `docs/scenario_schema.md`. No engine/type changes were
+needed — novel categories use the existing `TechCategory::Custom(String)`
+escape hatch. Remaining Epic F items (the `[meta]` self-description
+fields, scenario backfill, healthcare cards, browser metadata form)
+stay deferred.
 
 ### Epic J — Adaptive faction AI
 
@@ -537,13 +556,28 @@ not claim prediction; disciplines the parameter library.
       without an analogue render a "purely synthetic" notice in the
       `## Calibration` section explaining what the absence means for
       result interpretation.
-- [ ] **Reference scenario set: 5–10 well-documented historical
+- [~] **Reference scenario set: 5–10 well-documented historical
       analogues where parameters are constrained by published
-      estimates.** Round-two work. Round-one shipped one bundled
-      archetype (`scenarios/calibration_demo.toml`) using a stylized
-      aggregate analogue rather than a single named event. Each
-      single-event addition is per-scenario research work, not a
-      framework change.
+      estimates.** Round-two work, in progress. Round-one shipped one
+      bundled archetype (`scenarios/calibration_demo.toml`) using a
+      stylized aggregate analogue. Round-two added **three cleanly-sourced
+      single-event analogues**, all producing **Overall calibration: Pass**:
+      `analogue_short_coercive_war.toml` (Aug 2008 Russo-Georgian War —
+      coercion campaign → coerced ceasefire; attacker win ~85%, duration
+      band [2,9]), `analogue_grid_cyberattack_2015.toml` (Dec 2015 regional
+      grid cyberattack — SCADA/ICS kill chain → outage; attacker win ~80%,
+      band [2,10]), and `analogue_supplychain_wiper_2017.toml` (Jun 2017
+      supply-chain destructive wiper; attacker win ~92%, band [1,7]).
+      **Modeling note for future authors:** the engine's combat model
+      resolves attrition only where opposing forces co-locate and its AI
+      will not assault a defended region, so a clean kinetic
+      "Winner-by-conquest" verdict is not reliably reachable at realistic
+      force ratios in a short horizon. The reliable path to a calibratable
+      `Winner` + `DurationTicks` outcome is a **kill chain driving a
+      non-kinetic accumulator** (`CoercionPressure`) past a
+      `NonKineticThreshold` victory condition — all three new analogues
+      use this pattern. Remaining: 2–7 more single-event analogues to
+      reach the 5–10 target.
 - [x] **Per-scenario "calibration confidence" surfaced alongside the
       methodology appendix.** Shipped May 2026 as round-two item 2.
       The methodology section now emits a `Calibration confidence:
