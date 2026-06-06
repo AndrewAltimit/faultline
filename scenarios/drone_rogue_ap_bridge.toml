@@ -720,6 +720,10 @@ delta = 0.2
 type = "TensionDelta"
 delta = 0.2
 
+# Intentional terminus: a successful manipulation/exfiltration is the end of the
+# kill chain, so there is deliberately no `OnSuccess` branch (the chain stops
+# here on success). The only branch is the abort path taken if the defender
+# detects the campaign mid-manipulation.
 [[kill_chains.bridge.phases.ot_manipulation.branches]]
 condition = { type = "OnDetection" }
 next_phase = "bridge_abort"
