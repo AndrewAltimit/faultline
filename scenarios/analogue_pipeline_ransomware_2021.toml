@@ -1,0 +1,479 @@
+# Historical-analogue scenario
+# =============================
+#
+# Single named-event analogue: the May 2021 ransomware incident against
+# the operator of the largest refined-products pipeline on the U.S. East
+# Coast. A ransomware intrusion into the operator's business (IT) network
+# led the operator to proactively shut down pipeline operations as a
+# precaution, halting fuel delivery for roughly six days and triggering
+# regional fuel-supply disruption and panic buying before operations were
+# restored. The incident is extensively documented in OPEN U.S.
+# government and defensive-community sources, which makes it a clean
+# single-event calibration analogue for a pipeline / fuel-logistics
+# disruption driven by a cyber intrusion (as distinct from a grid or
+# wiper event).
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("ransom_operator"): a financially-motivated ransomware
+#   operation that obtained access to the operator's corporate IT
+#   environment via a compromised credential, exfiltrated data, and
+#   deployed ransomware that encrypted business systems — the disruption
+#   of the IT environment was the proximate cause of the operational
+#   shutdown.
+# Defender ("pipeline_operator"): the operator of a major refined-products
+#   pipeline whose business (IT) and billing systems were impacted, and
+#   which proactively halted pipeline operations because it could not be
+#   certain the operational (OT) side was unaffected.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# exploit detail, no malware internals, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Kill-chain shape (credential-based initial access -> data
+#   exfiltration -> ransomware deployment encrypting business systems ->
+#   precautionary operational shutdown -> sustained fuel-delivery
+#   disruption) is drawn from public U.S. government reporting
+#   (Congressional Research Service, U.S. Government Accountability
+#   Office, TSA/CISA public advisories) and published congressional
+#   testimony by the operator. Only the AGGREGATE phase structure and
+#   public outcome are encoded — no exploit or malware internals.
+# - Outcome: a successful disruption. The pipeline was shut down for
+#   roughly six days; fuel deliveries halted across the U.S. Southeast /
+#   East Coast; the disruption was widely felt before restoration.
+#   Encoded as high phase-success probabilities and an attacker win on
+#   the fuel-disruption metric.
+# - Duration: the shutdown lasted roughly six days (early-to-mid May
+#   2021), here modeled at one tick = one day over a short horizon.
+#
+# All figures (~6-day shutdown of a major refined-products pipeline,
+# regional fuel disruption, kill-chain stages) are from public reporting
+# and contain no classified, CUI, or export-controlled material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Major Fuel-Pipeline Ransomware Shutdown (May 2021)"
+description = """
+Single-event historical analogue: the May 2021 ransomware incident
+against the operator of the largest refined-products pipeline on the
+U.S. East Coast. A financially-motivated intrusion into the operator's
+business (IT) network led to a precautionary shutdown of pipeline
+operations, halting fuel delivery for roughly six days and triggering
+regional supply disruption and panic buying before operations resumed.
+The documented disruption outcome and short (days) duration are encoded
+as calibration observations and back-tested against the Monte Carlo
+distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public U.S. government reporting (CRS, GAO, TSA/CISA
+public advisories) and published congressional testimony. No exploit
+detail, malware internals, classified, CUI, or export-controlled
+material is encoded — only the aggregate statistical effects the engine
+consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "ransomware", "pipeline", "infrastructure", "logistics"]
+confidence = "High"
+scenario_type = "reference"
+analytical_purpose = "Does the engine reproduce the documented disruption outcome and roughly-six-day duration of the May 2021 fuel-pipeline ransomware shutdown?"
+red_team_profile = "Financially-motivated ransomware operation: credential-based initial access to the corporate IT environment, data exfiltration, and ransomware deployment that encrypted business systems — the IT disruption was the proximate cause of the precautionary operational shutdown."
+blue_team_posture = "Operator of a major refined-products pipeline whose business and billing systems were impacted and which proactively halted pipeline operations because it could not be certain the operational side was unaffected."
+osint_sources = [
+    "Congressional Research Service reporting on the May 2021 pipeline ransomware incident",
+    "U.S. Government Accountability Office reporting on pipeline cybersecurity",
+    "TSA / CISA public security advisories on pipeline cybersecurity",
+    "Published congressional testimony by the pipeline operator on the incident timeline",
+]
+sensitivity_parameters = [
+    "kill-chain phase success probabilities (initial access -> exfiltration -> ransomware deployment -> precautionary shutdown)",
+    "fuel-delivery disruption phase duration",
+]
+
+[meta.historical_analogue]
+name = "May 2021 fuel-pipeline ransomware shutdown"
+description = """
+A financially-motivated ransomware intrusion into the corporate IT
+network of the operator of the largest refined-products pipeline on the
+U.S. East Coast led the operator to proactively shut down pipeline
+operations for roughly six days, halting fuel delivery across the
+Southeast / East Coast and triggering regional supply disruption before
+restoration. The analogue back-tests whether this scenario's kill-chain
+parameters reproduce both the documented victor (the attacker, on the
+fuel-disruption metric) and the documented short (days) duration.
+"""
+period = "2021-05-07 to 2021-05-12"
+sources = [
+    "Congressional Research Service reporting on the May 2021 pipeline ransomware incident",
+    "U.S. Government Accountability Office reporting on pipeline cybersecurity",
+    "TSA / CISA public security advisories on pipeline cybersecurity",
+    "Published congressional testimony by the pipeline operator on the incident timeline",
+]
+confidence = "High"
+
+# Documented victor: the intrusion forced a precautionary shutdown that
+# disrupted fuel delivery.
+[[meta.historical_analogue.observations]]
+notes = "Public U.S. government reporting and operator testimony: the intrusion forced a precautionary shutdown of the pipeline, halting fuel delivery for several days."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "ransom_operator"
+
+# Win-rate band: against a corporate IT environment reachable via a
+# single compromised credential and an operator posture that precautions
+# toward shutdown, an intrusion of this maturity disrupts operations at a
+# high rate. Band kept wide for single-case uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "Against the documented IT exposure and a precaution-toward-shutdown operator posture, an intrusion of this maturity disrupts operations at a high rate; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "ransom_operator"
+low = 0.70
+high = 1.0
+
+# Duration: the shutdown lasted roughly six days. One tick = one day;
+# interval [3, 12] brackets the documented ~six-day window on both sides.
+[[meta.historical_analogue.observations]]
+notes = "The shutdown lasted roughly six days (early-to-mid May 2021) before operations resumed; modeled at one tick = one day. Band brackets the window on both sides."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 3
+high = 12
+
+# -- Map (operator corporate IT + OT + fuel-delivery territory) ------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.corporate_it]
+id = "corporate_it"
+name = "Operator Corporate IT / Billing"
+population = 2000
+urbanization = 0.9
+initial_control = "pipeline_operator"
+strategic_value = 0.4
+borders = ["operations"]
+
+[map.regions.operations]
+id = "operations"
+name = "Pipeline Operations / Control"
+population = 800
+urbanization = 0.9
+initial_control = "pipeline_operator"
+strategic_value = 0.8
+borders = ["corporate_it", "delivery_territory"]
+
+[map.regions.delivery_territory]
+id = "delivery_territory"
+name = "Fuel-Delivery Territory (Southeast / East Coast)"
+population = 50000000
+urbanization = 0.7
+initial_control = "pipeline_operator"
+strategic_value = 1.0
+borders = ["operations"]
+
+[map.infrastructure.pipeline_system]
+id = "pipeline_system"
+name = "Refined-Products Pipeline System"
+region = "delivery_territory"
+infra_type = "SupplyChain"
+criticality = 1.0
+initial_status = 1.0
+repairable = 6
+
+[map.infrastructure.billing_systems]
+id = "billing_systems"
+name = "Business / Billing Systems"
+region = "corporate_it"
+infra_type = "Internet"
+criticality = 0.8
+initial_status = 1.0
+repairable = 5
+
+[[map.terrain]]
+region = "corporate_it"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "operations"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "delivery_territory"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.6
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.ransom_operator]
+id = "ransom_operator"
+name = "Ransomware Operator (Threat Actor)"
+description = "Financially-motivated ransomware operation that obtained corporate IT access via a compromised credential, exfiltrated data, and deployed ransomware encrypting business systems."
+color = "#b45309"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 30.0
+initial_resources = 600.0
+resource_rate = 15.0
+command_resilience = 0.8
+intelligence = 0.7
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.ransom_operator.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.ransom_operator.forces.ransom_cell]
+id = "ransom_cell"
+name = "Ransomware Operations Cell"
+unit_type = "CyberUnit"
+region = "corporate_it"
+strength = 60.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.pipeline_operator]
+id = "pipeline_operator"
+name = "Pipeline Operator (Defender)"
+description = "Operator of a major refined-products pipeline whose business systems were impacted and which proactively halted operations as a precaution."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.65
+logistics_capacity = 40.0
+initial_resources = 500.0
+resource_rate = 20.0
+command_resilience = 0.6
+intelligence = 0.5
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.pipeline_operator.faction_type]
+kind = "Civilian"
+
+[factions.pipeline_operator.forces.ir_team]
+id = "ir_team"
+name = "Incident-Response / Operations Watch"
+unit_type = "LawEnforcement"
+region = "operations"
+strength = 50.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.8
+internet_availability = 0.95
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: intrusion to precautionary shutdown -----------------------
+#
+# Five short phases mirroring the public incident timeline. Each
+# successful phase emits CoercionPressure (a generic disruption metric
+# here) and the later phases damage business / pipeline infrastructure.
+# Cumulative pressure crosses the 0.55 disruption threshold within the
+# first several days — the precautionary shutdown and ensuing fuel
+# disruption. High base success probabilities reflect the documented IT
+# exposure and a precaution-toward-shutdown operator posture.
+
+[kill_chains.ransom_op]
+id = "ransom_op"
+name = "Intrusion to Precautionary Pipeline Shutdown"
+description = "Aggregate model of the May 2021 incident: credential-based initial access, data exfiltration, ransomware deployment encrypting business systems, the operator's precautionary operational shutdown, and the ensuing fuel-delivery disruption."
+attacker = "ransom_operator"
+target = "pipeline_operator"
+entry_phase = "initial_access"
+
+[kill_chains.ransom_op.phases.initial_access]
+id = "initial_access"
+name = "Credential-Based Initial Access"
+description = "Aggregate model of initial access to the corporate IT environment via a compromised credential. Effect-level only; no payload or technique detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.7
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.ransom_op.phases.initial_access.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.ransom_op.phases.initial_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "data_exfiltration"
+
+[kill_chains.ransom_op.phases.data_exfiltration]
+id = "data_exfiltration"
+name = "Data Exfiltration"
+description = "Aggregate model of bulk data exfiltration from the corporate environment prior to encryption."
+prerequisites = ["initial_access"]
+base_success_probability = 0.93
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.6
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.ransom_op.phases.data_exfiltration.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.ransom_op.phases.data_exfiltration.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.ransom_op.phases.data_exfiltration.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ransomware_deployment"
+
+[kill_chains.ransom_op.phases.ransomware_deployment]
+id = "ransomware_deployment"
+name = "Ransomware Deployment — Business Systems Encrypted"
+description = "Aggregate model of ransomware deployment encrypting business / billing systems, the proximate cause of the operational disruption."
+prerequisites = ["data_exfiltration"]
+base_success_probability = 0.92
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.ransom_op.phases.ransomware_deployment.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.ransom_op.phases.ransomware_deployment.outputs]]
+type = "InfraDamage"
+region = "corporate_it"
+factor = 0.7
+
+[[kill_chains.ransom_op.phases.ransomware_deployment.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "precautionary_shutdown"
+
+[kill_chains.ransom_op.phases.precautionary_shutdown]
+id = "precautionary_shutdown"
+name = "Precautionary Operational Shutdown"
+description = "Aggregate model of the operator's precautionary halt of pipeline operations because it could not be certain the operational side was unaffected."
+prerequisites = ["ransomware_deployment"]
+base_success_probability = 0.9
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.ransom_op.phases.precautionary_shutdown.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.ransom_op.phases.precautionary_shutdown.outputs]]
+type = "InfraDamage"
+region = "delivery_territory"
+factor = 0.8
+
+[[kill_chains.ransom_op.phases.precautionary_shutdown.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "fuel_disruption"
+
+[kill_chains.ransom_op.phases.fuel_disruption]
+id = "fuel_disruption"
+name = "Sustained Fuel-Delivery Disruption"
+description = "Terminal phase. Aggregate model of the sustained fuel-delivery disruption across the Southeast / East Coast before operations resumed."
+prerequisites = ["precautionary_shutdown"]
+base_success_probability = 0.88
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["CivilianEmergency"]
+
+[[kill_chains.ransom_op.phases.fuel_disruption.outputs]]
+type = "CoercionPressure"
+delta = 0.1
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 14-day cap brackets the documented ~six-day shutdown with headroom.
+# One tick = one day. The attacker wins by crossing the fuel-disruption
+# (CoercionPressure) threshold; the defender wins only by keeping fuel
+# delivery available for the full horizon.
+
+[simulation]
+max_ticks = 14
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2021
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Days = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: cause sustained fuel-delivery disruption
+# (cumulative disruption pressure crosses the operator's resilience
+# threshold).
+[victory_conditions.fuel_disrupted]
+id = "fuel_disrupted"
+name = "Ransomware Operator Causes Fuel Disruption"
+faction = "ransom_operator"
+
+[victory_conditions.fuel_disrupted.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep fuel flowing for the full horizon.
+[victory_conditions.fuel_held]
+id = "fuel_held"
+name = "Pipeline Operator Maintains Delivery"
+faction = "pipeline_operator"
+
+[victory_conditions.fuel_held.condition]
+type = "HoldRegions"
+regions = ["delivery_territory"]
+duration = 14

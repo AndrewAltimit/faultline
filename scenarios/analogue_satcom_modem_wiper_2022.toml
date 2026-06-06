@@ -1,0 +1,483 @@
+# Historical-analogue scenario
+# =============================
+#
+# Single named-event analogue: the late-February 2022 destructive
+# cyberattack against the consumer-broadband segment of a satellite
+# communications network serving European users. A wiper-style attack
+# corrupted the modem firmware/configuration of tens of thousands of
+# fixed satellite-broadband terminals, knocking them permanently offline
+# and degrading connectivity (including downstream effects on remote
+# monitoring of wind turbines) until terminals were reconfigured or
+# replaced over the following weeks. The incident was publicly attributed
+# by multiple Western governments and is documented in OPEN government
+# and defensive-community sources, which makes it a clean single-event
+# calibration analogue for a destructive availability attack on a
+# satellite-communications availability service (distinct from a grid,
+# pipeline, or generic-IT-wiper event).
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("satcom_disruptor"): a destructive intrusion set that gained
+#   access to the network-management environment of the broadband
+#   segment, then pushed a wiper-style update that corrupted the firmware
+#   / configuration of large numbers of consumer modems, bricking them.
+#   The disruption was timed to the opening of a conflict to deny
+#   communications.
+# Defender ("satcom_operator"): the operator of the satellite-broadband
+#   segment whose ground-side management environment was reachable and
+#   whose terminal fleet was rendered inoperable, requiring mass
+#   reconfiguration / replacement to restore service.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# exploit detail, no malware internals, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Kill-chain shape (access to the ground-side management network ->
+#   pivot into the modem-management plane -> push of a destructive
+#   firmware/config wiper -> mass terminal bricking -> sustained
+#   connectivity outage before reconfiguration/replacement) is drawn
+#   from public government attribution statements and defensive-community
+#   incident analyses. Only the AGGREGATE phase structure and public
+#   outcome are encoded — no exploit or malware internals.
+# - Outcome: a successful destructive availability attack. Tens of
+#   thousands of terminals were knocked offline; connectivity was lost
+#   across multiple European countries; recovery took weeks. Encoded as
+#   high phase-success probabilities and an attacker win on the
+#   availability-denial metric.
+# - Duration: the bulk outage and recovery unfolded over weeks, here
+#   modeled at one tick = one day over a multi-week horizon.
+#
+# All figures (tens of thousands of bricked terminals, multi-country
+# connectivity loss, weeks-long recovery, kill-chain stages) are from
+# public reporting and contain no classified, CUI, or export-controlled
+# material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Satellite-Broadband Modem Wiper (Feb 2022)"
+description = """
+Single-event historical analogue: the late-February 2022 destructive
+cyberattack against the consumer-broadband segment of a satellite
+communications network serving European users. A wiper-style attack
+corrupted the firmware/configuration of tens of thousands of fixed
+satellite-broadband terminals, knocking them permanently offline and
+degrading connectivity across multiple European countries until
+terminals were reconfigured or replaced over the following weeks. The
+documented availability-denial outcome and multi-week recovery duration
+are encoded as calibration observations and back-tested against the
+Monte Carlo distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public government attribution statements and
+defensive-community incident analyses. No exploit detail, malware
+internals, classified, CUI, or export-controlled material is encoded —
+only the aggregate statistical effects the engine consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "wiper", "satcom", "availability", "infrastructure"]
+confidence = "High"
+scenario_type = "reference"
+analytical_purpose = "Does the engine reproduce the documented availability-denial outcome and multi-week recovery duration of the February 2022 satellite-broadband modem wiper attack?"
+red_team_profile = "Destructive intrusion set that accessed the ground-side network-management environment of a satellite-broadband segment and pushed a wiper-style update corrupting the firmware/configuration of large numbers of consumer modems, bricking them at the opening of a conflict to deny communications."
+blue_team_posture = "Operator of a satellite-broadband segment whose ground-side management environment was reachable and whose terminal fleet was rendered inoperable, requiring mass reconfiguration/replacement to restore service over weeks."
+osint_sources = [
+    "Public government attribution statements on the February 2022 satellite-broadband attack",
+    "Defensive-community incident analyses of the satellite-modem wiper event",
+    "Congressional Research Service reporting on cyber threats to space / satellite systems",
+    "Published open reporting on the multi-country connectivity loss and recovery timeline",
+]
+sensitivity_parameters = [
+    "kill-chain phase success probabilities (management-network access -> modem-plane pivot -> destructive firmware/config push -> mass terminal bricking)",
+    "connectivity-recovery phase duration",
+]
+
+[meta.historical_analogue]
+name = "February 2022 satellite-broadband modem wiper attack"
+description = """
+A destructive cyberattack against the consumer-broadband segment of a
+satellite communications network pushed a wiper-style firmware/config
+update that bricked tens of thousands of fixed terminals, knocking them
+offline across multiple European countries and degrading connectivity
+(including remote wind-turbine monitoring) for weeks until terminals
+were reconfigured or replaced. The analogue back-tests whether this
+scenario's kill-chain parameters reproduce both the documented victor
+(the attacker, on the availability-denial metric) and the documented
+multi-week recovery duration.
+"""
+period = "2022-02-24 onward (recovery over the following weeks)"
+sources = [
+    "Public government attribution statements on the February 2022 satellite-broadband attack",
+    "Defensive-community incident analyses of the satellite-modem wiper event",
+    "Congressional Research Service reporting on cyber threats to space / satellite systems",
+    "Published open reporting on the multi-country connectivity loss and recovery timeline",
+]
+confidence = "High"
+
+# Documented victor: the destructive attack denied availability to the
+# terminal fleet.
+[[meta.historical_analogue.observations]]
+notes = "Public attribution statements and incident analyses: the attack bricked tens of thousands of terminals and denied connectivity across multiple countries."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "satcom_disruptor"
+
+# Win-rate band: a destructive firmware/config wiper pushed through a
+# reachable management plane against a large terminal fleet denies
+# availability at a high rate. Band kept wide for single-case
+# uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "A destructive firmware/config wiper pushed through a reachable management plane against a large terminal fleet denies availability at a high rate; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "satcom_disruptor"
+low = 0.70
+high = 1.0
+
+# Duration: the bulk outage and recovery unfolded over weeks. One tick =
+# one day; interval [5, 28] brackets the documented multi-week recovery
+# on both sides.
+[[meta.historical_analogue.observations]]
+notes = "The bulk outage and reconfiguration/replacement recovery unfolded over weeks following the late-February 2022 attack; modeled at one tick = one day. Band brackets the window on both sides."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 5
+high = 28
+
+# -- Map (attacker access + ground management plane + terminal fleet) ------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.attacker_access]
+id = "attacker_access"
+name = "Attacker Access Infrastructure"
+population = 100
+urbanization = 0.9
+initial_control = "satcom_disruptor"
+strategic_value = 0.3
+borders = ["management_plane"]
+
+[map.regions.management_plane]
+id = "management_plane"
+name = "Ground-Side Network-Management Plane"
+population = 500
+urbanization = 0.9
+initial_control = "satcom_operator"
+strategic_value = 0.8
+borders = ["attacker_access", "terminal_fleet"]
+
+[map.regions.terminal_fleet]
+id = "terminal_fleet"
+name = "Consumer Terminal Fleet (multi-country)"
+population = 800000
+urbanization = 0.5
+initial_control = "satcom_operator"
+strategic_value = 1.0
+borders = ["management_plane"]
+
+[map.infrastructure.modem_fleet]
+id = "modem_fleet"
+name = "Satellite-Broadband Modem Fleet"
+region = "terminal_fleet"
+infra_type = "Telecommunications"
+criticality = 1.0
+initial_status = 1.0
+repairable = 8
+
+[map.infrastructure.mgmt_systems]
+id = "mgmt_systems"
+name = "Modem-Management Systems"
+region = "management_plane"
+infra_type = "Internet"
+criticality = 0.9
+initial_status = 1.0
+repairable = 6
+
+[[map.terrain]]
+region = "attacker_access"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "management_plane"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "terminal_fleet"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.5
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.satcom_disruptor]
+id = "satcom_disruptor"
+name = "Satcom Disruptor (Threat Actor)"
+description = "Destructive intrusion set that accessed the ground-side management environment and pushed a wiper-style firmware/config update bricking large numbers of consumer modems."
+color = "#b91c1c"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 30.0
+initial_resources = 600.0
+resource_rate = 15.0
+command_resilience = 0.8
+intelligence = 0.8
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.satcom_disruptor.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.satcom_disruptor.forces.disruptor_cell]
+id = "disruptor_cell"
+name = "Destructive Operations Cell"
+unit_type = "CyberUnit"
+region = "attacker_access"
+strength = 60.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.satcom_operator]
+id = "satcom_operator"
+name = "Satcom Operator (Defender)"
+description = "Operator of a satellite-broadband segment whose ground-side management environment was reachable and whose terminal fleet was rendered inoperable."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.65
+logistics_capacity = 40.0
+initial_resources = 500.0
+resource_rate = 20.0
+command_resilience = 0.6
+intelligence = 0.5
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.satcom_operator.faction_type]
+kind = "Civilian"
+
+[factions.satcom_operator.forces.noc_team]
+id = "noc_team"
+name = "Network-Operations / Response Team"
+unit_type = "LawEnforcement"
+region = "management_plane"
+strength = 50.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.8
+internet_availability = 0.9
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: management access to mass terminal bricking ---------------
+#
+# Five short phases mirroring the public incident analysis. Each
+# successful phase emits CoercionPressure (a generic availability-denial
+# metric here); the destructive phases damage the management and terminal
+# infrastructure. Cumulative pressure crosses the 0.55 denial threshold
+# within the first week — the mass bricking — with the recovery phase
+# extending the modeled outage. High base success probabilities reflect a
+# reachable management plane and a large, uniform terminal fleet.
+
+[kill_chains.satcom_op]
+id = "satcom_op"
+name = "Management Access to Mass Terminal Bricking"
+description = "Aggregate model of the February 2022 attack: access to the ground-side management network, pivot into the modem-management plane, a destructive firmware/config push, mass terminal bricking, and the sustained connectivity outage before reconfiguration/replacement."
+attacker = "satcom_disruptor"
+target = "satcom_operator"
+entry_phase = "mgmt_access"
+
+[kill_chains.satcom_op.phases.mgmt_access]
+id = "mgmt_access"
+name = "Access to Ground-Side Management Network"
+description = "Aggregate model of access to the ground-side network-management environment of the broadband segment. Effect-level only; no payload or technique detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.7
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.satcom_op.phases.mgmt_access.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.satcom_op.phases.mgmt_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "modem_plane_pivot"
+
+[kill_chains.satcom_op.phases.modem_plane_pivot]
+id = "modem_plane_pivot"
+name = "Pivot into Modem-Management Plane"
+description = "Aggregate model of the pivot from the management environment into the modem-management plane controlling the consumer terminal fleet."
+prerequisites = ["mgmt_access"]
+base_success_probability = 0.93
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.6
+targets_domains = ["NetworkSecurity", "SupplyChainSecurity"]
+
+[[kill_chains.satcom_op.phases.modem_plane_pivot.outputs]]
+type = "CoercionPressure"
+delta = 0.16
+
+[[kill_chains.satcom_op.phases.modem_plane_pivot.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.satcom_op.phases.modem_plane_pivot.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "destructive_push"
+
+[kill_chains.satcom_op.phases.destructive_push]
+id = "destructive_push"
+name = "Destructive Firmware / Config Push"
+description = "Aggregate model of pushing a wiper-style firmware/config update through the modem-management plane to the terminal fleet."
+prerequisites = ["modem_plane_pivot"]
+base_success_probability = 0.92
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.satcom_op.phases.destructive_push.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.satcom_op.phases.destructive_push.outputs]]
+type = "InfraDamage"
+region = "management_plane"
+factor = 0.5
+
+[[kill_chains.satcom_op.phases.destructive_push.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "mass_bricking"
+
+[kill_chains.satcom_op.phases.mass_bricking]
+id = "mass_bricking"
+name = "Mass Terminal Bricking"
+description = "Aggregate model of the destructive update rendering tens of thousands of consumer terminals inoperable, denying connectivity across multiple countries."
+prerequisites = ["destructive_push"]
+base_success_probability = 0.9
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.satcom_op.phases.mass_bricking.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.satcom_op.phases.mass_bricking.outputs]]
+type = "InfraDamage"
+region = "terminal_fleet"
+factor = 0.9
+
+[[kill_chains.satcom_op.phases.mass_bricking.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "sustained_outage"
+
+[kill_chains.satcom_op.phases.sustained_outage]
+id = "sustained_outage"
+name = "Sustained Connectivity Outage"
+description = "Terminal phase. Aggregate model of the sustained connectivity outage before terminals were reconfigured or replaced over the following weeks."
+prerequisites = ["mass_bricking"]
+base_success_probability = 0.88
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["CivilianEmergency"]
+
+[[kill_chains.satcom_op.phases.sustained_outage.outputs]]
+type = "CoercionPressure"
+delta = 0.1
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 35-day cap brackets the documented multi-week outage and recovery with
+# headroom. One tick = one day. The attacker wins by crossing the
+# availability-denial (CoercionPressure) threshold; the defender wins
+# only by keeping the terminal fleet available for the full horizon.
+
+[simulation]
+max_ticks = 35
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2022
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Days = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: deny terminal-fleet availability (cumulative
+# denial pressure crosses the operator's resilience threshold).
+[victory_conditions.connectivity_denied]
+id = "connectivity_denied"
+name = "Satcom Disruptor Denies Connectivity"
+faction = "satcom_disruptor"
+
+[victory_conditions.connectivity_denied.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep the terminal fleet available for the full
+# horizon.
+[victory_conditions.connectivity_held]
+id = "connectivity_held"
+name = "Satcom Operator Maintains Connectivity"
+faction = "satcom_operator"
+
+[victory_conditions.connectivity_held.condition]
+type = "HoldRegions"
+regions = ["terminal_fleet"]
+duration = 35
