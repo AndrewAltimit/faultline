@@ -666,6 +666,7 @@ mod tests {
             belief_counters: BTreeMap::new(),
             belief_snapshots: BTreeMap::new(),
             attribution_events: Vec::new(),
+            force_projection_strikes: Vec::new(),
         }
     }
 

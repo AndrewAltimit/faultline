@@ -56,6 +56,7 @@ const BUNDLED_SCENARIOS: &[&str] = &[
     "network_resilience_demo.toml",
     "persistent_covert_surveillance.toml",
     "recon_fidelity_demo.toml",
+    "standoff_strike_demo.toml",
     "strategy_search_demo.toml",
     "supply_interdiction_demo.toml",
     "tech_rebalance_demo.toml",
