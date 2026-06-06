@@ -190,7 +190,9 @@ region = "terminal_fleet"
 infra_type = "Telecommunications"
 criticality = 1.0
 initial_status = 1.0
-repairable = 8
+# Terminals were reconfigured or replaced over the following weeks, not
+# days — repair span reflects the documented multi-week fleet recovery.
+repairable = 21
 
 [map.infrastructure.mgmt_systems]
 id = "mgmt_systems"
@@ -199,7 +201,9 @@ region = "management_plane"
 infra_type = "Internet"
 criticality = 0.9
 initial_status = 1.0
-repairable = 6
+# Ground-side management systems were restored faster than the field
+# terminal fleet, but still over roughly a week-plus, not days.
+repairable = 10
 
 [[map.terrain]]
 region = "attacker_access"
