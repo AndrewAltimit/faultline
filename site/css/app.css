@@ -383,6 +383,84 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text);
 }
 
+/* ── Schema-aware field-doc hover tooltip ─────────────────────────── */
+
+.field-doc-tooltip {
+  position: fixed;
+  z-index: 1100;
+  max-width: 320px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.field-doc-tooltip[hidden] {
+  display: none;
+}
+
+.field-doc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.field-doc-key {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent-end);
+}
+
+.field-doc-effect {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.field-doc-effect.has-effect {
+  background: rgba(124, 91, 240, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(124, 91, 240, 0.4);
+}
+
+.field-doc-effect.no-effect {
+  background: rgba(161, 161, 170, 0.12);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.field-doc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+
+.field-doc-type {
+  color: var(--accent-end);
+}
+
+.field-doc-range,
+.field-doc-default {
+  color: var(--text-dim);
+}
+
+.field-doc-summary {
+  color: var(--text-muted);
+}
+
 /* ── Tabs ─────────────────────────────────────────────────────────── */
 
 .app-tabs {
