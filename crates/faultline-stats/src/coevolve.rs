@@ -680,13 +680,12 @@ fn evaluate_both_objectives(
 mod tests {
     use super::*;
 
-    use faultline_types::faction::{Faction, FactionType, ForceUnit, UnitType};
+    use faultline_types::faction::{Faction, FactionType, ForceUnit};
     use faultline_types::ids::{FactionId, ForceId, RegionId, VictoryId};
     use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
     use faultline_types::politics::{MediaLandscape, PoliticalClimate};
     use faultline_types::scenario::{Scenario, ScenarioMeta};
-    use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-    use faultline_types::strategy::Doctrine;
+    use faultline_types::simulation::SimulationConfig;
     use faultline_types::strategy_space::{DecisionVariable, Domain, StrategySpace};
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
@@ -714,39 +713,26 @@ mod tests {
             ForceUnit {
                 id: force_id,
                 name: format!("{id} Infantry"),
-                unit_type: UnitType::Infantry,
                 region,
                 strength: 100.0,
                 mobility: 1.0,
-                force_projection: None,
                 upkeep: 1.0,
-                morale_modifier: 0.0,
-                capabilities: vec![],
-                move_progress: 0.0,
+                ..Default::default()
             },
         );
         Faction {
             id: FactionId::from(id),
             name: id.to_string(),
-            description: String::new(),
             color: "#000000".into(),
             faction_type: FactionType::Insurgent,
             forces,
-            tech_access: vec![],
             initial_morale: 0.5,
             logistics_capacity: 10.0,
             initial_resources: 100.0,
             resource_rate: 5.0,
-            recruitment: None,
             command_resilience: 0.5,
             intelligence: 0.5,
-            diplomacy: vec![],
-            doctrine: Doctrine::Conventional,
-            escalation_rules: None,
-            defender_capacities: BTreeMap::new(),
-            leadership: None,
-            alliance_fracture: None,
-            utility: None,
+            ..Default::default()
         }
     }
 
@@ -806,10 +792,6 @@ mod tests {
                 description: "minimal".into(),
                 author: "test".into(),
                 version: "0.1.0".into(),
-                tags: vec![],
-                confidence: None,
-                schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-                historical_analogue: None,
                 ..Default::default()
             },
             map: MapConfig {
@@ -818,7 +800,6 @@ mod tests {
                     height: 1,
                 },
                 regions,
-                infrastructure: BTreeMap::new(),
                 terrain: vec![
                     TerrainModifier {
                         region: r1,
@@ -835,14 +816,12 @@ mod tests {
                         visibility: 1.0,
                     },
                 ],
+                ..Default::default()
             },
             factions,
-            technology: BTreeMap::new(),
             political_climate: PoliticalClimate {
                 tension: 0.4,
                 institutional_trust: 0.5,
-                population_segments: vec![],
-                global_modifiers: vec![],
                 media_landscape: MediaLandscape {
                     fragmentation: 0.3,
                     disinformation_susceptibility: 0.3,
@@ -850,23 +829,15 @@ mod tests {
                     social_media_penetration: 0.5,
                     internet_availability: 0.8,
                 },
+                ..Default::default()
             },
-            events: BTreeMap::new(),
             simulation: SimulationConfig {
                 max_ticks: 30,
-                tick_duration: TickDuration::Days(1),
                 monte_carlo_runs: 1,
                 seed: Some(0xCAFE),
-                fog_of_war: false,
-                attrition_model: AttritionModel::LanchesterLinear,
-                snapshot_interval: 0,
-                belief_model: None,
+                ..Default::default()
             },
             victory_conditions,
-            kill_chains: BTreeMap::new(),
-            defender_budget: None,
-            attacker_budget: None,
-            environment: faultline_types::map::EnvironmentSchedule::default(),
             strategy_space: StrategySpace {
                 variables: vec![
                     DecisionVariable {
@@ -891,7 +862,7 @@ mod tests {
                 objectives: vec![],
                 attacker_profiles: Vec::new(),
             },
-            networks: BTreeMap::new(),
+            ..Default::default()
         }
     }
 

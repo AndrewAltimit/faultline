@@ -17,13 +17,13 @@ use std::collections::BTreeMap;
 use faultline_engine::Engine;
 use faultline_types::faction::{
     AdaptiveCondition, AdaptiveTrigger, Diplomacy, DiplomaticStance, Faction, FactionType,
-    FactionUtility, ForceUnit, UnitType, UtilityTerm,
+    FactionUtility, ForceUnit, UtilityTerm,
 };
 use faultline_types::ids::{FactionId, ForceId, RegionId};
 use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
-use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+use faultline_types::politics::PoliticalClimate;
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::simulation::{AttritionModel, SimulationConfig};
 use faultline_types::strategy::Doctrine;
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
@@ -86,15 +86,11 @@ fn make_scenario(
         ForceUnit {
             id: ForceId::from("r1"),
             name: "Red 1st".into(),
-            unit_type: UnitType::Infantry,
             region: nw.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
     let mut blue_forces = BTreeMap::new();
@@ -103,15 +99,11 @@ fn make_scenario(
         ForceUnit {
             id: ForceId::from("b1"),
             name: "Blue 1st".into(),
-            unit_type: UnitType::Infantry,
             region: se.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
 
@@ -191,10 +183,6 @@ fn make_scenario(
             description: "test".into(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -203,26 +191,21 @@ fn make_scenario(
                 height: 2,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain,
+            ..Default::default()
         },
         factions,
         political_climate: PoliticalClimate {
             tension: 0.3,
             institutional_trust: 0.7,
-            media_landscape: MediaLandscape::default(),
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
         simulation: SimulationConfig {
             max_ticks,
             monte_carlo_runs: 1,
-            fog_of_war: false,
-            snapshot_interval: 0,
-            belief_model: None,
             seed: Some(seed),
-            tick_duration: TickDuration::Days(1),
             attrition_model: AttritionModel::Stochastic { noise: 0.1 },
+            ..Default::default()
         },
         ..Default::default()
     }

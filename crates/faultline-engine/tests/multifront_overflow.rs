@@ -14,13 +14,13 @@ use faultline_types::campaign::{
     BranchCondition, CampaignPhase, DefenderNoise, KillChain, PhaseBranch, PhaseCost,
 };
 use faultline_types::faction::{
-    DefenderCapacity, Faction, FactionType, ForceUnit, MilitaryBranch, OverflowPolicy, UnitType,
+    DefenderCapacity, Faction, FactionType, ForceUnit, MilitaryBranch, OverflowPolicy,
 };
 use faultline_types::ids::{DefenderRoleId, FactionId, ForceId, KillChainId, PhaseId, RegionId};
 use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
-use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+use faultline_types::politics::PoliticalClimate;
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::simulation::SimulationConfig;
 use faultline_types::strategy::Doctrine;
 
 // ---------------------------------------------------------------------------
@@ -44,15 +44,10 @@ fn force(id: &str, region: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: RegionId::from(region),
         strength,
         mobility: 1.0,
-        force_projection: None,
-        upkeep: 0.0,
-        morale_modifier: 0.0,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -89,24 +84,16 @@ fn faction(id: &str, capacities: Vec<DefenderCapacity>) -> Faction {
         faction_type: FactionType::Military {
             branch: MilitaryBranch::Army,
         },
-        description: String::new(),
         color: "#000000".into(),
         forces,
-        tech_access: vec![],
         initial_morale: 0.8,
         logistics_capacity: 50.0,
         initial_resources: 1_000.0,
         resource_rate: 10.0,
-        recruitment: None,
-        command_resilience: 0.0,
         intelligence: 0.5,
-        diplomacy: vec![],
         doctrine: Doctrine::Defensive,
-        escalation_rules: None,
         defender_capacities: caps,
-        leadership: None,
-        alliance_fracture: None,
-        utility: None,
+        ..Default::default()
     }
 }
 
@@ -129,12 +116,7 @@ fn one_phase_chain(faction: &str, role: &str, noise: f64) -> KillChain {
             detection_probability_per_tick: 0.0,
             prerequisite_success_boost: 0.0,
             attribution_difficulty: 0.5,
-            cost: PhaseCost {
-                attacker_dollars: 0.0,
-                defender_dollars: 0.0,
-                attacker_resources: 0.0,
-                confidence: None,
-            },
+            cost: PhaseCost::default(),
             outputs: vec![],
             branches: vec![PhaseBranch {
                 condition: BranchCondition::OnSuccess,
@@ -178,13 +160,8 @@ fn base_scenario(seed: u64, max_ticks: u32, defender: Faction, chain: KillChain)
     Scenario {
         meta: ScenarioMeta {
             name: "multifront_test".into(),
-            description: String::new(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -193,7 +170,6 @@ fn base_scenario(seed: u64, max_ticks: u32, defender: Faction, chain: KillChain)
                 height: 1,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain: vec![TerrainModifier {
                 region: r1,
                 terrain_type: TerrainType::Rural,
@@ -201,40 +177,22 @@ fn base_scenario(seed: u64, max_ticks: u32, defender: Faction, chain: KillChain)
                 defense_modifier: 1.0,
                 visibility: 1.0,
             }],
+            ..Default::default()
         },
         factions,
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
-            tension: 0.0,
             institutional_trust: 0.5,
-            media_landscape: MediaLandscape {
-                fragmentation: 0.0,
-                disinformation_susceptibility: 0.0,
-                state_control: 0.0,
-                social_media_penetration: 0.0,
-                internet_availability: 0.0,
-            },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(seed),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 10,
-            belief_model: None,
+            ..Default::default()
         },
-        victory_conditions: BTreeMap::new(),
         kill_chains: chains,
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: BTreeMap::new(),
+        ..Default::default()
     }
 }
 

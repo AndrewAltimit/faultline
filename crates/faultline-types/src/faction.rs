@@ -342,7 +342,13 @@ pub enum MilitaryBranch {
 }
 
 /// A deployable military or paramilitary unit.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+///
+/// `ForceUnit::default()` produces an empty `Infantry` unit with zero
+/// strength / mobility / upkeep and no capabilities. It is only useful as a
+/// `..Default::default()` base for test fixtures — engine validation rejects
+/// units with empty ids / regions — letting new fields land without rewriting
+/// every fixture.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ForceUnit {
     pub id: ForceId,
     pub name: String,
@@ -370,8 +376,14 @@ pub struct ForceUnit {
 }
 
 /// Categories of military/paramilitary units.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Default` = `Infantry` (the generic line unit) so `..Default::default()`
+/// spread in test fixtures lands on the most ordinary unit type; this is a
+/// test-fixture convenience only and has no engine effect (every engine path
+/// keys on the explicit `unit_type`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnitType {
+    #[default]
     Infantry,
     Mechanized,
     Armor,

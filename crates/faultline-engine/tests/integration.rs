@@ -19,7 +19,7 @@ use faultline_types::politics::{
     CivilianAction, FactionSympathy, MediaLandscape, PoliticalClimate, PopulationSegment,
 };
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::simulation::{AttritionModel, SimulationConfig};
 use faultline_types::strategy::Doctrine;
 use faultline_types::tech::{TechCard, TechCategory, TechEffect, TerrainTechModifier};
 use faultline_types::victory::{VictoryCondition, VictoryType};
@@ -66,15 +66,11 @@ fn base_scenario() -> Scenario {
         ForceUnit {
             id: ForceId::from("a_inf"),
             name: "Alpha Infantry".into(),
-            unit_type: UnitType::Infantry,
             region: r1.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
 
@@ -84,15 +80,11 @@ fn base_scenario() -> Scenario {
         ForceUnit {
             id: ForceId::from("b_inf"),
             name: "Bravo Infantry".into(),
-            unit_type: UnitType::Infantry,
             region: r4.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
 
@@ -108,21 +100,13 @@ fn base_scenario() -> Scenario {
             description: "Test alpha".into(),
             color: "#3366CC".into(),
             forces: alpha_forces,
-            tech_access: vec![],
             initial_morale: 0.8,
             logistics_capacity: 50.0,
             initial_resources: 200.0,
             resource_rate: 10.0,
-            recruitment: None,
             command_resilience: 0.5,
             intelligence: 0.5,
-            diplomacy: vec![],
-            doctrine: Doctrine::Conventional,
-            escalation_rules: None,
-            defender_capacities: BTreeMap::new(),
-            leadership: None,
-            alliance_fracture: None,
-            utility: None,
+            ..Default::default()
         },
     );
     factions.insert(
@@ -134,21 +118,13 @@ fn base_scenario() -> Scenario {
             description: "Test bravo".into(),
             color: "#CC3333".into(),
             forces: bravo_forces,
-            tech_access: vec![],
             initial_morale: 0.8,
             logistics_capacity: 50.0,
             initial_resources: 200.0,
             resource_rate: 10.0,
-            recruitment: None,
             command_resilience: 0.5,
             intelligence: 0.5,
-            diplomacy: vec![],
-            doctrine: Doctrine::Conventional,
-            escalation_rules: None,
-            defender_capacities: BTreeMap::new(),
-            leadership: None,
-            alliance_fracture: None,
-            utility: None,
+            ..Default::default()
         },
     );
 
@@ -169,10 +145,6 @@ fn base_scenario() -> Scenario {
             description: "Test scenario".into(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -181,7 +153,6 @@ fn base_scenario() -> Scenario {
                 height: 2,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             // Note: `movement_modifier` is uniform 1.0 across regions
             // so the integration suite is insensitive to the move-
             // accumulator gate — these tests pin tech / combat / event
@@ -219,9 +190,9 @@ fn base_scenario() -> Scenario {
                     visibility: 0.6,
                 },
             ],
+            ..Default::default()
         },
         factions,
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
             tension: 0.5,
             institutional_trust: 0.7,
@@ -232,27 +203,18 @@ fn base_scenario() -> Scenario {
                 social_media_penetration: 0.8,
                 internet_availability: 0.9,
             },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks: 50,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 10,
             seed: Some(42),
-            fog_of_war: false,
             attrition_model: AttritionModel::Stochastic { noise: 0.1 },
             snapshot_interval: 10,
-            belief_model: None,
+            ..Default::default()
         },
         victory_conditions,
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: std::collections::BTreeMap::new(),
+        ..Default::default()
     }
 }
 
@@ -1589,14 +1551,12 @@ fn fog_of_war_recon_extends_visibility() {
                 region: RegionId::from("r2"),
                 strength: 10.0,
                 mobility: 2.0,
-                force_projection: None,
                 upkeep: 1.0,
-                morale_modifier: 0.0,
                 capabilities: vec![UnitCapability::Recon {
                     range: 2.0,
                     detection: 0.8,
                 }],
-                move_progress: 0.0,
+                ..Default::default()
             },
         );
 

@@ -20,7 +20,7 @@ use faultline_types::campaign::{
     BranchCondition, CampaignPhase, KillChain, PhaseBranch, PhaseCost, PhaseOutput,
 };
 use faultline_types::faction::{
-    Faction, FactionType, ForceUnit, LeadershipCadre, LeadershipRank, MilitaryBranch, UnitType,
+    Faction, FactionType, ForceUnit, LeadershipCadre, LeadershipRank, MilitaryBranch,
 };
 use faultline_types::ids::{FactionId, ForceId, KillChainId, PhaseId, RegionId, VictoryId};
 use faultline_types::map::{
@@ -29,9 +29,9 @@ use faultline_types::map::{
 };
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::simulation::SimulationConfig;
 use faultline_types::stats::PhaseOutcome;
-use faultline_types::strategy::{Doctrine, FactionAction};
+use faultline_types::strategy::FactionAction;
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
 // ---------------------------------------------------------------------------
@@ -55,15 +55,12 @@ fn make_force(id: &str, region: &RegionId, strength: f64, morale_modifier: f64) 
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: region.clone(),
         strength,
         mobility: 1.0,
-        force_projection: None,
         upkeep: 1.0,
         morale_modifier,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -79,24 +76,16 @@ fn make_faction(
         faction_type: FactionType::Military {
             branch: MilitaryBranch::Army,
         },
-        description: String::new(),
         color: "#000000".into(),
         forces,
-        tech_access: vec![],
         initial_morale: 0.8,
         logistics_capacity: 50.0,
         initial_resources: 1_000.0,
         resource_rate: 10.0,
-        recruitment: None,
         command_resilience,
         intelligence: 0.5,
-        diplomacy: vec![],
-        doctrine: Doctrine::Conventional,
-        escalation_rules: None,
-        defender_capacities: BTreeMap::new(),
         leadership,
-        alliance_fracture: None,
-        utility: None,
+        ..Default::default()
     }
 }
 
@@ -111,13 +100,8 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
     Scenario {
         meta: ScenarioMeta {
             name: "audit".into(),
-            description: String::new(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -126,7 +110,6 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
                 height: 1,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain: vec![
                 TerrainModifier {
                     region: r1,
@@ -143,40 +126,20 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
                     visibility: 1.0,
                 },
             ],
+            ..Default::default()
         },
-        factions: BTreeMap::new(),
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
-            tension: 0.0,
             institutional_trust: 0.5,
-            media_landscape: MediaLandscape {
-                fragmentation: 0.0,
-                disinformation_susceptibility: 0.0,
-                state_control: 0.0,
-                social_media_penetration: 0.0,
-                internet_availability: 0.0,
-            },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(seed),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 10,
-            belief_model: None,
+            ..Default::default()
         },
-        victory_conditions: BTreeMap::new(),
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: BTreeMap::new(),
+        ..Default::default()
     }
 }
 
@@ -538,8 +501,7 @@ fn defender_budget_scenario(budget: Option<f64>, seed: u64) -> Scenario {
                 attacker_dollars: 100.0,
                 // Sized to overrun the budget on its own.
                 defender_dollars: 1_000_000.0,
-                attacker_resources: 0.0,
-                confidence: None,
+                ..Default::default()
             },
             targets_domains: vec![],
             outputs: vec![],
@@ -576,8 +538,7 @@ fn defender_budget_scenario(budget: Option<f64>, seed: u64) -> Scenario {
             cost: PhaseCost {
                 attacker_dollars: 100.0,
                 defender_dollars: 100.0,
-                attacker_resources: 0.0,
-                confidence: None,
+                ..Default::default()
             },
             targets_domains: vec![],
             outputs: vec![],
@@ -1018,7 +979,7 @@ fn segment_activation_scenario(
             volatility,
             activated: false,
         }],
-        global_modifiers: vec![],
+        ..Default::default()
     };
     sc
 }
@@ -1031,13 +992,7 @@ fn population_segment_activation_records_event() {
     // latch fires. Volatility = 0 zeros the noise term, so on the first
     // political-phase tick the latch trips and records the event with
     // the discriminant names of both authored actions in order.
-    let media = MediaLandscape {
-        fragmentation: 0.0,
-        disinformation_susceptibility: 0.0,
-        state_control: 0.0,
-        social_media_penetration: 0.0,
-        internet_availability: 0.0,
-    };
+    let media = MediaLandscape::default();
     let sc = segment_activation_scenario(media, 0.5, 0.6, 0.0);
     let mut engine = Engine::with_seed(sc, 7).expect("engine init");
     let result = engine.run().expect("run");
@@ -1065,13 +1020,7 @@ fn media_fragmentation_amplifies_sympathy_drift() {
     // same volatility, so the only difference between final sympathy
     // values is the fragmentation multiplier.
     use faultline_types::ids::SegmentId;
-    let zero_frag = MediaLandscape {
-        fragmentation: 0.0,
-        disinformation_susceptibility: 0.0,
-        state_control: 0.0,
-        social_media_penetration: 0.0,
-        internet_availability: 0.0,
-    };
+    let zero_frag = MediaLandscape::default();
     let high_frag = MediaLandscape {
         fragmentation: 1.0,
         ..zero_frag
@@ -1122,19 +1071,10 @@ fn internet_gates_social_media_amplification() {
     // social-media wiring (the "lights out" guard).
     use faultline_types::ids::SegmentId;
     let no_internet = MediaLandscape {
-        fragmentation: 0.0,
-        disinformation_susceptibility: 0.0,
-        state_control: 0.0,
         social_media_penetration: 1.0,
-        internet_availability: 0.0,
+        ..Default::default()
     };
-    let baseline = MediaLandscape {
-        fragmentation: 0.0,
-        disinformation_susceptibility: 0.0,
-        state_control: 0.0,
-        social_media_penetration: 0.0,
-        internet_availability: 0.0,
-    };
+    let baseline = MediaLandscape::default();
 
     let sc_no_inet = segment_activation_scenario(no_internet, 0.99, 0.0, 1.0);
     let sc_base = segment_activation_scenario(baseline, 0.99, 0.0, 1.0);
@@ -1386,10 +1326,9 @@ fn segment_activation_determinism_pinned_by_seed() {
     // so the field is non-trivially populated.
     let media = MediaLandscape {
         fragmentation: 0.5,
-        disinformation_susceptibility: 0.0,
-        state_control: 0.0,
         social_media_penetration: 0.7,
         internet_availability: 0.9,
+        ..Default::default()
     };
     let sc = segment_activation_scenario(media, 0.5, 0.5, 0.5);
     let mut a = Engine::with_seed(sc.clone(), 99).expect("engine a");
