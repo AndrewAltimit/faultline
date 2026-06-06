@@ -501,11 +501,32 @@ misperception, OPSEC as decision-affecting rather than narrative.
       seen by the AI, region-control beliefs → AI's known regions.
       The integration is direct (no Bayesian smoothing yet —
       round-two work).
-- [ ] **Attribution rolls use the *believed* attribution
-      distribution.** Round-two work; pairs with Epic J round-two.
-      Currently kill-chain attribution rolls read ground truth.
-      Round-two would route them through belief, so a defender that
-      misattributes an attack acts on the misattribution.
+- [x] **Attribution rolls use the *believed* attribution
+      distribution.** Shipped June 2026 as round-two. The opt-in
+      `simulation.belief_model.believed_attribution` sub-flag (requires
+      `enabled = true`) routes kill-chain attribution through the
+      defender's belief instead of ground truth. At detection time the
+      defender (the chain's `target`) draws a believed attacker from a
+      distribution weighted by `attribution_true_weight(intelligence)`
+      on the true attacker, a flat residual confusion mass on the other
+      candidates, and a strong boost on any faction it holds a planted
+      `BeliefSource::Deceived` belief about (false flag). A
+      low-intelligence or deceived defender misattributes and then *acts
+      on it*: `fracture::mean_attribution` credits the confidence to the
+      believed (`CampaignState::attributed_faction`), not true, attacker,
+      so the alliance-fracture rule fires against whoever the defender
+      *thinks* did it. The draw consumes exactly one engine-RNG value per
+      detection, gated entirely behind the sub-flag, so legacy scenarios
+      (and belief scenarios that leave it off) consume RNG in the exact
+      legacy order and are bit-identical. New `RunResult.attribution_events`
+      log + cross-run `MonteCarloSummary.misattribution_summary` +
+      `## Attribution Fidelity` report section (gated on data presence).
+      Validation rejects the silent-no-op shapes (sub-flag without
+      `enabled`, sub-flag without any kill chain) and accepts an
+      `AttributionThreshold` rule naming a non-attacker faction only when
+      believed-attribution is on. Bundled archetype:
+      `scenarios/misattribution_demo.toml` (~40% misattribution rate;
+      a low-intel deceived defender fractures against an innocent ally).
 - [x] **Bayesian belief updating from indirect signals.** Shipped
       May 2026 as round-two. The opt-in
       `simulation.belief_model.intelligence_weighting` flag caps
@@ -524,10 +545,11 @@ misperception, OPSEC as decision-affecting rather than narrative.
       every faction with a force in *or* adjacent to it, with
       confidence varying by `Faction.intelligence`.
 
-Status: round-two shipped except believed-attribution (the first
-item above — kill-chain attribution in `campaign.rs` and the
-fracture accounting that reads it remain a separable subsystem).
-Bundled round-two archetype: `scenarios/recon_fidelity_demo.toml`.
+Status: round-two fully shipped, including believed-attribution
+rolls (June 2026 — the last open Epic M item). Fabricated-narrative
+integration remains future work. Bundled round-two archetypes:
+`scenarios/recon_fidelity_demo.toml` (intelligence-weighted fidelity)
+and `scenarios/misattribution_demo.toml` (believed attribution).
 Critical for the game-middleware pivot (deception, fog of war = good
 gameplay).
 

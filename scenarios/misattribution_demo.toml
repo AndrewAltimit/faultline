@@ -1,0 +1,433 @@
+# Misattribution Demo — Epic M round-two archetype
+#
+# Demonstrates believed-attribution rolls
+# (`simulation.belief_model.believed_attribution = true`) end-to-end: a
+# defender that misattributes an attack ACTS on the misattribution and
+# fractures from an innocent ally.
+#
+# Three factions:
+#   - red_attacker: runs a covert kill chain against blue_defender.
+#     This is the TRUE author of every detected phase.
+#   - blue_defender: target of the chain. LOW intelligence (0.25), so
+#     its detection-time attribution is barely better than a coin flip
+#     before deception. Allied to gray_partner.
+#   - gray_partner: an innocent ally of blue. Red runs a false-flag
+#     deception that plants a `Deceived` region-control belief in
+#     blue's mind naming gray as the controller of red's home region —
+#     pointing blue's attribution finger at gray.
+#
+# With believed-attribution on, when blue detects a phase of red's
+# chain it draws a believed attacker from a distribution weighted by
+# its (low) intelligence and biased by the planted false flag toward
+# gray. Blue therefore frequently misattributes red's attack to gray.
+# blue's alliance_fracture rule fires against gray on
+# `AttributionThreshold { attacker = "gray_partner" }` — so the
+# misattribution breaks the blue–gray alliance even though gray did
+# nothing. The fracture accounting credits the attribution confidence
+# to the BELIEVED faction (gray), not the true one (red).
+#
+# The report's `## Attribution Fidelity` section quantifies the
+# misattribution rate, how much of it the false flag drove, and how
+# many runs the misattribution went on to drive an alliance fracture.
+#
+# Determinism: the believed-attribution draw consumes exactly one
+# engine-RNG value per detection, gated entirely behind the sub-flag,
+# so a copy of this scenario with the flag off would consume RNG in
+# the legacy order and be bit-identical to a pre-Epic-M-round-two run.
+#
+# All parameters are aggregate statistical descriptors. The scenario
+# is descriptive, not prescriptive, and contains no classified, CUI,
+# or export-controlled information.
+#
+# Run with:
+#   cargo run -p faultline-cli -- scenarios/misattribution_demo.toml -n 100
+
+[meta]
+schema_version = 1
+name = "Misattribution Demo — Believed-Attribution Drives a False Fracture"
+description = "Three-faction archetype showing a low-intelligence, deceived defender misattributing an attack to an innocent ally and fracturing the alliance against it. Surfaces the misattribution rate, deception-driven rate, and fracture-misattribution count in the report's Attribution Fidelity section."
+author = "AI Agent Bot"
+version = "0.1.0"
+tags = ["belief", "deception", "false-flag", "attribution", "misattribution", "alliance-fracture", "epic-m", "round-two"]
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.north_west]
+id = "north_west"
+name = "North-West"
+population = 500_000
+urbanization = 0.5
+initial_control = "blue_defender"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.regions.north_east]
+id = "north_east"
+name = "North-East"
+population = 500_000
+urbanization = 0.5
+initial_control = "red_attacker"
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_west]
+id = "south_west"
+name = "South-West"
+population = 500_000
+urbanization = 0.5
+initial_control = "gray_partner"
+strategic_value = 0.5
+borders = ["north_west", "south_east"]
+
+[map.regions.south_east]
+id = "south_east"
+name = "South-East"
+population = 500_000
+urbanization = 0.5
+initial_control = "blue_defender"
+strategic_value = 0.5
+borders = ["north_east", "south_west"]
+
+[map.infrastructure]
+
+[[map.terrain]]
+region = "north_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "north_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_west"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+[[map.terrain]]
+region = "south_east"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 1.0
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red_attacker]
+id = "red_attacker"
+name = "Red Attacker — True Author"
+description = "Runs the covert kill chain against blue and plants the false-flag deception implicating gray. The genuine author of every detected phase."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.6
+doctrine = "Conventional"
+
+[factions.red_attacker.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.red_attacker.forces.red_inf]
+id = "red_inf"
+name = "Red 1st Infantry"
+unit_type = "Infantry"
+region = "north_east"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[[factions.red_attacker.diplomacy]]
+target_faction = "blue_defender"
+stance = "Hostile"
+
+[[factions.red_attacker.diplomacy]]
+target_faction = "gray_partner"
+stance = "Neutral"
+
+[factions.blue_defender]
+id = "blue_defender"
+name = "Blue Defender — Deceived"
+description = "Target of the chain. Low intelligence (0.25) so its detection-time attribution is unreliable; allied to gray. Red's false flag points blue's attribution at gray, so blue misattributes red's attacks and fractures the wrong alliance."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.25
+doctrine = "Conventional"
+
+[factions.blue_defender.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue_defender.forces.blue_inf]
+id = "blue_inf"
+name = "Blue 1st Infantry"
+unit_type = "Infantry"
+region = "north_west"
+strength = 100.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# Blue is Allied to gray (the alliance the misattribution will break)
+# and Hostile to red.
+[[factions.blue_defender.diplomacy]]
+target_faction = "gray_partner"
+stance = "Allied"
+
+[[factions.blue_defender.diplomacy]]
+target_faction = "red_attacker"
+stance = "Hostile"
+
+# Blue's alliance_fracture rule: flip the relationship with gray to
+# Hostile when blue's mean attribution *against gray* crosses 0.3.
+# Because believed-attribution credits attribution confidence to the
+# BELIEVED faction, a run where blue misattributes red's chain to gray
+# accumulates attribution against gray and trips this rule — the
+# misattribution drives a behavioral break against an innocent ally.
+[factions.blue_defender.alliance_fracture]
+[[factions.blue_defender.alliance_fracture.rules]]
+id = "blame_gray"
+counterparty = "gray_partner"
+new_stance = "Hostile"
+description = "Blue (mis)attributes the covert operation to gray and severs the alliance."
+[factions.blue_defender.alliance_fracture.rules.condition]
+kind = "AttributionThreshold"
+attacker = "gray_partner"
+threshold = 0.3
+
+[factions.gray_partner]
+id = "gray_partner"
+name = "Gray Partner — Innocent Ally"
+description = "Innocent ally of blue. Did nothing — but red's false flag frames gray, and blue's low intelligence makes the frame stick."
+color = "#888888"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 10.0
+initial_resources = 100.0
+resource_rate = 5.0
+command_resilience = 0.5
+intelligence = 0.5
+doctrine = "Conventional"
+
+[factions.gray_partner.faction_type]
+kind = "Civilian"
+
+[factions.gray_partner.forces.gray_inf]
+id = "gray_inf"
+name = "Gray 1st Garrison"
+unit_type = "Infantry"
+region = "south_west"
+strength = 60.0
+mobility = 1.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[[factions.gray_partner.diplomacy]]
+target_faction = "blue_defender"
+stance = "Allied"
+
+[[factions.gray_partner.diplomacy]]
+target_faction = "red_attacker"
+stance = "Neutral"
+
+# -- Technology -------------------------------------------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.45
+institutional_trust = 0.65
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.50
+disinformation_susceptibility = 0.50
+state_control = 0.20
+social_media_penetration = 0.85
+internet_availability = 0.95
+
+# -- Events: false-flag deception ------------------------------------------
+
+# Tick 2: red plants a false-flag region-control belief in blue's mind
+# — blue is led to believe gray_partner controls north_east (red's
+# actual home region). The `Deceived` source tag persists through
+# decay, so every believed-attribution roll blue makes for the rest of
+# the run is biased toward gray. This is the mechanism that turns a
+# low-intelligence defender's confusion into a *directed*
+# misattribution at a specific innocent party.
+[events.red_false_flag]
+id = "red_false_flag"
+name = "Red False-Flag (Frame Gray)"
+description = "Red leaks fabricated evidence that gray_partner is operating out of north_east, framing gray for red's own covert campaign."
+probability = 1.0
+repeatable = false
+
+[[events.red_false_flag.conditions]]
+condition = "TickAtLeast"
+tick = 2
+
+[[events.red_false_flag.effects]]
+effect = "DeceptionOp"
+source_faction = "red_attacker"
+target_faction = "blue_defender"
+
+[events.red_false_flag.effects.payload]
+kind = "FalseRegionControl"
+region = "north_east"
+false_controller = "gray_partner"
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 60
+monte_carlo_runs = 100
+fog_of_war = false
+snapshot_interval = 0
+seed = 23
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.1 }
+
+# Belief-asymmetry model — Epic M. `believed_attribution = true` routes
+# kill-chain attribution through blue's belief instead of ground truth.
+# Without `enabled = true` the sub-flag is rejected at load; without a
+# kill chain it is rejected at load (it would be a silent no-op).
+[simulation.belief_model]
+enabled = true
+believed_attribution = true
+force_decay_per_tick = 0.05
+region_decay_per_tick = 0.0
+scalar_decay_per_tick = 0.03
+prune_threshold = 0.0
+snapshot_interval = 0
+
+# -- Kill Chain ------------------------------------------------------------
+#
+# A short three-phase covert chain run by red against blue. Detection
+# probabilities are tuned so blue detects phases across most runs (each
+# detection is one believed-attribution roll). attribution_difficulty
+# is moderate so the per-detection attribution confidence is meaningful.
+
+[kill_chains.covert_op]
+id = "covert_op"
+name = "Covert Operation (Red)"
+description = "Three-phase covert chain whose detections drive blue's believed-attribution rolls. The true attacker is red, but the false flag biases blue toward attributing it to gray."
+attacker = "red_attacker"
+target = "blue_defender"
+entry_phase = "approach"
+
+[kill_chains.covert_op.phases.approach]
+id = "approach"
+name = "Approach"
+description = "Initial reconnaissance. High detection probability so blue forms an (often wrong) attribution early."
+base_success_probability = 0.85
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.18
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.45
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.covert_op.phases.approach.cost]
+attacker_dollars = 1_000.0
+defender_dollars = 5_000.0
+attacker_resources = 0.5
+
+[[kill_chains.covert_op.phases.approach.branches]]
+condition = { type = "OnDetection" }
+next_phase = "exploit"
+
+[[kill_chains.covert_op.phases.approach.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "exploit"
+
+[kill_chains.covert_op.phases.exploit]
+id = "exploit"
+name = "Exploit"
+description = "Mid-chain action. Continues to generate detections / attribution rolls."
+base_success_probability = 0.70
+min_duration = 4
+max_duration = 8
+detection_probability_per_tick = 0.16
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.40
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.covert_op.phases.exploit.cost]
+attacker_dollars = 3_000.0
+defender_dollars = 15_000.0
+attacker_resources = 1.5
+
+[[kill_chains.covert_op.phases.exploit.branches]]
+condition = { type = "OnDetection" }
+next_phase = "exfil"
+
+[[kill_chains.covert_op.phases.exploit.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "exfil"
+
+[kill_chains.covert_op.phases.exfil]
+id = "exfil"
+name = "Exfiltrate"
+description = "Final step. One more detection opportunity / attribution roll."
+base_success_probability = 0.80
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.16
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.45
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.covert_op.phases.exfil.cost]
+attacker_dollars = 1_500.0
+defender_dollars = 8_000.0
+attacker_resources = 1.0
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.blue_holds]
+id = "blue_holds"
+name = "Blue Holds Strategic Control"
+faction = "blue_defender"
+
+[victory_conditions.blue_holds.condition]
+type = "StrategicControl"
+threshold = 0.60
+
+[victory_conditions.red_holds]
+id = "red_holds"
+name = "Red Strategic Control"
+faction = "red_attacker"
+
+[victory_conditions.red_holds.condition]
+type = "StrategicControl"
+threshold = 0.60

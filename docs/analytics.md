@@ -14,7 +14,7 @@ For command invocations see `docs/cli.md`. For scenario schema see
 ## Monte Carlo report sections
 
 Every `cargo run -p faultline-cli -- <scenario> -n <N>` run produces a
-`report.md` in the output directory. The report contains exactly 27
+`report.md` in the output directory. The report contains exactly 28
 sections rendered in this fixed order:
 
 1. **Header** — scenario name, author, version, schema version, tags,
@@ -99,11 +99,20 @@ sections rendered in this fixed order:
     ambient-intel pickups, terminal `Inferred` belief counts) appears
     only when there is round-two activity (any `AmbientIntel` pickup or
     `Inferred` belief), keeping round-one scenarios' output unchanged.
-26. **Calibration** — back-testing verdict against a declared
+26. **Attribution Fidelity** — believed-attribution analytics (Epic M
+    round-two): the cross-run misattribution rate (fraction of
+    detection-time attribution rolls where the defender fingered the
+    wrong faction), the deception-driven rate (how much a planted
+    false flag drove it), the fracture-misattribution count
+    (misattributions that broke an alliance against an innocent ally),
+    and the `true → believed` confusion-pair table. Elides unless the
+    scenario opts into `belief_model.believed_attribution` and at least
+    one detection fired a roll, so non-opted-in scenarios are unchanged.
+27. **Calibration** — back-testing verdict against a declared
     `[meta.historical_analogue]` (Pass/Marginal/Fail per observation
     plus a roll-up), or a "purely synthetic" disclaimer when no
     analogue is declared. **Always emits.**
-27. **Methodology & Confidence** — explanation of statistical methods
+28. **Methodology & Confidence** — explanation of statistical methods
     (Wilson score intervals, bootstrap CIs) and a per-scenario
     calibration-confidence tag (`[H] Pass`, `[M] Marginal`, `[L]
     Fail`) when an analogue is declared and runs are available.
@@ -136,7 +145,7 @@ pub trait ReportSection {
 
 Each section struct implements the trait and owns its own elision
 logic. The composer (`render_markdown`) simply iterates
-`monte_carlo_sections()` — a `[&'static dyn ReportSection; 27]` array
+`monte_carlo_sections()` — a `[&'static dyn ReportSection; 28]` array
 — and calls `render` on each entry. The composer never grows
 conditional chains.
 

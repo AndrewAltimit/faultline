@@ -191,6 +191,7 @@ fn counter_recommendation_elides_when_pareto_frontier_empty() {
         displacement_summaries: ::std::collections::BTreeMap::new(),
         utility_decompositions: BTreeMap::new(),
         belief_summaries: ::std::collections::BTreeMap::new(),
+        misattribution_summary: None,
     };
     summary.win_rates.insert(FactionId::from("blue"), 0.5);
 

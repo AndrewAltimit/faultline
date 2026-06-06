@@ -181,6 +181,7 @@ mod tests {
             utility_decisions: BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         }
     }
 
@@ -335,6 +336,7 @@ mod tests {
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
             belief_summaries: ::std::collections::BTreeMap::new(),
+            misattribution_summary: None,
         };
         let runs = vec![empty_run()];
         summary.alliance_dynamics = compute_alliance_dynamics(&runs, &s);

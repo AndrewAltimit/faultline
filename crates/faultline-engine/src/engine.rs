@@ -11,9 +11,9 @@ use faultline_types::campaign::BranchCondition;
 use faultline_types::ids::{EventId, FactionId, KillChainId, RegionId, TechCardId};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::{
-    BeliefAccuracyReport, DefenderQueueReport, EventRecord, NetworkReport, Outcome,
-    RegionDisplacementReport, RunResult, StateSnapshot, SupplyPressureReport, TechCostReport,
-    TechDecommissionEvent,
+    AttributionEventReport, BeliefAccuracyReport, DefenderQueueReport, EventRecord, NetworkReport,
+    Outcome, RegionDisplacementReport, RunResult, StateSnapshot, SupplyPressureReport,
+    TechCostReport, TechDecommissionEvent,
 };
 use faultline_types::strategy::FactionState;
 
@@ -272,6 +272,7 @@ impl Engine {
                     utility_decisions: collect_utility_decisions(&self.state),
                     belief_accuracy: collect_belief_accuracy(&self.state),
                     belief_snapshots: self.state.belief_snapshots.clone(),
+                    attribution_events: collect_attribution_events(&self.state),
                 });
             }
 
@@ -304,6 +305,7 @@ impl Engine {
                     utility_decisions: collect_utility_decisions(&self.state),
                     belief_accuracy: collect_belief_accuracy(&self.state),
                     belief_snapshots: self.state.belief_snapshots.clone(),
+                    attribution_events: collect_attribution_events(&self.state),
                 });
             }
         }
@@ -495,6 +497,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         belief_states: BTreeMap::new(),
         belief_counters: BTreeMap::new(),
         belief_snapshots: BTreeMap::new(),
+        attribution_events: Vec::new(),
     })
 }
 
@@ -757,6 +760,29 @@ fn collect_belief_accuracy(state: &SimulationState) -> BTreeMap<FactionId, Belie
         );
     }
     out
+}
+
+/// Convert the engine-side believed-attribution roll log into the
+/// post-run [`AttributionEventReport`] vector (Epic M round-two). Empty
+/// for scenarios that leave
+/// `simulation.belief_model.believed_attribution = false`, so the
+/// `RunResult` field serializes away and legacy output is unchanged.
+/// Preserves tick order (the engine pushes in tick order).
+fn collect_attribution_events(state: &SimulationState) -> Vec<AttributionEventReport> {
+    state
+        .attribution_events
+        .iter()
+        .map(|ev| AttributionEventReport {
+            tick: ev.tick,
+            defender: ev.defender.clone(),
+            chain: ev.chain.clone(),
+            true_attacker: ev.true_attacker.clone(),
+            believed_attacker: ev.believed_attacker.clone(),
+            confidence: ev.confidence,
+            misattributed: ev.misattributed,
+            deception_driven: ev.deception_driven,
+        })
+        .collect()
 }
 
 fn collect_displacement_reports(

@@ -69,6 +69,22 @@ pub fn belief_enabled(scenario: &Scenario) -> bool {
         .unwrap_or(false)
 }
 
+/// True iff the scenario opts into believed-attribution rolls (Epic M
+/// round-two): `belief_model.enabled = true` *and*
+/// `belief_model.believed_attribution = true`. The `enabled` conjunct
+/// is required because the draw reads the persistent belief state,
+/// which only exists when the master toggle is on; validation rejects
+/// the `believed_attribution`-without-`enabled` shape at load, so this
+/// conjunction is also defense in depth.
+pub fn believed_attribution_enabled(scenario: &Scenario) -> bool {
+    scenario
+        .simulation
+        .belief_model
+        .as_ref()
+        .map(|c| c.enabled && c.believed_attribution)
+        .unwrap_or(false)
+}
+
 /// Return the active [`BeliefModelConfig`] or a sensible default.
 ///
 /// Callers should guard the call with [`belief_enabled`] when they
@@ -1279,6 +1295,7 @@ mod tests {
             belief_states: BTreeMap::new(),
             belief_counters: BTreeMap::new(),
             belief_snapshots: BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let observer = FactionId::from("observer");

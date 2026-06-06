@@ -1067,6 +1067,22 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     // be surprised by silent clamping.
     if let Some(cfg) = &scenario.simulation.belief_model {
         faultline_types::belief::validate_belief_model(cfg).map_err(ScenarioError::Custom)?;
+
+        // Believed-attribution rolls (Epic M round-two) fire only at
+        // kill-chain detection time. A scenario that turns the sub-flag
+        // on but declares no kill chains can never produce a single
+        // roll — a silent no-op. Reject it at load, per the project's
+        // fail-loud-on-silent-no-op pattern, so the analyst learns the
+        // feature is inert before running 1000 Monte Carlo iterations.
+        if cfg.believed_attribution && scenario.kill_chains.is_empty() {
+            return Err(ScenarioError::Custom(
+                "simulation.belief_model.believed_attribution = true requires at \
+                 least one kill chain — attribution rolls fire only when a \
+                 defender detects a kill-chain phase, so with no kill chains the \
+                 flag is a silent no-op"
+                    .to_string(),
+            ));
+        }
     }
 
     // Top-level political climate scalars. `tension` feeds event-condition
@@ -1655,24 +1671,46 @@ fn validate_fracture_condition(
                 return Err(ScenarioError::UnknownFaction(attacker.clone()));
             }
             // An AttributionThreshold rule reads attribution from
-            // chains owned by `attacker`. If `attacker` owns no chains
-            // the mean is always 0 and the rule can only fire when
-            // `threshold <= 0`, which is a silent no-op for any
-            // non-trivial threshold. Catch up front so the analyst
-            // sees the diagnostic instead of debugging why the rule
-            // never fires.
+            // chains *attributed to* `attacker`. Under the legacy
+            // (ground-truth) attribution path, a chain is attributed to
+            // its true `attacker`, so a rule naming a faction that owns
+            // no chain can only fire when `threshold <= 0` — a silent
+            // no-op for any non-trivial threshold. Catch that up front.
+            //
+            // Under believed-attribution
+            // (`belief_model.believed_attribution = true`), any chain
+            // can be *mis*attributed to *any* faction (the believed
+            // attacker is drawn from the defender's belief, not the
+            // chain's true owner). A rule naming a non-attacker faction
+            // is then the *intended* shape — "fracture when I believe
+            // this faction did it". So we only require that *some* kill
+            // chain exists (otherwise no detection, no roll, no
+            // attribution against anyone — still a silent no-op).
+            let believed_attribution = crate::belief::believed_attribution_enabled(scenario);
             let owns_chain = scenario
                 .kill_chains
                 .values()
                 .any(|c| c.attacker == *attacker);
-            if !owns_chain {
+            if believed_attribution {
+                if scenario.kill_chains.is_empty() {
+                    return Err(ScenarioError::Custom(format!(
+                        "faction {faction} alliance_fracture rule `{rule_id}` \
+                         uses AttributionThreshold against `{attacker}` under \
+                         believed-attribution, but the scenario declares no \
+                         kill chains — no detection ever fires an attribution \
+                         roll, so the rule could never fire."
+                    )));
+                }
+            } else if !owns_chain {
                 return Err(ScenarioError::Custom(format!(
                     "faction {faction} alliance_fracture rule `{rule_id}` \
                      uses AttributionThreshold against `{attacker}`, but \
                      no kill chain names `{attacker}` as its attacker — \
                      the mean attribution would always be 0 and the rule \
                      could never fire. Either add a chain or pick a \
-                     different condition."
+                     different condition. (If you intend the defender to \
+                     *misattribute* an attack to this faction, enable \
+                     simulation.belief_model.believed_attribution.)"
                 )));
             }
             bad_threshold("AttributionThreshold.threshold", *threshold)?;
