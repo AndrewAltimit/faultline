@@ -71,13 +71,15 @@ that re-ranks several of these items.
    (radar / parallel-coordinates) replacing the wide table. Several
    sub-items depend on the editor work in Epic P.
 
-3. **Epic P — schema-aware editor.** Authoring depth's last open piece.
-   The explain view, browser Explain button, inline validation panel,
-   and (this refresh) hover documentation have all shipped. What
-   remains is the Monaco/CodeMirror editor with TOML grammar +
-   JSON-schema-driven autocomplete (schema generated from the Rust
-   types). This is the single biggest authoring-reliability win as the
-   schema keeps growing, and it directly enables Epic F content work.
+3. **Epic P — schema-aware editor (closed).** Authoring depth is now
+   complete: the explain view, browser Explain button, inline validation
+   panel, hover documentation, and schema-driven autocomplete have all
+   shipped. Autocomplete reuses the same field-doc catalog as the hover
+   docs (no second schema), parses lightweight TOML context (current
+   `[table]`, key-vs-value position), and offers key completions filtered
+   to the caret's section plus enum-value completions where the catalog
+   knows the variants — all over the existing `<textarea>`, dependency-
+   free. This directly enables Epic F content work.
 
 4. **Epic F — remaining scenario-library content.** The self-describing
    `[meta]` fields and the tech-card rebalance have shipped. What
@@ -179,15 +181,30 @@ export to PNG/CSV/JSON/PDF, addressable run URLs, light-mode toggle. The
 editor-overlap items depend on Epic P. Status: open; the largest
 user-facing surface left on the analyst path.
 
-### Epic P — authoring depth: schema-aware editor
+### Epic P — authoring depth: schema-aware editor (closed)
 
 Shipped: the `explain` CLI subset, the browser Explain button, the
-inline validation panel (`scenario_warnings_wasm`), and schema-aware
-hover documentation. Remaining: a Monaco / CodeMirror editor with TOML
-grammar and JSON-schema-driven autocomplete (schema generated from the
-Rust types), so fields are completed and validated as the schema grows.
-Hover docs already proved out a field-doc catalog the autocomplete can
-reuse. Status: one item left.
+inline validation panel (`scenario_warnings_wasm`), schema-aware hover
+documentation, and schema-driven autocomplete. Autocomplete is a
+focused, dependency-free completion popover over the existing
+`<textarea>` (no Monaco/CodeMirror swap, no npm dep) backed by a
+lightweight TOML context parser (`site/js/app/autocomplete.js`,
+`completionContext` / `completionsAt`): it resolves the caret's
+`[table]` family and whether the caret is on a key vs a value, then
+offers key completions filtered to that section and enum-value
+completions for fields whose catalog entry carries an `enumValues`
+list. The completion *source* is the same `field-docs.js` catalog the
+hover docs use — no second schema — so each suggestion shows the field
+type, range, default, and the "engine effect vs. descriptive-only"
+badge.
+
+Deferred (noted, not blocking): a Rust-emitted machine-readable
+schema/key dump to drift-check the hand-maintained catalog against the
+actual `Scenario` types. Skipped to protect the determinism / CI budget
+(it would add new plumbing for marginal value while the catalog is
+already the curated source); a unit test instead pins each
+`enumValues` list to the prose summary so the two never silently drift.
+Status: closed.
 
 ### Epic F — scenario library & content
 
