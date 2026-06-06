@@ -47,6 +47,14 @@ sub-section contrasting the high- and low-intelligence factions.
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["belief", "fog-of-war", "intelligence", "info-ops", "epic-m", "epic-j", "round-two"]
+scenario_type = "demo"
+analytical_purpose = "Show round-two belief mechanics: intelligence-weighted observation fidelity, proximity-driven ambient intel, and belief-driven (confidence-discounted) utility, contrasting a high- and a low-intelligence faction."
+red_team_profile = "recon_corps (intelligence 0.9): tracks ground truth tightly, high belief confidence."
+blue_team_posture = "fog_division (intelligence 0.2): lags ground truth, high force-strength error."
+sensitivity_parameters = [
+    "per-faction intelligence stat (caps observation confidence)",
+    "AmbientIntel event fidelity / radius",
+]
 
 [map]
 [map.source]

@@ -21,6 +21,17 @@ and civilian segment activation.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["tutorial", "asymmetric", "insurgency", "fog-of-war"]
+scenario_type = "tutorial"
+analytical_purpose = "Demonstrate doctrine variants, fog of war, tech cards, event chains, and civilian-segment activation in a conventional-vs-insurgent fight."
+red_team_profile = "Rural insurgency relying on population support, concealment, and guerrilla hit-and-run tactics rather than firepower."
+blue_team_posture = "Government security forces with superior firepower and surveillance technology, but obligated to hold territory."
+osint_sources = [
+    "Publicly available OSINT on counter-insurgency force structures and doctrine (see LEGAL.md sourcing requirements)",
+]
+sensitivity_parameters = [
+    "insurgent population-support level",
+    "government surveillance / fog-of-war detection",
+]
 
 # -- Map (6 regions) -------------------------------------------------------
 

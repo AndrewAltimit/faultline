@@ -27,6 +27,22 @@ description = "Multi-phase autonomous drone swarm campaign against US government
 author = "faultline-ai"
 version = "0.1.0"
 tags = ["drone-swarm", "asymmetric", "cyber-physical", "kill-chain", "domestic", "180-day"]
+scenario_type = "reference"
+analytical_purpose = "Explore how a non-state actor could leverage commercially-derived drone technology in a compound kill chain to undermine political stability — from sensor emplacement to coercion or kinetic action."
+red_team_profile = "Non-state actor running an intelligence-led compound kill chain: sensor emplacement, wireless exploitation, credential harvesting, persistent surveillance, then a coercion campaign or executive decapitation attempt."
+blue_team_posture = "US government institutions with C-UAS and counter-intrusion gaps across a 180-day horizon."
+osint_sources = [
+    "RAND RR-3023-DHS: Small Unmanned Aerial System Adversary Capabilities (2020)",
+    "IISS Military Balance 2025: C-UAS system capabilities",
+    "CISA: Counter-UAS gap assessments and interagency coordination reports",
+    "Kallenborn, Z. (2021): Are Drone Swarms Weapons of Mass Destruction? (Parameters)",
+    "Scharre, P. (2018): Army of None",
+    "Ukraine conflict OSINT (2022-present): commercial drone weaponization",
+]
+sensitivity_parameters = [
+    "compound kill-chain phase success probabilities",
+    "C-UAS detection / interdiction effectiveness",
+]
 
 # ============================================================================
 # Map: Washington DC Metro Area — operational theater

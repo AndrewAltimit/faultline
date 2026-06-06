@@ -61,6 +61,12 @@ against every profile and ranks postures by worst-case profile.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["search", "epic-i", "robustness", "synthetic"]
+scenario_type = "demo"
+analytical_purpose = "Exercise robustness analysis: evaluate a defender posture against three named attacker profiles to see which posture holds up across adversaries."
+sensitivity_parameters = [
+    "defender posture decision variables",
+    "attacker-profile selection",
+]
 confidence = "Low"
 
 # -- Map: 2x2 grid ---------------------------------------------------------

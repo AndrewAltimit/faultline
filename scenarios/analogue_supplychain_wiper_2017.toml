@@ -67,6 +67,18 @@ author = "AI Agent Bot"
 version = "1.0.0"
 tags = ["analogue", "calibration", "cyber", "supply-chain", "wiper", "destructive"]
 confidence = "High"
+scenario_type = "reference"
+analytical_purpose = "Does the engine reproduce the global, rapid attacker-success outcome and very short propagation window of the canonical supply-chain-delivered destructive wiper event?"
+red_team_profile = "Destructive intrusion set that compromised the software-update channel of a widely-deployed product, then released a self-propagating payload combining credential harvesting with network-spreading mechanisms and a disk-wiping effect masquerading as ransomware."
+blue_team_posture = "Global population of organizations running the trojanized product, with flat internal networks and shared administrative credentials enabling rapid lateral spread."
+osint_sources = [
+    "Public incident reporting and defensive-community analyses of the June 2017 wiper event",
+    "Open-press coverage of the ~USD 10 billion publicly-estimated global damages",
+]
+sensitivity_parameters = [
+    "self-propagation phase success probability",
+    "detection probability during the propagation window",
+]
 
 [meta.historical_analogue]
 name = "June 2017 supply-chain destructive wiper"

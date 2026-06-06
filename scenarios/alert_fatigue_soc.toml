@@ -38,6 +38,21 @@ author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["soc", "alert-fatigue", "defender-capacity", "epic-k", "intrusion"]
 confidence = "Medium"
+scenario_type = "reference"
+analytical_purpose = "Quantify how much real-detection capability is lost to alert volume rather than skill: an attacker floods the tier-1 SOC queue so later phases slip past detection rolls the defender would have caught at idle."
+red_team_profile = "Multi-phase intrusion whose first phase deliberately floods the defender's tier-1 alert queue with low-quality noise to mask credential-harvest and lateral-movement phases."
+blue_team_posture = "Finite-throughput SOC; sustained queue saturation drops true-positive rates (saturated_detection_factor = 0.3, mid-range of published 50-80% drops)."
+osint_sources = [
+    "Mandiant M-Trends (dwell time, MTTD distribution)",
+    "IBM X-Force Threat Intelligence Index (alert-volume metrics)",
+    "Verizon DBIR (intrusion phase progression)",
+    "ESG / Ponemon SOC surveys (analyst throughput, ticket capacity)",
+    "CISA / NIST SP 800-61 (incident-response process timing)",
+]
+sensitivity_parameters = [
+    "saturated_detection_factor",
+    "tier-1 SOC alert-queue throughput / capacity",
+]
 
 # ============================================================================
 # Map

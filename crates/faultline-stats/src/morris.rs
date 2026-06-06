@@ -428,6 +428,7 @@ mod tests {
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
                 historical_analogue: None,
+                ..Default::default()
             },
             map: MapConfig {
                 source: MapSource::Grid {

@@ -44,6 +44,22 @@ author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["soc", "alert-fatigue", "multi-front", "escalation", "epic-d", "defender-capacity"]
 confidence = "Medium"
+scenario_type = "reference"
+analytical_purpose = "Quantify what a multi-tier SOC escalation policy costs: when tier-1 triage saturates, overflow spills to tier-2 then tier-3, redistributing detection-suppression pressure across the chain rather than concentrating it."
+red_team_profile = "Sustained multi-phase intrusion that saturates tier-1 within the first dozen ticks, with a high-leverage exfiltration phase gated by tier-2 detection rolls."
+blue_team_posture = "Three-tier SOC (tier-1 triage -> tier-2 IR -> tier-3 forensics) with a declared escalation policy and progressively smaller cell capacities."
+osint_sources = [
+    "Mandiant M-Trends (dwell time, MTTD distribution)",
+    "IBM X-Force Threat Intelligence Index (alert-volume metrics)",
+    "Verizon DBIR (intrusion phase progression)",
+    "ESG / Ponemon SOC surveys (analyst throughput, ticket capacity)",
+    "SANS DFIR Survey (forensic team sizing, escalation cadence)",
+    "CISA / NIST SP 800-61 (incident-response timing, escalation policy templates)",
+]
+sensitivity_parameters = [
+    "per-tier capacity and escalation thresholds",
+    "saturated detection factor per tier",
+]
 
 # ============================================================================
 # Map
