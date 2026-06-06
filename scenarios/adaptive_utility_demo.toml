@@ -48,6 +48,11 @@ utility-driven AI scoring scaffold end-to-end.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["utility", "adaptive-ai", "epic-j", "demo"]
+scenario_type = "demo"
+analytical_purpose = "Show how contrasting per-faction utility profiles re-score the AI's doctrine-based action set against named axes and shift behavior."
+sensitivity_parameters = [
+    "per-faction utility-axis weights",
+]
 
 [map]
 [map.source]

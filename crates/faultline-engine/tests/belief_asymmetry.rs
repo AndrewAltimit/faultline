@@ -157,6 +157,7 @@ fn base_scenario(belief_enabled: bool) -> Scenario {
             tags: vec![],
             confidence: None,
             historical_analogue: None,
+            ..Default::default()
         },
         map: MapConfig {
             source: MapSource::Grid {

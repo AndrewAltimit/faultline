@@ -94,6 +94,9 @@ pub enum LoadError {
 
     #[error("failed to deserialize migrated scenario: {0}")]
     Deserialize(toml::de::Error),
+
+    #[error("invalid scenario metadata: {0}")]
+    Meta(String),
 }
 
 /// Result of [`load_scenario_str`].
@@ -202,6 +205,10 @@ pub fn load_scenario_str(toml_str: &str) -> Result<LoadedScenario, LoadError> {
     let source_version = extract_schema_version(&value)?;
     let migrated_value = migrate(value, source_version)?;
     let scenario = Scenario::deserialize(migrated_value).map_err(LoadError::Deserialize)?;
+    // Fail loud on descriptive-metadata shapes that are present-but-empty
+    // (a silent no-op): an authored-looking purpose / source / parameter
+    // name that carries no information. Cheap, load-time, no engine effect.
+    crate::scenario::validate_meta(&scenario.meta).map_err(LoadError::Meta)?;
     Ok(LoadedScenario {
         scenario,
         source_version,

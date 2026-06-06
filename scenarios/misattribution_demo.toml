@@ -49,6 +49,14 @@ description = "Three-faction archetype showing a low-intelligence, deceived defe
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["belief", "deception", "false-flag", "attribution", "misattribution", "alliance-fracture", "epic-m", "round-two"]
+scenario_type = "demo"
+analytical_purpose = "Show believed-attribution driving a false alliance fracture: a low-intelligence, deceived defender misattributes an attack to an innocent ally and fractures the alliance against it."
+red_team_profile = "Attacker exploiting deception so the defender misattributes the attack to an innocent third party."
+blue_team_posture = "Low-intelligence defender that acts on its (incorrect) believed attribution and fractures against an innocent ally."
+sensitivity_parameters = [
+    "defender intelligence stat (misattribution likelihood)",
+    "believed-attribution / fracture thresholds",
+]
 
 [map]
 [map.source]

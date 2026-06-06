@@ -36,6 +36,18 @@ description = "Two-network defender (primary + secondary supply chain) under scr
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["networks", "supply", "interdiction", "epic-d", "epic-l", "resource-pressure"]
+scenario_type = "demo"
+analytical_purpose = "Make supply-line vulnerability observable as a falling resource curve: a scripted attacker progressively cuts the defender's logistics capacity and the report quantifies the resulting income drag."
+red_team_profile = "Scripted attacker chaining three events that progressively cut the defender's supply capacity."
+blue_team_posture = "Defender operating a four-edge logistics graph feeding two forward bases; upkeep is not attenuated, so cut lines starve the resource pool over time."
+osint_sources = [
+    "DoD logistics studies",
+    "CRS reports on theatre logistics",
+]
+sensitivity_parameters = [
+    "supply-network residual/baseline capacity (income attenuation)",
+    "interdiction event timing",
+]
 confidence = "Medium"
 
 # ============================================================================

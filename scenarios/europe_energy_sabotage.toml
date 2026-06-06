@@ -48,6 +48,22 @@ description = "Research simulation of a multi-phase covert campaign against Euro
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["europe", "nato", "energy", "kill-chain", "phase-6", "defensive-planning", "subsea"]
+scenario_type = "reference"
+analytical_purpose = "Quantify the cost-asymmetry ratio and detection window between a plausible attacker footprint and the NATO / EU defender posture required to close the detection gap on cross-border energy systems."
+red_team_profile = "Covert actor running a multi-phase campaign: offshore subsea-infrastructure observation, AIS/transponder deception, cross-border gas/electrical corridor targeting, then public disclosure."
+blue_team_posture = "NATO / EU critical-infrastructure protection planners; the defender budget is set well above the dominant disruption-event cost so the scenario stress-tests defender response rather than budget exhaustion."
+osint_sources = [
+    "ENTSO-E public transmission-system operator reports",
+    "IISS Military Balance public force-structure descriptions",
+    "CISA / ENISA public insights on critical-infrastructure risk",
+    "RAND public research on subsea-infrastructure vulnerability",
+    "Open-press coverage of 2022+ Baltic and North Sea incidents",
+    "Academic open-source research on AIS spoofing and Remote-ID",
+]
+sensitivity_parameters = [
+    "attacker_budget cap (binds during the terminal disruption phase)",
+    "kill-chain phase detection probabilities",
+]
 
 # ============================================================================
 # Map — European theater (pan-European macro-regions)

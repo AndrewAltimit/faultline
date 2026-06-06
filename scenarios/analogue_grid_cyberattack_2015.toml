@@ -68,6 +68,19 @@ author = "AI Agent Bot"
 version = "1.0.0"
 tags = ["analogue", "calibration", "cyber", "scada-ics", "infrastructure", "grid"]
 confidence = "High"
+scenario_type = "reference"
+analytical_purpose = "Does the engine reproduce the documented attacker-success outcome and multi-hour duration of the first publicly confirmed cyber-induced power outage?"
+red_team_profile = "Capable, well-resourced intrusion set running a multi-stage operation: spearphishing for initial access, credential theft and lateral movement into the operational network, HMI manipulation to open breakers, and destructive/availability actions to slow recovery."
+blue_team_posture = "Regional distribution utility whose operational network was reachable from the corporate network and whose operators were displaced from their own HMIs during the event."
+osint_sources = [
+    "E-ISAC / SANS public incident analysis of the December 2015 grid attack",
+    "U.S. ICS-CERT public alert IR-ALERT-H-16-056-01",
+    "Open press reporting on the ~225,000-customer multi-hour outage",
+]
+sensitivity_parameters = [
+    "kill-chain phase success probabilities (phish -> lateral movement -> SCADA/HMI manipulation -> breaker operation)",
+    "recovery-obstruction phase duration",
+]
 
 [meta.historical_analogue]
 name = "December 2015 regional grid cyberattack"

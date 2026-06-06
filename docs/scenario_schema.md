@@ -51,6 +51,18 @@ Free-form descriptive metadata. None of these fields affect simulation outcomes.
 | `version` | string | Semver-style version string for the scenario itself (distinct from `schema_version`) |
 | `tags` | `[string]` | Free-form tags for indexing |
 | `confidence` | enum? | Optional coarse confidence tag (`high` / `medium` / `low`). Signals "publication-ready" vs. "conceptual sketch" to report readers |
+| `analytical_purpose` | string? | One-line statement of the question the scenario explores. Validation rejects a present-but-empty string |
+| `scenario_type` | enum? | Coarse category: `tutorial` / `red_team` / `calibration` / `demo` / `reference` |
+| `osint_sources` | `[string]` | Public OSINT sources the scenario's parameters are derived from. Validation rejects whitespace-only entries |
+| `red_team_profile` | string? | Short prose describing the modeled attacker's intent and posture. Validation rejects a present-but-empty string |
+| `blue_team_posture` | string? | Short prose describing the modeled defender's posture. Validation rejects a present-but-empty string |
+| `sensitivity_parameters` | `[string]` | Free-form names of the parameters the author considers most consequential. Validation rejects whitespace-only entries |
+
+### Self-describing metadata
+
+`analytical_purpose`, `scenario_type`, `osint_sources`, `red_team_profile`, `blue_team_posture`, and `sensitivity_parameters` are optional, purely descriptive fields that make a scenario self-documenting — they record the author's analytical intent and parameter provenance. They have **zero engine effect** and are **never rendered into the deterministic Monte Carlo report**, so adding them to a scenario does not change its `output_hash`. They *are* surfaced in the `--explain` view.
+
+Following the project's fail-loud convention, validation (in `faultline_types::scenario::validate_meta`, wired into the load path in `migration.rs::load_scenario_str`) rejects *present-but-empty* shapes: an empty `analytical_purpose` / `red_team_profile` / `blue_team_posture` string, or a whitespace-only entry in `osint_sources` / `sensitivity_parameters`. A field that is authored but carries no content is a silent no-op, so it is rejected at load rather than accepted. Omitting a field entirely is always valid — legacy scenarios load byte-identically.
 
 ### Schema evolution
 

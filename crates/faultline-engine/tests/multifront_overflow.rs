@@ -185,6 +185,7 @@ fn base_scenario(seed: u64, max_ticks: u32, defender: Faction, chain: KillChain)
             confidence: None,
             schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
             historical_analogue: None,
+            ..Default::default()
         },
         map: MapConfig {
             source: MapSource::Grid {

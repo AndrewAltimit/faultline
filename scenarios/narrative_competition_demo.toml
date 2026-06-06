@@ -35,6 +35,18 @@ description = "Two-region archetype showing the info-op narrative competition ph
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["narrative", "displacement", "info-ops", "refugee", "epic-d", "round-three"]
+scenario_type = "demo"
+analytical_purpose = "Show the persistent-narrative competition phase and the refugee / displacement-flow propagation phase end-to-end: how a sustained reinforced narrative dominates a one-shot counter and how displacement propagates across regions."
+red_team_profile = "red_state pushing a sustained, reinforced 'frontier under attack' narrative and authoring a displacement event to model fleeing civilians."
+blue_team_posture = "blue_state pushing a one-shot 'frontier secure' counter-narrative; civic_voice a neutral civilian faction whose population segment can flee."
+osint_sources = [
+    "Open academic / journalistic literature on contested information environments",
+    "Open-source refugee-flow modelling literature",
+]
+sensitivity_parameters = [
+    "narrative strength x credibility weighting",
+    "displacement Flee-action propagation",
+]
 
 [map]
 [map.source]

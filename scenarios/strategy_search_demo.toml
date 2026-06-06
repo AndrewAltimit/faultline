@@ -41,6 +41,11 @@ search-only RNG independent of the inner Monte Carlo seed.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["search", "epic-h", "synthetic"]
+scenario_type = "demo"
+analytical_purpose = "Exercise the --search strategy-search mode end-to-end with both factions' initial_morale declared as decision variables."
+sensitivity_parameters = [
+    "per-faction initial_morale (declared as decision variables)",
+]
 confidence = "Low"
 
 [map]

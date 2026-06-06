@@ -79,6 +79,19 @@ author = "AI Agent Bot"
 version = "1.0.0"
 tags = ["analogue", "calibration", "asymmetric", "inter-state", "coercion", "short-war"]
 confidence = "Medium"
+scenario_type = "reference"
+analytical_purpose = "Does the engine's coercion-pressure subsystem reproduce a decisive aggressor settlement within days when a much larger conventional power coerces a small neighbor?"
+red_team_profile = "Large conventional combined-arms power conducting a rapid multi-axis intervention (ground advance, air operations, and an accompanying information/coercion effort) against a much smaller neighbor over a contested enclave."
+blue_team_posture = "Small, recently-reformed conventional army with limited strategic depth, defending home territory until coercion pressure crosses its political-resilience threshold."
+osint_sources = [
+    "IISS Military Balance (committed-force asymmetry)",
+    "RAND post-conflict assessments of the August 2008 campaign",
+    "2009 EU Independent International Fact-Finding Mission report (timeline and ~5-day duration)",
+]
+sensitivity_parameters = [
+    "coercion-pressure phase success probabilities",
+    "defender political-resilience (ceasefire) threshold",
+]
 
 [meta.historical_analogue]
 name = "August 2008 Russo-Georgian War — coerced ceasefire"

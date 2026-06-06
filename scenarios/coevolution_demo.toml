@@ -44,6 +44,12 @@ sides stabilize or a cycle (of any period) is detected.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["coevolve", "epic-h", "round-two", "synthetic"]
+scenario_type = "demo"
+analytical_purpose = "Exercise the --coevolve mode: a strategy space with decision variables for both sides so the engine can iterate best-response between attacker and defender."
+sensitivity_parameters = [
+    "attacker decision variables",
+    "defender decision variables",
+]
 confidence = "Low"
 
 # -- Map: 2x2 grid ---------------------------------------------------------

@@ -17,6 +17,12 @@ regions wins. Simple Lanchester square attrition.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["tutorial", "symmetric", "simple"]
+scenario_type = "tutorial"
+analytical_purpose = "Show pure Lanchester-square attrition between two equal forces with no technology, events, or population dynamics — the simplest engine behavior."
+sensitivity_parameters = [
+    "initial force strength per faction",
+    "region-control threshold for victory",
+]
 
 [map]
 [map.source]

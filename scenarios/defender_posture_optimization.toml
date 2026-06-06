@@ -49,6 +49,11 @@ defender win rate, defender cost, and chain detection.
 author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["search", "epic-i", "defender-posture", "synthetic"]
+scenario_type = "demo"
+analytical_purpose = "Search over defender posture decision variables to find the configuration that best resists a fixed attacker."
+sensitivity_parameters = [
+    "defender posture decision variables",
+]
 confidence = "Low"
 
 # -- Map: 2x2 grid ---------------------------------------------------------
