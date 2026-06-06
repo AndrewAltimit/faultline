@@ -42,13 +42,14 @@ fn make_region(id: &str, borders: Vec<&str>, controller: &str) -> Region {
     }
 }
 
+/// Build a stationary test force. Unset fields take `ForceUnit::default()`
+/// values — notably `mobility: 0.0`, so the unit never moves on its own.
 fn make_force(id: &str, region: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
         region: RegionId::from(region),
         strength,
-        // mobility defaults to 0.0 — never moves on its own
         ..Default::default()
     }
 }
