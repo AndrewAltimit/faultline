@@ -7,6 +7,21 @@ import { mapsToObjects } from './wasm-util.js';
 import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
 /** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 import { renderComparison } from './comparison.js';
+import {
+  NEUTRAL,
+  factionColorMap,
+  qualitative,
+  withAlpha,
+  sequential,
+} from './palette.js';
+import {
+  summaryStats,
+  kde,
+  niceTicks,
+  drawXGrid,
+  drawYGrid,
+  drawVRule,
+} from './chart-helpers.js';
 
 function escapeHtml(s) {
   if (s == null) return '';
@@ -112,7 +127,29 @@ export class Dashboard {
   _onScenarioLoaded() {
     this.btnMcRun.disabled = false;
     if (this.btnSensRun) this.btnSensRun.disabled = false;
+    this._factionColors = null;
     this._onReset();
+  }
+
+  /**
+   * Stable, colorblind-safe color for a faction by id. Charts key off this
+   * (not the scenario-authored faction color) so series stay mutually
+   * distinguishable under deuteranopia/protanopia. The map is built lazily
+   * from the scenario's faction declaration order and cached per load.
+   *
+   * @param {string} fid
+   * @returns {string} `#rrggbb`
+   */
+  _factionColor(fid) {
+    if (!this._factionColors) {
+      const ids = Object.keys(AppState.scenario?.factions || {});
+      this._factionColors = factionColorMap(ids);
+    }
+    if (this._factionColors.has(fid)) return this._factionColors.get(fid);
+    // Unknown id (e.g. synthetic key) — derive a stable slot from size.
+    const color = qualitative(this._factionColors.size);
+    this._factionColors.set(fid, color);
+    return color;
   }
 
   _onReset() {
@@ -335,9 +372,16 @@ export class Dashboard {
     html += '<div class="chart-title">Win Probability</div>';
     html += '<div class="chart-container"><canvas id="chart-win-prob" height="120"></canvas></div>';
 
-    // Duration histogram.
+    // Duration histogram + KDE overlay + p5–p95 band.
     html += '<div class="chart-title">Duration Distribution</div>';
-    html += '<div class="chart-container"><canvas id="chart-duration" height="120"></canvas></div>';
+    html += '<div class="chart-container"><canvas id="chart-duration" height="160"></canvas></div>';
+    html +=
+      '<div class="chart-legend">' +
+      '<span class="legend-item"><span class="legend-swatch legend-band"></span>p5–p95</span>' +
+      '<span class="legend-item"><span class="legend-swatch legend-kde"></span>density (KDE)</span>' +
+      '<span class="legend-item"><span class="legend-swatch legend-median"></span>median</span>' +
+      '<span class="legend-item"><span class="legend-swatch legend-mean"></span>mean</span>' +
+      '</div>';
 
     // Summary stats.
     const duration = summary.metric_distributions?.Duration;
@@ -470,11 +514,14 @@ export class Dashboard {
       const det = ps.detection_rate;
       const nr = ps.not_reached_rate;
       const label = chain?.phases?.[pid]?.name || pid;
-      const barHue = 120 * succ; // red → green
+      // Sequential (colorblind-safe) intensity: darker/stronger = higher
+      // success. Replaces the old red→green hue ramp, which is the worst
+      // case for deuteranopia.
+      const barColor = sequential(0.25 + 0.6 * succ);
       h += `<div class="phase-node">
         <div class="phase-label" title="${escapeHtml(pid)}">${escapeHtml(label)}</div>
         <div class="phase-bars">
-          <div class="phase-bar-fill" style="width:${(succ * 100).toFixed(0)}%;background:hsl(${barHue},70%,45%)"></div>
+          <div class="phase-bar-fill" style="width:${(succ * 100).toFixed(0)}%;background:${barColor}"></div>
         </div>
         <div class="phase-stats">
           <span class="stat-succ">${(succ * 100).toFixed(0)}%</span>
@@ -547,45 +594,67 @@ export class Dashboard {
     const gap = 6;
     const labelWidth = 120;
     const padding = 8;
+    const x0 = labelWidth + padding;
     const barAreaWidth = w - labelWidth - padding * 2 - 50;
+    const xScale = (rate) => x0 + barAreaWidth * rate;
+    const bottom = padding + entries.length * (barHeight + gap) - gap;
+
+    // 0/25/50/75/100% gridlines behind the bars so the eye can read a
+    // bar's value without the trailing numeric label.
+    drawXGrid(ctx, {
+      x0,
+      x1: x0 + barAreaWidth,
+      top: padding,
+      bottom,
+      xScale,
+      ticks: [0, 0.25, 0.5, 0.75, 1],
+      fmt: (t) => `${Math.round(t * 100)}%`,
+      labelY: bottom + 3,
+    });
 
     entries.forEach(([fid, rate], i) => {
       const y = padding + i * (barHeight + gap);
-      const color = this._safeColor(scenario?.factions?.[fid]?.color);
+      const color = this._factionColor(fid);
       const name = scenario?.factions?.[fid]?.name || fid;
 
-      // Label.
+      // Bar background.
+      ctx.fillStyle = NEUTRAL.trackBg;
+      ctx.fillRect(x0, y, barAreaWidth, barHeight);
+
+      // Bar fill.
+      ctx.fillStyle = color;
+      ctx.fillRect(x0, y, barAreaWidth * rate, barHeight);
+
+      // Label (drawn after the bar so it sits above the track).
       ctx.save();
       ctx.font = '500 11px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#e4e4e7';
+      ctx.fillStyle = NEUTRAL.text;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       ctx.fillText(name, labelWidth, y + barHeight / 2, labelWidth - 8);
       ctx.restore();
 
-      // Bar background.
-      ctx.fillStyle = 'rgba(39, 39, 42, 0.5)';
-      ctx.fillRect(labelWidth + padding, y, barAreaWidth, barHeight);
-
-      // Bar fill.
-      ctx.fillStyle = color;
-      ctx.fillRect(labelWidth + padding, y, barAreaWidth * rate, barHeight);
-
       // Percentage label.
       ctx.save();
       ctx.font = '500 11px "JetBrains Mono", monospace';
-      ctx.fillStyle = '#e4e4e7';
+      ctx.fillStyle = NEUTRAL.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(
         `${(rate * 100).toFixed(1)}%`,
-        labelWidth + padding + barAreaWidth + 8,
-        y + barHeight / 2
+        x0 + barAreaWidth + 8,
+        y + barHeight / 2,
       );
       ctx.restore();
     });
   }
 
+  /**
+   * Duration distribution: histogram of run durations with a Gaussian KDE
+   * smooth overlay, a shaded p5–p95 credible band, and median/mean
+   * reference lines. Gridlines + nice axis ticks frame it as a precision
+   * instrument. All Canvas 2D, no external deps.
+   */
   _drawDurationChart(summary) {
     const canvas = document.getElementById('chart-duration');
     if (!canvas) return;
@@ -593,67 +662,147 @@ export class Dashboard {
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.parentElement.getBoundingClientRect();
+    const h = 160;
     canvas.width = rect.width * dpr;
-    canvas.height = 120 * dpr;
-    canvas.style.height = '120px';
+    canvas.height = h * dpr;
+    canvas.style.height = `${h}px`;
     ctx.scale(dpr, dpr);
 
     const w = rect.width;
-    const h = 120;
-    const padding = { top: 8, right: 8, bottom: 24, left: 40 };
+    const padding = { top: 12, right: 12, bottom: 26, left: 40 };
 
     // Get duration data from individual runs.
     const runs = AppState.mcResult?.runs;
     if (!runs || runs.length === 0) return;
 
-    const durations = runs.map((r) => r.final_tick);
-    const min = Math.min(...durations);
-    const max = Math.max(...durations);
+    const durations = runs.map((r) => r.final_tick).filter((d) => Number.isFinite(d));
+    if (durations.length === 0) return;
 
-    // Create histogram bins.
-    const numBins = Math.min(20, Math.max(5, Math.ceil(Math.sqrt(durations.length))));
-    const binWidth = max > min ? (max - min) / numBins : 1;
-    const bins = new Array(numBins).fill(0);
+    const stats = summaryStats(durations);
+    const min = stats.min;
+    const max = stats.max;
 
-    for (const d of durations) {
-      const binIdx = Math.min(Math.floor((d - min) / binWidth), numBins - 1);
-      bins[binIdx]++;
-    }
-
-    const maxCount = Math.max(...bins);
     const chartW = w - padding.left - padding.right;
     const chartH = h - padding.top - padding.bottom;
-    const barW = chartW / numBins - 2;
+    const plotTop = padding.top;
+    const plotBottom = padding.top + chartH;
 
-    // Draw bars.
-    for (let i = 0; i < numBins; i++) {
-      const barH = maxCount > 0 ? (bins[i] / maxCount) * chartH : 0;
-      const x = padding.left + i * (chartW / numBins) + 1;
-      const y = padding.top + chartH - barH;
+    // X scale spans the data range (with a hair of pad when degenerate).
+    const xLo = min;
+    const xHi = max > min ? max : min + 1;
+    const xScale = (d) => padding.left + ((d - xLo) / (xHi - xLo)) * chartW;
 
-      ctx.fillStyle = 'rgba(124, 91, 240, 0.6)';
-      ctx.fillRect(x, y, barW, barH);
+    // Histogram bins (Sturges-ish, capped).
+    const numBins = Math.min(24, Math.max(5, Math.ceil(Math.sqrt(durations.length))));
+    const binWidth = (xHi - xLo) / numBins;
+    const bins = new Array(numBins).fill(0);
+    for (const d of durations) {
+      const idx = Math.min(Math.floor((d - xLo) / binWidth), numBins - 1);
+      bins[Math.max(0, idx)] += 1;
+    }
+    const maxCount = Math.max(1, ...bins);
+
+    // Y axis: gridlines + nice ticks on the count scale.
+    const yScale = (count) => plotBottom - (count / maxCount) * chartH;
+    drawYGrid(ctx, {
+      left: padding.left,
+      right: w - padding.right,
+      yScale,
+      ticks: niceTicks(0, maxCount, 4),
+      fmt: (t) => String(Math.round(t)),
+      labelX: padding.left - 6,
+    });
+
+    // X gridlines + nice tick labels.
+    drawXGrid(ctx, {
+      x0: padding.left,
+      x1: w - padding.right,
+      top: plotTop,
+      bottom: plotBottom,
+      xScale,
+      ticks: niceTicks(xLo, xHi, 5),
+      fmt: (t) => String(Math.round(t)),
+      labelY: plotBottom + 4,
+    });
+
+    // Shaded p5–p95 credible band behind everything else.
+    if (Number.isFinite(stats.p5) && Number.isFinite(stats.p95) && stats.p95 > stats.p5) {
+      const bandX0 = xScale(stats.p5);
+      const bandX1 = xScale(stats.p95);
+      ctx.fillStyle = withAlpha(qualitative(0), 0.12);
+      ctx.fillRect(bandX0, plotTop, bandX1 - bandX0, chartH);
     }
 
-    // X axis labels.
+    // Histogram bars.
+    const barGap = numBins > 16 ? 1 : 2;
+    for (let i = 0; i < numBins; i++) {
+      const bx = padding.left + (i * chartW) / numBins + barGap / 2;
+      const bw = chartW / numBins - barGap;
+      const by = yScale(bins[i]);
+      ctx.fillStyle = withAlpha(qualitative(0), 0.42);
+      ctx.fillRect(bx, by, Math.max(1, bw), plotBottom - by);
+    }
+
+    // KDE smooth overlay, scaled so its peak matches the tallest bar (the
+    // density shares the histogram's vertical axis visually).
+    const density = kde(durations, { samples: 96, pad: 0 });
+    if (density) {
+      let maxDensity = 0;
+      for (const y of density.ys) if (y > maxDensity) maxDensity = y;
+      if (maxDensity > 0) {
+        // Density integrates to ~1; a bar of count c covers binWidth in x,
+        // so the comparable density peak is (maxCount/n)/binWidth. Scale the
+        // KDE curve to sit naturally against the bars.
+        const densToCount = (yd) => (yd * binWidth * durations.length);
+        ctx.save();
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < density.xs.length; i++) {
+          const px = xScale(density.xs[i]);
+          const py = yScale(Math.min(maxCount, densToCount(density.ys[i])));
+          if (!started) {
+            ctx.moveTo(px, py);
+            started = true;
+          } else {
+            ctx.lineTo(px, py);
+          }
+        }
+        ctx.strokeStyle = qualitative(1);
+        ctx.lineWidth = 1.75;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Median (solid) and mean (dashed) reference lines.
+    if (Number.isFinite(stats.p50)) {
+      drawVRule(ctx, {
+        px: xScale(stats.p50),
+        top: plotTop,
+        bottom: plotBottom,
+        color: qualitative(3),
+        label: `p50 ${Math.round(stats.p50)}`,
+        labelColor: qualitative(3),
+      });
+    }
+    if (Number.isFinite(stats.mean)) {
+      drawVRule(ctx, {
+        px: xScale(stats.mean),
+        top: plotTop,
+        bottom: plotBottom,
+        color: qualitative(2),
+        dash: [3, 3],
+      });
+    }
+
+    // Axis captions.
     ctx.save();
     ctx.font = '400 9px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#71717a';
+    ctx.fillStyle = NEUTRAL.tickLabel;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(String(min), padding.left, h - padding.bottom + 6);
-    ctx.fillText(String(max), w - padding.right, h - padding.bottom + 6);
-    ctx.fillText('ticks', w / 2, h - padding.bottom + 6);
-    ctx.restore();
-
-    // Y axis label.
-    ctx.save();
-    ctx.font = '400 9px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#71717a';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(maxCount), padding.left - 6, padding.top);
-    ctx.fillText('0', padding.left - 6, padding.top + chartH);
+    ctx.fillText('ticks', padding.left + chartW / 2, plotBottom + 14);
     ctx.restore();
   }
 
@@ -683,7 +832,7 @@ export class Dashboard {
       // Region label.
       ctx.save();
       ctx.font = '400 10px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#a1a1aa';
+      ctx.fillStyle = NEUTRAL.textDim;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       ctx.fillText(regionName, padding, y, labelWidth);
@@ -696,7 +845,8 @@ export class Dashboard {
       for (const [fid, prob] of Object.entries(factionProbs)) {
         const segW = barW * prob;
         if (segW < 1) continue;
-        const color = this._safeColor(scenario?.factions?.[fid]?.color);
+        const color =
+          fid === '__neutral__' ? NEUTRAL.neutralFaction : this._factionColor(fid);
         ctx.fillStyle = color;
         ctx.fillRect(offsetX, y + 2, segW, barHeight);
         offsetX += segW;
@@ -736,7 +886,7 @@ export class Dashboard {
     const colW = chartW / ticks.length;
 
     // Background.
-    ctx.fillStyle = 'rgba(39, 39, 42, 0.4)';
+    ctx.fillStyle = NEUTRAL.trackBg;
     ctx.fillRect(padding.left, padding.top, chartW, rowH * regions.length);
 
     regions.forEach((rid, rowIdx) => {
@@ -745,7 +895,7 @@ export class Dashboard {
       // Region label.
       ctx.save();
       ctx.font = '400 10px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#a1a1aa';
+      ctx.fillStyle = NEUTRAL.textDim;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       const regionName = scenario?.map?.regions?.[rid]?.name || rid;
@@ -757,17 +907,30 @@ export class Dashboard {
         if (!cell.faction) return;
         const baseColor =
           cell.faction === '__neutral__'
-            ? '#52525b'
-            : this._safeColor(scenario?.factions?.[cell.faction]?.color);
-        ctx.fillStyle = this._withAlpha(baseColor, Math.max(0.15, cell.prob));
+            ? NEUTRAL.neutralFaction
+            : this._factionColor(cell.faction);
+        ctx.fillStyle = withAlpha(baseColor, Math.max(0.15, cell.prob));
         ctx.fillRect(x, y, Math.ceil(colW), rowH - 1);
       });
     });
 
+    // Faint row separators so adjacent regions don't bleed together.
+    ctx.save();
+    ctx.strokeStyle = NEUTRAL.gridline;
+    ctx.lineWidth = 1;
+    for (let r = 1; r < regions.length; r++) {
+      const ly = Math.round(padding.top + r * rowH) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, ly);
+      ctx.lineTo(padding.left + chartW, ly);
+      ctx.stroke();
+    }
+    ctx.restore();
+
     // X axis ticks (first / middle / last).
     ctx.save();
     ctx.font = '400 9px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#71717a';
+    ctx.fillStyle = NEUTRAL.tickLabel;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     const labelY = padding.top + rowH * regions.length + 4;
@@ -887,7 +1050,7 @@ export class Dashboard {
 
     if (ranges.length === 0) {
       ctx.font = '400 11px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#71717a';
+      ctx.fillStyle = NEUTRAL.tickLabel;
       ctx.fillText('No win-rate variation observed.', padding.left, h / 2);
       return;
     }
@@ -906,23 +1069,35 @@ export class Dashboard {
     const rowH = Math.max(14, Math.floor(chartH / ranges.length) - 4);
     const xScale = (rate) => padding.left + rate * chartW;
 
-    // Center axis.
-    ctx.strokeStyle = 'rgba(161, 161, 170, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(xScale(center), padding.top);
-    ctx.lineTo(xScale(center), padding.top + chartH);
-    ctx.stroke();
+    // Quartile gridlines (0/25/50/75/100%) behind the bars.
+    drawXGrid(ctx, {
+      x0: padding.left,
+      x1: padding.left + chartW,
+      top: padding.top,
+      bottom: padding.top + chartH,
+      xScale,
+      ticks: [0, 0.25, 0.5, 0.75, 1],
+      fmt: (t) => `${Math.round(t * 100)}%`,
+      labelY: padding.top + chartH + 4,
+    });
+
+    // Center (median) reference line.
+    drawVRule(ctx, {
+      px: xScale(center),
+      top: padding.top,
+      bottom: padding.top + chartH,
+      color: NEUTRAL.gridlineStrong,
+    });
 
     ranges.forEach((r, i) => {
       const y = padding.top + i * (rowH + 4);
-      const color = this._safeColor(scenario?.factions?.[r.fid]?.color);
+      const color = this._factionColor(r.fid);
       const name = scenario?.factions?.[r.fid]?.name || r.fid;
 
       // Faction label.
       ctx.save();
       ctx.font = '500 11px Inter, system-ui, sans-serif';
-      ctx.fillStyle = '#e4e4e7';
+      ctx.fillStyle = NEUTRAL.text;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       ctx.fillText(name, padding.left - 8, y + rowH / 2, padding.left - 16);
@@ -931,13 +1106,13 @@ export class Dashboard {
       // Range bar.
       const x0 = xScale(r.min);
       const x1 = xScale(r.max);
-      ctx.fillStyle = this._withAlpha(color, 0.75);
+      ctx.fillStyle = withAlpha(color, 0.8);
       ctx.fillRect(x0, y, Math.max(2, x1 - x0), rowH);
 
       // Numeric range label.
       ctx.save();
       ctx.font = '400 9px "JetBrains Mono", monospace';
-      ctx.fillStyle = '#a1a1aa';
+      ctx.fillStyle = NEUTRAL.textDim;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(
@@ -948,27 +1123,18 @@ export class Dashboard {
       ctx.restore();
     });
 
-    // X axis labels (0%, center%, 100%).
+    // Median value caption under the center rule.
     ctx.save();
-    ctx.font = '400 9px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#71717a';
+    ctx.font = '500 9px "JetBrains Mono", monospace';
+    ctx.fillStyle = NEUTRAL.text;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    const labelY = padding.top + chartH + 4;
-    ctx.fillText('0%', xScale(0), labelY);
-    ctx.fillText(`${(center * 100).toFixed(0)}%`, xScale(center), labelY);
-    ctx.fillText('100%', xScale(1), labelY);
+    ctx.fillText(
+      `median ${(center * 100).toFixed(0)}%`,
+      xScale(center),
+      padding.top + chartH + 13,
+    );
     ctx.restore();
-  }
-
-  /** Convert a `#rrggbb` color to `rgba(r,g,b,a)` for alpha blending. */
-  _withAlpha(hex, alpha) {
-    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-    if (!m) return hex;
-    const r = parseInt(m[1], 16);
-    const g = parseInt(m[2], 16);
-    const b = parseInt(m[3], 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
   }
 
   _esc(str) {

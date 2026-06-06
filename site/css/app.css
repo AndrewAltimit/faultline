@@ -669,6 +669,53 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 8px;
 }
 
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -8px 0 16px;
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Colorblind-safe (Okabe-Ito) swatches matching the canvas chart series. */
+.legend-band {
+  background: rgba(0, 114, 178, 0.18);
+  border: 1px solid rgba(0, 114, 178, 0.45);
+}
+
+.legend-kde {
+  height: 0;
+  border-top: 2px solid #e69f00;
+  border-radius: 0;
+}
+
+.legend-median {
+  height: 0;
+  border-top: 2px solid #cc79a7;
+  border-radius: 0;
+}
+
+.legend-mean {
+  height: 0;
+  border-top: 2px dashed #009e73;
+  border-radius: 0;
+}
+
 .mc-summary-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
