@@ -27,6 +27,50 @@
   --transition:   0.25s cubic-bezier(0.4, 0, 0.2, 1);
   --nav-height:   64px;
   --max-width:    1200px;
+
+  /* Canvas chart neutrals. These mirror the JS dark defaults in
+     palette.js (NEUTRAL_DARK) exactly so the dark theme renders
+     bit-identically; the light theme below overrides them so the
+     canvas-rendered charts/maps stay legible on a light background. */
+  --chart-neutral-faction: #8a8a93;
+  --chart-axis:            rgba(161, 161, 170, 0.55);
+  --chart-gridline:        rgba(82, 82, 91, 0.28);
+  --chart-gridline-strong: rgba(113, 113, 122, 0.45);
+  --chart-track-bg:        rgba(39, 39, 42, 0.55);
+  --chart-tick-label:      #8b8b94;
+  --chart-text:            #e4e4e7;
+  --chart-text-dim:        #a1a1aa;
+
+  color-scheme: dark;
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────
+   Opt-in via <html data-theme="light">. theme.js sets this attribute from
+   localStorage / prefers-color-scheme. The dark theme is the default and is
+   intentionally unchanged so existing scenarios render identically. */
+:root[data-theme="light"] {
+  --bg:           #f7f7f8;
+  --bg-raised:    #ffffff;
+  --bg-card:      #ffffff;
+  --bg-code:      #f0f0f3;
+  --border:       #e2e2e6;
+  --border-light: #c9c9d0;
+  --text:         #1a1a1f;
+  --text-muted:   #52525b;
+  --text-dim:     #71717a;
+  --accent:       #6037e0;
+  --accent-end:   #2563eb;
+
+  --chart-neutral-faction: #b7b7be;
+  --chart-axis:            rgba(82, 82, 91, 0.55);
+  --chart-gridline:        rgba(113, 113, 122, 0.22);
+  --chart-gridline-strong: rgba(82, 82, 91, 0.4);
+  --chart-track-bg:        rgba(0, 0, 0, 0.06);
+  --chart-tick-label:      #71717a;
+  --chart-text:            #1a1a1f;
+  --chart-text-dim:        #52525b;
+
+  color-scheme: light;
 }
 
 /* ── Reset & Base ─────────────────────────────────────────────────── */
@@ -176,6 +220,32 @@ section {
 
 .nav-links .github-link:hover svg {
   fill: #fff;
+}
+
+/* Light/dark theme toggle (injected by theme.js into .nav-links) */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition), border-color var(--transition),
+    background var(--transition);
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-light);
+}
+
+.theme-toggle svg {
+  display: block;
 }
 
 /* Hamburger */

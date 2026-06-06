@@ -1027,11 +1027,11 @@ input[type="color"]::-webkit-color-swatch {
 .feasibility-table td {
   padding: 6px 8px;
   text-align: right;
-  border-bottom: 1px solid rgba(63, 63, 70, 0.5);
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 .feasibility-table th {
-  color: #a1a1aa;
+  color: var(--text-muted);
   font-weight: 500;
   text-align: right;
   font-size: 0.7rem;
@@ -1043,7 +1043,7 @@ input[type="color"]::-webkit-color-swatch {
   text-align: left;
 }
 .feasibility-table td.chain-name {
-  color: #e4e4e7;
+  color: var(--text);
   font-weight: 500;
 }
 .feasibility-table td.cost-asym {
@@ -1055,9 +1055,68 @@ input[type="color"]::-webkit-color-swatch {
 .conf-M { color: #facc15; font-weight: 600; }
 .conf-L { color: #f87171; font-weight: 600; }
 
+/* Result export toolbar */
+.mc-export-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px 0;
+  flex-wrap: wrap;
+}
+.mc-export-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+.mc-export-btn {
+  padding: 3px 10px;
+  font-size: 0.7rem;
+}
+
+/* Feasibility table / radar view switch */
+.feasibility-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.feasibility-view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.feasibility-view-btn {
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.feasibility-view-btn + .feasibility-view-btn {
+  border-left: 1px solid var(--border);
+}
+.feasibility-view-btn:hover {
+  color: var(--text);
+}
+.feasibility-view-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+.feasibility-radar-wrap {
+  margin-top: 8px;
+}
+
 .chart-subtitle {
   font-size: 0.7rem;
-  color: #a1a1aa;
+  color: var(--text-muted);
   margin: 4px 0 8px 0;
   line-height: 1.5;
 }
