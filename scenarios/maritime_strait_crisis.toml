@@ -1,0 +1,702 @@
+# Maritime Strait Crisis — Flagship Scenario
+# ==========================================
+#
+# A coercion crisis in a contested maritime strait. A regional power
+# applies graduated non-kinetic pressure against a transit state that
+# depends on the strait for energy imports and seaborne trade. The
+# pressure campaign converges three vectors:
+#
+#   1. Port / terminal SCADA exposure (cargo-handling and pipeline
+#      control disruption at the strait's chokepoint terminals).
+#   2. GNSS / navigation degradation in the strait approaches
+#      (modeled as a comms / coordination disruption effect).
+#   3. An economic-coercion accumulator (insurance and shipping-rate
+#      shock as transit risk rises) that drives the decisive outcome.
+#
+# Analytical purpose: quantify how far a non-kinetic coercion campaign
+# against a strait-dependent transit state can drive accumulated
+# coercion pressure before the transit state's resilience posture
+# (port-continuity controls, OT monitoring, route diversification)
+# fails, WITHOUT a kinetic conquest.
+#
+# Modeling approach: the decisive outcome is driven by a multi-phase
+# KILL CHAIN accumulating CoercionPressure past a NonKineticThreshold
+# victory condition — the reliable path to a decisive verdict in this
+# engine. The healthcare / critical-infrastructure SCADA cards are
+# reused for the port-control disruption vector.
+#
+# OSINT provenance (aggregate statistical effects only — no targeting,
+# exploit, or implementation detail):
+#   - GAO / CRS reporting on maritime / port cybersecurity and
+#     OT exposure.
+#   - IISS / RAND open analyses of strait-chokepoint vulnerability and
+#     coercive maritime pressure.
+#   - Open analyses of GNSS interference incidents in maritime
+#     approaches.
+#   - Published economic analyses of shipping-insurance and freight-rate
+#     response to elevated transit risk.
+# No classified, CUI, or export-controlled material is used.
+
+attacker_budget = 1_000_000.0
+defender_budget = 120_000_000.0
+
+[meta]
+schema_version = 1
+name = "Maritime Strait Crisis"
+description = """
+Coercion crisis in a contested maritime strait. A regional power applies
+graduated non-kinetic pressure (port/terminal SCADA disruption, GNSS
+degradation, insurance/freight-rate shock) against a transit state that
+depends on the strait for energy imports and seaborne trade. Models how
+far the coercion campaign can drive accumulated pressure past the transit
+state's resilience posture without a kinetic conquest.
+
+Parameters are aggregate statistical effects drawn from public GAO / CRS,
+IISS / RAND, and published economic analyses. No targeting, exploit, or
+implementation detail is encoded.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["maritime", "strait", "chokepoint", "coercion", "critical-infrastructure", "kill-chain"]
+scenario_type = "red_team"
+analytical_purpose = "Quantify how far a non-kinetic coercion campaign (port SCADA disruption, GNSS degradation, insurance/freight-rate shock) against a strait-dependent transit state can drive accumulated coercion pressure past the transit state's resilience posture, without a kinetic conquest."
+red_team_profile = "Regional power applying graduated maritime coercion: terminal SCADA disruption at chokepoint ports, GNSS / navigation degradation in the approaches, and an economic-coercion accumulator (insurance and freight-rate shock as transit risk rises)."
+blue_team_posture = "Strait-dependent transit state defending port-continuity, OT monitoring, and route-diversification posture; energy-import and trade dependence on the strait is the contested vulnerability."
+osint_sources = [
+    "GAO / CRS reporting on maritime / port cybersecurity and OT exposure",
+    "IISS / RAND open analyses of strait-chokepoint vulnerability and coercive maritime pressure",
+    "Open analyses of GNSS interference incidents in maritime approaches",
+    "Published economic analyses of shipping-insurance and freight-rate response to elevated transit risk",
+]
+sensitivity_parameters = [
+    "terminal-SCADA disruption phase success probability",
+    "economic-coercion accumulator delta per phase",
+    "transit-state route-diversification coverage",
+]
+
+# ============================================================================
+# Map — strait, chokepoint terminals, and approaches
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 4
+height = 2
+
+[map.regions.western_approach]
+id = "western_approach"
+name = "Western Approach"
+population = 0
+urbanization = 0.0
+initial_control = "transit_state"
+strategic_value = 6.0
+borders = ["strait_chokepoint", "coercing_power"]
+
+[map.regions.strait_chokepoint]
+id = "strait_chokepoint"
+name = "Strait Chokepoint"
+population = 0
+urbanization = 0.0
+initial_control = "transit_state"
+strategic_value = 10.0
+borders = ["western_approach", "chokepoint_terminal", "eastern_approach"]
+
+[map.regions.chokepoint_terminal]
+id = "chokepoint_terminal"
+name = "Chokepoint Terminal Complex"
+population = 220_000
+urbanization = 0.85
+initial_control = "transit_state"
+strategic_value = 9.5
+borders = ["strait_chokepoint", "transit_capital"]
+
+[map.regions.eastern_approach]
+id = "eastern_approach"
+name = "Eastern Approach"
+population = 0
+urbanization = 0.0
+initial_control = "transit_state"
+strategic_value = 5.0
+borders = ["strait_chokepoint"]
+
+[map.regions.transit_capital]
+id = "transit_capital"
+name = "Transit-State Capital"
+population = 3_200_000
+urbanization = 0.9
+initial_control = "transit_state"
+strategic_value = 8.0
+borders = ["chokepoint_terminal"]
+
+[map.regions.coercing_power]
+id = "coercing_power"
+name = "Coercing-Power Littoral"
+population = 1_800_000
+urbanization = 0.7
+initial_control = "coercing_power"
+strategic_value = 4.0
+borders = ["western_approach"]
+
+[map.infrastructure.terminal_scada]
+id = "terminal_scada"
+name = "Terminal Cargo & Pipeline Control"
+region = "chokepoint_terminal"
+infra_type = "WaterSystem"
+criticality = 1.0
+initial_status = 1.0
+repairable = 12
+
+[map.infrastructure.energy_pipeline]
+id = "energy_pipeline"
+name = "Strait Energy Pipeline"
+region = "chokepoint_terminal"
+infra_type = "FuelDepot"
+criticality = 0.95
+initial_status = 1.0
+repairable = 14
+
+[map.infrastructure.nav_systems]
+id = "nav_systems"
+name = "Strait Navigation Systems"
+region = "strait_chokepoint"
+infra_type = "Telecommunications"
+criticality = 0.9
+initial_status = 1.0
+repairable = 7
+
+[[map.terrain]]
+region = "western_approach"
+terrain_type = "Coastal"
+movement_modifier = 1.0
+defense_modifier = 0.8
+visibility = 0.6
+
+[[map.terrain]]
+region = "strait_chokepoint"
+terrain_type = "Coastal"
+movement_modifier = 0.7
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "chokepoint_terminal"
+terrain_type = "Coastal"
+movement_modifier = 0.9
+defense_modifier = 1.2
+visibility = 0.8
+
+[[map.terrain]]
+region = "eastern_approach"
+terrain_type = "Coastal"
+movement_modifier = 1.0
+defense_modifier = 0.8
+visibility = 0.6
+
+[[map.terrain]]
+region = "transit_capital"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.2
+visibility = 0.85
+
+[[map.terrain]]
+region = "coercing_power"
+terrain_type = "Coastal"
+movement_modifier = 1.0
+defense_modifier = 1.1
+visibility = 0.7
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.transit_state]
+id = "transit_state"
+name = "Strait Transit State"
+description = "Energy-import-dependent transit state defending port continuity, navigation, and trade flow through the strait. Resilience depends on OT monitoring and route diversification."
+color = "#0e7490"
+tech_access = ["ot_anomaly_monitoring", "emergency_services_continuity", "satellite_backup_comms", "route_diversification"]
+initial_morale = 0.72
+logistics_capacity = 400.0
+initial_resources = 8000.0
+resource_rate = 70.0
+command_resilience = 0.7
+intelligence = 0.65
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.transit_state.faction_type]
+kind = "Government"
+
+[factions.transit_state.faction_type.institutions.port_authority]
+id = "port_authority"
+name = "National Port Authority"
+institution_type = "FederalAgency"
+loyalty = 0.85
+effectiveness = 0.7
+personnel = 12000
+fracture_threshold = 0.35
+
+[factions.transit_state.faction_type.institutions.coast_guard]
+id = "coast_guard"
+name = "Coast Guard"
+institution_type = "NationalGuard"
+loyalty = 0.88
+effectiveness = 0.75
+personnel = 9000
+fracture_threshold = 0.3
+
+[factions.transit_state.forces.coast_guard_flotilla]
+id = "coast_guard_flotilla"
+name = "Coast Guard Flotilla"
+unit_type = "Naval"
+region = "strait_chokepoint"
+strength = 160.0
+mobility = 0.9
+upkeep = 6.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.transit_state.forces.port_cyber]
+id = "port_cyber"
+name = "Port Cyber Defense Cell"
+unit_type = "CyberUnit"
+region = "chokepoint_terminal"
+strength = 80.0
+mobility = 0.2
+upkeep = 7.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.coercing_power]
+id = "coercing_power"
+name = "Coercing Regional Power"
+description = "Regional power applying graduated maritime coercion against the transit state. A forcing function for analyzing chokepoint resilience; not a representation of any real state."
+color = "#9a3412"
+tech_access = ["scada_ot_exposure", "gnss_degradation", "maritime_coercion_pressure"]
+initial_morale = 0.82
+logistics_capacity = 300.0
+initial_resources = 6000.0
+resource_rate = 40.0
+command_resilience = 0.8
+intelligence = 0.75
+diplomacy = []
+doctrine = "Conventional"
+
+[factions.coercing_power.faction_type]
+kind = "Military"
+branch = "Navy"
+
+[factions.coercing_power.forces.littoral_squadron]
+id = "littoral_squadron"
+name = "Littoral Squadron"
+unit_type = "Naval"
+region = "coercing_power"
+strength = 200.0
+mobility = 1.0
+upkeep = 8.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.coercing_power.forces.cyber_maritime]
+id = "cyber_maritime"
+name = "Maritime Cyber Element"
+unit_type = "CyberUnit"
+region = "coercing_power"
+strength = 60.0
+mobility = 0.3
+upkeep = 3.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology
+# ============================================================================
+
+[technology]
+
+[technology.scada_ot_exposure]
+id = "scada_ot_exposure"
+name = "Water/Grid SCADA Exposure"
+description = "Aggregate model of terminal cargo-handling and pipeline-control SCADA/OT exposure at chokepoint ports. Effect-level only; no ICS protocol or exploit detail."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.12
+deployment_cost = 18.0
+coverage_limit = 3
+countered_by = ["ot_anomaly_monitoring"]
+terrain_modifiers = []
+
+[[technology.scada_ot_exposure.effects]]
+type = "SupplyInterdiction"
+factor = 0.45
+
+[[technology.scada_ot_exposure.effects]]
+type = "AreaDenial"
+strength = 0.3
+
+[[technology.scada_ot_exposure.effects]]
+type = "IntelGain"
+probability = 0.3
+
+[technology.gnss_degradation]
+id = "gnss_degradation"
+name = "GNSS / Navigation Degradation"
+description = "Aggregate model of navigation-signal degradation in the strait approaches raising transit risk and slowing safe passage. Effect-level only."
+category = "ElectronicWarfare"
+cost_per_tick = 0.1
+deployment_cost = 14.0
+coverage_limit = 2
+countered_by = ["satellite_backup_comms"]
+terrain_modifiers = []
+
+[[technology.gnss_degradation.effects]]
+type = "CommsDisruption"
+factor = 0.5
+
+[[technology.gnss_degradation.effects]]
+type = "AreaDenial"
+strength = 0.25
+
+[technology.maritime_coercion_pressure]
+id = "maritime_coercion_pressure"
+name = "Maritime Economic Coercion"
+description = "Aggregate model of the insurance and freight-rate shock as strait transit risk rises. Encodes the published economic response to elevated chokepoint risk as a coercion effect."
+category = "InformationWarfare"
+cost_per_tick = 0.08
+deployment_cost = 10.0
+coverage_limit = 2
+countered_by = ["route_diversification"]
+terrain_modifiers = []
+
+[[technology.maritime_coercion_pressure.effects]]
+type = "CivilianSentiment"
+delta = -0.15
+
+[[technology.maritime_coercion_pressure.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.1
+
+[technology.ot_anomaly_monitoring]
+id = "ot_anomaly_monitoring"
+name = "OT/SCADA Anomaly Monitoring"
+description = "Defensive control: passive operational-technology network monitoring with protocol-aware anomaly detection at terminal control systems."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.09
+deployment_cost = 20.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.ot_anomaly_monitoring.effects]]
+type = "CounterTech"
+target = "scada_ot_exposure"
+reduction = 0.5
+
+[[technology.ot_anomaly_monitoring.effects]]
+type = "DetectionModifier"
+factor = 1.5
+
+[technology.emergency_services_continuity]
+id = "emergency_services_continuity"
+name = "Emergency-Services Continuity & Mutual Aid"
+description = "Defensive control: regional mutual-aid and analog fallbacks restoring port and emergency-response capacity during a disruption."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.05
+deployment_cost = 9.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.emergency_services_continuity.effects]]
+type = "CivilianSentiment"
+delta = 0.08
+
+[[technology.emergency_services_continuity.effects]]
+type = "InfraProtection"
+factor = 0.6
+
+[technology.satellite_backup_comms]
+id = "satellite_backup_comms"
+name = "Satellite & Optical Backup Navigation"
+description = "Defensive control: satellite and optical backup navigation immune to ground-based signal degradation."
+category = "Communications"
+cost_per_tick = 0.08
+deployment_cost = 20.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.satellite_backup_comms.effects]]
+type = "CounterTech"
+target = "gnss_degradation"
+reduction = 0.6
+
+[[technology.satellite_backup_comms.effects]]
+type = "InfraProtection"
+factor = 0.7
+
+[technology.route_diversification]
+id = "route_diversification"
+name = "Trade-Route Diversification"
+description = "Defensive control: alternative import routing and strategic reserve drawdown that blunt the economic-coercion effect of strait disruption."
+category = "Logistics"
+cost_per_tick = 0.1
+deployment_cost = 18.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.route_diversification.effects]]
+type = "CounterTech"
+target = "maritime_coercion_pressure"
+reduction = 0.45
+
+[[technology.route_diversification.effects]]
+type = "CivilianSentiment"
+delta = 0.1
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.6
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.55
+disinformation_susceptibility = 0.45
+state_control = 0.4
+social_media_penetration = 0.8
+internet_availability = 0.92
+
+# ============================================================================
+# Events
+# ============================================================================
+
+[events]
+
+# ============================================================================
+# Kill Chain — graduated maritime coercion
+# ============================================================================
+#
+# Six phases. Early phases establish the disruption footprint (terminal
+# SCADA, GNSS); later phases convert disruption into economic-coercion
+# pressure (insurance / freight-rate shock). Terminal phases accumulate
+# CoercionPressure past the transit state's resilience threshold without
+# a kinetic conquest of any region.
+
+[kill_chains.coercion]
+id = "coercion"
+name = "Graduated Maritime Coercion"
+description = "Aggregate model of graduated maritime coercion: terminal SCADA disruption and GNSS degradation converted into economic-coercion pressure on a strait-dependent transit state."
+attacker = "coercing_power"
+target = "transit_state"
+entry_phase = "terminal_scada_access"
+
+[kill_chains.coercion.phases.terminal_scada_access]
+id = "terminal_scada_access"
+name = "Terminal SCADA Access"
+description = "Aggregate model of establishing access to chokepoint-terminal cargo and pipeline control systems. Effect-level only."
+base_success_probability = 0.85
+min_duration = 4
+max_duration = 9
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.85
+targets_domains = ["SupplyChainSecurity", "NetworkSecurity"]
+
+[kill_chains.coercion.phases.terminal_scada_access.cost]
+attacker_dollars = 20_000.0
+defender_dollars = 10_000_000.0
+attacker_resources = 8.0
+
+[[kill_chains.coercion.phases.terminal_scada_access.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.coercion.phases.terminal_scada_access.outputs]]
+type = "CoercionPressure"
+delta = 0.1
+
+[[kill_chains.coercion.phases.terminal_scada_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "gnss_degradation_window"
+
+[[kill_chains.coercion.phases.terminal_scada_access.branches]]
+condition = { type = "OnDetection" }
+next_phase = "economic_pressure"
+
+[kill_chains.coercion.phases.gnss_degradation_window]
+id = "gnss_degradation_window"
+name = "GNSS Degradation Window"
+description = "Aggregate model of navigation-signal degradation in the approaches raising transit risk and slowing safe passage."
+prerequisites = ["terminal_scada_access"]
+base_success_probability = 0.8
+min_duration = 3
+max_duration = 7
+detection_probability_per_tick = 0.025
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.7
+targets_domains = ["SignalsIntelligence"]
+
+[kill_chains.coercion.phases.gnss_degradation_window.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 8_000_000.0
+attacker_resources = 5.0
+
+[[kill_chains.coercion.phases.gnss_degradation_window.outputs]]
+type = "CoercionPressure"
+delta = 0.12
+
+[[kill_chains.coercion.phases.gnss_degradation_window.outputs]]
+type = "TensionDelta"
+delta = 0.1
+
+[[kill_chains.coercion.phases.gnss_degradation_window.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "terminal_disruption"
+
+[[kill_chains.coercion.phases.gnss_degradation_window.branches]]
+condition = { type = "OnDetection" }
+next_phase = "economic_pressure"
+
+[kill_chains.coercion.phases.terminal_disruption]
+id = "terminal_disruption"
+name = "Terminal Throughput Disruption"
+description = "Aggregate model of degrading cargo-handling and pipeline throughput at the chokepoint terminals, raising the visible cost of strait dependence."
+prerequisites = ["terminal_scada_access"]
+base_success_probability = 0.82
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.08
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.7
+targets_domains = ["SupplyChainSecurity", "CivilianEmergency"]
+
+[kill_chains.coercion.phases.terminal_disruption.cost]
+attacker_dollars = 15_000.0
+defender_dollars = 30_000_000.0
+attacker_resources = 6.0
+
+[[kill_chains.coercion.phases.terminal_disruption.outputs]]
+type = "InfraDamage"
+region = "chokepoint_terminal"
+factor = 0.4
+
+[[kill_chains.coercion.phases.terminal_disruption.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.coercion.phases.terminal_disruption.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "economic_pressure"
+
+[[kill_chains.coercion.phases.terminal_disruption.branches]]
+condition = { type = "OnDetection" }
+next_phase = "economic_pressure"
+
+[kill_chains.coercion.phases.economic_pressure]
+id = "economic_pressure"
+name = "Insurance / Freight-Rate Shock"
+description = "Terminal pressure phase. Aggregate model of the insurance and freight-rate shock as strait transit risk rises — the economic-coercion accumulator that drives the decisive outcome."
+prerequisites = []
+base_success_probability = 0.88
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.6
+targets_domains = ["CivilianEmergency"]
+
+[kill_chains.coercion.phases.economic_pressure.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 45_000_000.0
+attacker_resources = 3.0
+
+[[kill_chains.coercion.phases.economic_pressure.outputs]]
+type = "CoercionPressure"
+delta = 0.28
+
+[[kill_chains.coercion.phases.economic_pressure.outputs]]
+type = "MoraleDelta"
+faction = "transit_state"
+delta = -0.18
+
+[[kill_chains.coercion.phases.economic_pressure.outputs]]
+type = "TensionDelta"
+delta = 0.2
+
+[[kill_chains.coercion.phases.economic_pressure.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "sustained_pressure"
+
+[kill_chains.coercion.phases.sustained_pressure]
+id = "sustained_pressure"
+name = "Sustained Coercion Hold"
+description = "Terminal phase. Aggregate model of sustaining the economic-coercion pressure to compel a transit-state concession."
+prerequisites = ["economic_pressure"]
+base_success_probability = 0.85
+min_duration = 2
+max_duration = 6
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.55
+targets_domains = ["CivilianEmergency"]
+
+[kill_chains.coercion.phases.sustained_pressure.cost]
+attacker_dollars = 4_000.0
+defender_dollars = 20_000_000.0
+attacker_resources = 2.0
+
+[[kill_chains.coercion.phases.sustained_pressure.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+[[kill_chains.coercion.phases.sustained_pressure.outputs]]
+type = "TensionDelta"
+delta = 0.15
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 80
+monte_carlo_runs = 400
+fog_of_war = true
+snapshot_interval = 5
+seed = 20260607
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+# Attacker objective: accumulated coercion pressure crosses the transit
+# state's resilience threshold (a compelled concession), without a
+# kinetic conquest.
+[victory_conditions.coercion_success]
+id = "coercion_success"
+name = "Transit State Compelled"
+faction = "coercing_power"
+
+[victory_conditions.coercion_success.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.6
+
+# Defender objective: hold the strait and terminals for the full horizon.
+[victory_conditions.strait_held]
+id = "strait_held"
+name = "Strait Transit Maintained"
+faction = "transit_state"
+
+[victory_conditions.strait_held.condition]
+type = "HoldRegions"
+regions = ["strait_chokepoint", "chokepoint_terminal"]
+duration = 80

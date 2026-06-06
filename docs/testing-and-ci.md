@@ -117,7 +117,7 @@ fmt -> clippy -> test -> build -> cargo-deny -> grep-guard -> verify-bundled -> 
 | `build` | `cargo build --release` — confirms the release binary links cleanly |
 | `cargo-deny` | `cargo deny check` — license audit and advisory check against `deny.toml` |
 | `grep-guard` | `tools/ci/grep-guard.sh` — blocks banned reference patterns (see below) |
-| `verify-bundled` | `tools/ci/verify-bundled-scenarios.sh` — replay all 28 bundled scenarios for bit-identical output |
+| `verify-bundled` | `tools/ci/verify-bundled-scenarios.sh` — replay all 35 bundled scenarios for bit-identical output |
 | `verify-migration` | `tools/ci/verify-migration.sh` — migrate every bundled scenario and re-validate |
 | `verify-robustness` | `tools/ci/verify-robustness-pipeline.sh` — end-to-end search -> robustness -> verify flow |
 | `js-tests` | `node --test tests/integration/*.test.mjs` — pure-logic JS frontend tests |
@@ -138,7 +138,7 @@ rationale are documented inline in the script itself.
 Emits a `manifest.json` for every TOML in `scenarios/` and replays each one via
 `faultline-cli --verify` to confirm bit-identical output. The rendered Markdown is part
 of the manifest content hash, so any change to section ordering or unconditional output
-is caught here before it leaks into a release. Currently covers 28 bundled scenarios.
+is caught here before it leaks into a release. Currently covers 35 bundled scenarios.
 
 ```bash
 ./tools/ci/verify-bundled-scenarios.sh
