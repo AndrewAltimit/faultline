@@ -61,6 +61,16 @@ test('validateMeta rejects an unknown scenario_type', () => {
   assert.match(errors[0], /scenario_type/);
 });
 
+test('validateMeta accepts a whitespace-padded valid scenario_type', () => {
+  const errors = validateMeta({ scenario_type: '  red_team  ' });
+  assert.equal(errors.length, 0);
+});
+
+test('buildMetaLines trims a whitespace-padded scenario_type', () => {
+  const out = buildMetaLines({ scenario_type: '  red_team  ' });
+  assert.ok(out.split('\n').includes('scenario_type = "red_team"'));
+});
+
 test('SCENARIO_TYPES lists the schema enum values', () => {
   assert.deepEqual(SCENARIO_TYPES, [
     'tutorial',

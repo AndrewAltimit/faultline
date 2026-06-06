@@ -64,8 +64,9 @@ export function validateMeta(fields) {
     }
   }
 
-  if (f.scenario_type !== undefined && f.scenario_type !== null && f.scenario_type !== '') {
-    if (!SCENARIO_TYPES.includes(f.scenario_type)) {
+  if (f.scenario_type !== undefined && f.scenario_type !== null) {
+    const scenarioType = String(f.scenario_type).trim();
+    if (scenarioType !== '' && !SCENARIO_TYPES.includes(scenarioType)) {
       errors.push(
         `meta.scenario_type "${f.scenario_type}" is not one of: ${SCENARIO_TYPES.join(', ')}.`,
       );
@@ -131,8 +132,11 @@ export function buildMetaLines(fields) {
   const f = fields || {};
   const lines = [];
 
-  if (f.scenario_type) {
-    lines.push(`scenario_type = ${tomlString(f.scenario_type)}`);
+  if (f.scenario_type !== undefined && f.scenario_type !== null) {
+    const scenarioType = String(f.scenario_type).trim();
+    if (scenarioType !== '') {
+      lines.push(`scenario_type = ${tomlString(scenarioType)}`);
+    }
   }
   for (const key of ['analytical_purpose', 'red_team_profile', 'blue_team_posture']) {
     const v = f[key];
