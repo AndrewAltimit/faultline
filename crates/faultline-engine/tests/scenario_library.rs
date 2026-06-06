@@ -33,6 +33,9 @@ use faultline_types::scenario::Scenario;
 const BUNDLED_SCENARIOS: &[&str] = &[
     "adaptive_utility_demo.toml",
     "alert_fatigue_soc.toml",
+    "analogue_grid_cyberattack_2015.toml",
+    "analogue_short_coercive_war.toml",
+    "analogue_supplychain_wiper_2017.toml",
     "calibration_demo.toml",
     "capabilities_demo.toml",
     "coalition_fracture_demo.toml",
@@ -51,6 +54,7 @@ const BUNDLED_SCENARIOS: &[&str] = &[
     "recon_fidelity_demo.toml",
     "strategy_search_demo.toml",
     "supply_interdiction_demo.toml",
+    "tech_rebalance_demo.toml",
     "tutorial_asymmetric.toml",
     "tutorial_symmetric.toml",
     "us_institutional_fracture.toml",

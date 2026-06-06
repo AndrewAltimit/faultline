@@ -1,0 +1,410 @@
+# Historical-analogue scenario (Epic N round-two)
+# =================================================
+#
+# Single named-event analogue: the June 2017 destructive
+# supply-chain-delivered wiper event ("NotPetya"). A trojanized update
+# to a widely-deployed accounting-software product seeded a
+# self-propagating destructive payload that spread rapidly across
+# enterprise networks worldwide, causing on the order of USD 10 billion
+# in publicly-estimated damages. It is the canonical public example of
+# supply-chain weaponization, which makes it an ideal single-event
+# calibration analogue.
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("wiper_operator"): a destructive intrusion set that
+#   compromised the software-update channel of a widely-deployed
+#   product, then released a self-propagating payload that combined
+#   credential harvesting with network-spreading mechanisms and a
+#   destructive (disk-wiping) effect masquerading as ransomware.
+# Defender ("enterprise_base"): the global population of organizations
+#   running the trojanized product, with flat internal networks and
+#   shared administrative credentials enabling rapid lateral spread.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# malware internals, no exploit detail, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Kill-chain shape (supply-chain implant via the update channel →
+#   automated credential harvest → self-propagation → destructive wipe)
+#   is drawn from public incident reporting and defensive-community
+#   analyses. Only the AGGREGATE phase structure and public outcome are
+#   encoded — no malware internals or exploit detail.
+# - Outcome: attacker-success at the scale of disruption — global,
+#   rapid, with ~USD 10 billion in publicly-estimated damages across
+#   multinational firms. Encoded as high phase-success probabilities, a
+#   very short propagation time, and an attacker win.
+# - Duration: the destructive propagation unfolded over hours once the
+#   payload was released; here modeled at one tick = one hour over a
+#   short horizon. Self-propagation = high success, low detection in the
+#   propagation window.
+#
+# All figures (~USD 10B estimated damages, global rapid spread,
+# supply-chain delivery) are from public reporting and contain no
+# classified, CUI, or export-controlled material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Supply-Chain Destructive Wiper (Jun 2017)"
+description = """
+Single-event historical analogue: the June 2017 supply-chain-delivered
+destructive wiper event. A trojanized software update seeded a
+self-propagating destructive payload that spread rapidly across
+enterprise networks worldwide, causing on the order of USD 10 billion in
+publicly-estimated damages — the canonical public example of supply-chain
+weaponization. The documented attacker-success outcome and very short
+(hours) propagation are encoded as calibration observations and
+back-tested against the Monte Carlo distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public incident reporting and defensive-community
+analyses. No malware internals, exploit detail, classified, CUI, or
+export-controlled material is encoded — only the aggregate statistical
+effects the engine consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "supply-chain", "wiper", "destructive"]
+confidence = "High"
+
+[meta.historical_analogue]
+name = "June 2017 supply-chain destructive wiper"
+description = """
+A trojanized update to a widely-deployed product seeded a
+self-propagating destructive payload that spread globally within hours,
+causing ~USD 10 billion in publicly-estimated damages. The canonical
+public supply-chain-weaponization case. The analogue back-tests whether
+this scenario's kill-chain parameters reproduce both the documented
+victor (the attacker) and the documented very short (hours) propagation.
+"""
+period = "2017-06-27"
+sources = [
+    "Public incident reporting on the June 2017 destructive supply-chain event",
+    "Congressional Research Service / GAO reporting on software supply-chain security",
+    "Published academic / defensive-community analyses of self-propagating destructive malware",
+    "Public economic-impact estimates (~USD 10 billion) reported in open press and industry analyses",
+]
+confidence = "High"
+
+# Documented victor: the attacker achieved global destructive disruption.
+[[meta.historical_analogue.observations]]
+notes = "Public reporting: the supply-chain-delivered payload propagated globally and destroyed data at multinational scale (~USD 10B estimated damages)."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "wiper_operator"
+
+# Win-rate band: a self-propagating supply-chain payload against flat
+# enterprise networks with shared credentials propagates with very high
+# reliability once released. Band kept wide for single-case uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "A self-propagating supply-chain payload against the documented enterprise posture propagates with very high reliability once released; band kept wide."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "wiper_operator"
+low = 0.80
+high = 1.0
+
+# Duration: destructive propagation unfolded over hours. One tick = one
+# hour; interval [1, 7] brackets the very short propagation window.
+[[meta.historical_analogue.observations]]
+notes = "Destructive propagation unfolded over hours once the payload was released; modeled at one tick = one hour."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 1
+high = 7
+
+# -- Map (software vendor → enterprise estate) -----------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.update_channel]
+id = "update_channel"
+name = "Software Update Channel"
+population = 100
+urbanization = 0.9
+initial_control = "enterprise_base"
+strategic_value = 0.4
+borders = ["enterprise_core"]
+
+[map.regions.enterprise_core]
+id = "enterprise_core"
+name = "Enterprise Core Networks"
+population = 50000
+urbanization = 0.9
+initial_control = "enterprise_base"
+strategic_value = 0.8
+borders = ["update_channel", "global_estate"]
+
+[map.regions.global_estate]
+id = "global_estate"
+name = "Global Enterprise Estate"
+population = 2000000
+urbanization = 0.8
+initial_control = "enterprise_base"
+strategic_value = 1.0
+borders = ["enterprise_core"]
+
+[map.infrastructure.enterprise_systems]
+id = "enterprise_systems"
+name = "Enterprise IT Systems"
+region = "global_estate"
+infra_type = "SupplyChain"
+criticality = 1.0
+initial_status = 1.0
+repairable = 10
+
+[[map.terrain]]
+region = "update_channel"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "enterprise_core"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.6
+
+[[map.terrain]]
+region = "global_estate"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.5
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.wiper_operator]
+id = "wiper_operator"
+name = "Wiper Operator (Threat Actor)"
+description = "Destructive intrusion set that weaponized a software-update channel with a self-propagating payload."
+color = "#7c2d12"
+tech_access = []
+initial_morale = 0.9
+logistics_capacity = 40.0
+initial_resources = 800.0
+resource_rate = 20.0
+command_resilience = 0.85
+intelligence = 0.85
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.wiper_operator.faction_type]
+kind = "Foreign"
+is_proxy = true
+
+[factions.wiper_operator.forces.operator_cell]
+id = "operator_cell"
+name = "Payload Operations Cell"
+unit_type = "CyberUnit"
+region = "update_channel"
+strength = 80.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.enterprise_base]
+id = "enterprise_base"
+name = "Enterprise Estate (Defender)"
+description = "Global population of organizations running the trojanized product; flat internal networks, shared admin credentials."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.6
+logistics_capacity = 60.0
+initial_resources = 700.0
+resource_rate = 25.0
+command_resilience = 0.5
+intelligence = 0.4
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.enterprise_base.faction_type]
+kind = "Civilian"
+
+[factions.enterprise_base.forces.it_defense]
+id = "it_defense"
+name = "Distributed IT Defense"
+unit_type = "LawEnforcement"
+region = "enterprise_core"
+strength = 60.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.3
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.2
+social_media_penetration = 0.85
+internet_availability = 0.97
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: supply-chain implant to destructive propagation -----------
+#
+# Four short phases. Once the payload is released, self-propagation is
+# near-certain and fast (high success, near-zero detection in the
+# propagation window). Cumulative disruption pressure crosses the 0.55
+# threshold within a few hours, reproducing the very short propagation.
+
+[kill_chains.wiper_op]
+id = "wiper_op"
+name = "Supply-Chain Implant to Destructive Propagation"
+description = "Aggregate model of the supply-chain implant, payload release, self-propagation, and destructive wipe across the enterprise estate."
+attacker = "wiper_operator"
+target = "enterprise_base"
+entry_phase = "supplychain_implant"
+
+[kill_chains.wiper_op.phases.supplychain_implant]
+id = "supplychain_implant"
+name = "Trojanize Update Channel"
+description = "Aggregate model of compromising the software-update channel to seed the payload. Effect-level only; no implant or exploit detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.85
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.wiper_op.phases.supplychain_implant.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.wiper_op.phases.supplychain_implant.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "payload_release"
+
+[kill_chains.wiper_op.phases.payload_release]
+id = "payload_release"
+name = "Release Self-Propagating Payload"
+description = "Aggregate model of releasing the payload through the trusted update, establishing initial footholds across the enterprise core."
+prerequisites = ["supplychain_implant"]
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.85
+targets_domains = ["SupplyChainSecurity", "NetworkSecurity"]
+
+[[kill_chains.wiper_op.phases.payload_release.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+[[kill_chains.wiper_op.phases.payload_release.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "self_propagation"
+
+[kill_chains.wiper_op.phases.self_propagation]
+id = "self_propagation"
+name = "Automated Credential Harvest & Self-Propagation"
+description = "Aggregate model of automated credential harvesting and lateral self-propagation across flat enterprise networks with shared administrative credentials."
+prerequisites = ["payload_release"]
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.8
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.wiper_op.phases.self_propagation.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+[[kill_chains.wiper_op.phases.self_propagation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "destructive_wipe"
+
+[kill_chains.wiper_op.phases.destructive_wipe]
+id = "destructive_wipe"
+name = "Destructive Wipe"
+description = "Terminal phase. Aggregate model of the destructive (disk-wiping) effect rendering systems inoperable across the global estate."
+prerequisites = ["self_propagation"]
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.8
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.wiper_op.phases.destructive_wipe.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.wiper_op.phases.destructive_wipe.outputs]]
+type = "InfraDamage"
+region = "global_estate"
+factor = 0.9
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 12-hour cap brackets the very short propagation with headroom. One
+# tick = one hour. The attacker wins by crossing the destructive-impact
+# (CoercionPressure) threshold; the defender wins only by holding its
+# global estate intact for the full horizon.
+
+[simulation]
+max_ticks = 12
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2017
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Hours = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: destructive global impact (cumulative disruption
+# pressure crosses the estate's resilience threshold).
+[victory_conditions.global_impact]
+id = "global_impact"
+name = "Wiper Operator Achieves Destructive Impact"
+faction = "wiper_operator"
+
+[victory_conditions.global_impact.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep the global estate operational for the full
+# horizon.
+[victory_conditions.estate_held]
+id = "estate_held"
+name = "Enterprise Estate Survives Intact"
+faction = "enterprise_base"
+
+[victory_conditions.estate_held.condition]
+type = "HoldRegions"
+regions = ["global_estate"]
+duration = 12
