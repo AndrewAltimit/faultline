@@ -1,0 +1,760 @@
+# Drone-Assisted Coup Facilitation — Defensive Planning Wargame
+# ==============================================================
+#
+# Coup-dynamics archetype. A coup faction inside a fragile state attempts
+# a coordinated seizure of power, and an uncrewed-systems element augments
+# the attempt with ISR (mapping the incumbent's leadership movement and
+# loyalist dispositions), communications denial (severing the incumbent's
+# ability to rally loyal units), and a decapitation strike against the
+# incumbent's leadership cadre. The decisive question is whether the
+# drone-enabled tempo lets the coup pass the "tipping point" — the moment
+# enough security institutions defect that the outcome flips — before the
+# incumbent's loyalists consolidate.
+#
+# This is framed as a DEFENSIVE-PLANNING wargame for the incumbent
+# (coup-proofing): the analytical outputs are the incumbent's detection
+# and disruption window against the coup kill chain, the leadership-cadre
+# resilience under a decapitation strike, the institutional-defection
+# cascade, and the cost-asymmetry between a commodity-drone-enabled coup
+# attempt and the counter-coup posture required to blunt it.
+#
+# Modeling approach: a multi-phase kill chain (leadership ISR -> comms
+# denial -> decapitation strike -> defection cascade) accumulates a
+# CoercionPressure "coup momentum" metric and drives a LeadershipDecapitation
+# output against the incumbent's declared leadership cadre. The incumbent's
+# security institutions carry fracture thresholds; a loyalty-erosion event
+# can trigger an institution defection once momentum crosses a threshold.
+# A high command_resilience on the incumbent models a coup-proofed
+# succession; sensitivity on that parameter is the central defensive lever.
+#
+# OSINT provenance (aggregate statistical effects only — describe effects,
+# not implementations; no operational, targeting, or tradecraft detail):
+#   - RAND public research on coups, coup-proofing, and civil-military
+#     relations; academic political-science literature on coup success
+#     factors (the "tipping point" / coordination-cascade model).
+#   - CRS and published open analyses of the use of small uncrewed systems
+#     in irregular conflict and contested-control environments.
+#   - Academic literature on military defection, loyalty, and the role of
+#     communications in rallying or fragmenting security forces during
+#     coups.
+#   - GAO / RAND public research on small-UAS adversary capabilities and
+#     C-UAS coordination.
+# No classified, CUI, or export-controlled material is used. The factions
+# are notional forcing functions for analyzing coup-proofing resilience,
+# not representations of any real state, leader, or group. This is a
+# defensive-planning wargame, not an operational plan.
+
+attacker_budget = 400_000.0
+defender_budget = 80_000_000.0
+
+[meta]
+schema_version = 1
+name = "Drone-Assisted Coup Facilitation"
+description = """
+Coup-dynamics wargame. A coup faction in a fragile state attempts a
+coordinated seizure of power; an uncrewed-systems element augments it with
+leadership ISR, communications denial, and a decapitation strike against
+the incumbent's leadership cadre. Models whether the drone-enabled tempo
+lets the coup pass the institutional-defection tipping point before the
+incumbent's loyalists consolidate. Framed as a coup-proofing (defensive)
+wargame for the incumbent: outputs are the disruption window against the
+coup kill chain, leadership-cadre resilience under a decapitation strike,
+the defection cascade, and the cost-asymmetry of a commodity-drone-enabled
+attempt versus the counter-coup posture required to blunt it.
+
+Parameters are aggregate statistical effects from public RAND coup /
+coup-proofing research, academic coup-dynamics literature, CRS and open
+analyses of small uncrewed systems in irregular conflict, and academic
+literature on military defection. No operational, targeting, or tradecraft
+detail is encoded. Factions are notional forcing functions, not real states.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["coup", "coup-proofing", "leadership-decapitation", "institutional-defection", "drone", "kill-chain", "defensive-planning"]
+confidence = "Medium"
+scenario_type = "red_team"
+analytical_purpose = "Quantify whether a commodity-drone-enabled coup attempt (leadership ISR, comms denial, a decapitation strike, and a defection cascade) can pass the institutional-defection tipping point before the incumbent's loyalists consolidate, and how the incumbent's leadership-succession resilience (coup-proofing) shifts that outcome."
+red_team_profile = "Coup faction inside a fragile state running a coordinated power seizure augmented by an uncrewed-systems element: ISR mapping of leadership movement and loyalist dispositions, communications denial to sever the incumbent's ability to rally loyal units, and a decapitation strike against the incumbent's leadership cadre. Tempo and the defection cascade are the decisive levers. Notional forcing function, not a model of any specific group."
+blue_team_posture = "Incumbent government defending against the coup (coup-proofing). Security institutions carry loyalty and fracture thresholds; a leadership cadre with a rehearsed succession (high command_resilience) blunts a decapitation strike's morale shock. Defends with counter-UAS, comms continuity, and loyalty-monitoring controls. The contested vulnerability is the speed of the institutional-defection cascade relative to the loyalist consolidation window."
+osint_sources = [
+    "RAND public research on coups, coup-proofing, and civil-military relations",
+    "Academic political-science literature on coup success factors and the coordination-cascade / tipping-point model",
+    "CRS and published open analyses of small uncrewed systems in irregular conflict and contested-control environments",
+    "Academic literature on military defection, loyalty, and communications in rallying or fragmenting security forces during coups",
+    "GAO / RAND public research on small-UAS adversary capabilities and C-UAS coordination",
+]
+sensitivity_parameters = [
+    "incumbent command_resilience (succession / decapitation-shock attenuation)",
+    "decapitation-strike morale_shock and base_success_probability",
+    "security-institution fracture_threshold (defection cascade trigger)",
+    "comms-denial phase detection_probability_per_tick (counter-UAS / RF coverage)",
+]
+
+# ============================================================================
+# Map — a notional fragile-state capital and its security geography
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 3
+height = 2
+
+[map.regions.government_quarter]
+id = "government_quarter"
+name = "Government Quarter"
+population = 90_000
+urbanization = 0.95
+initial_control = "incumbent"
+strategic_value = 10.0
+borders = ["capital_core", "garrison_district"]
+
+[map.regions.capital_core]
+id = "capital_core"
+name = "Capital Core"
+population = 1_600_000
+urbanization = 0.9
+initial_control = "incumbent"
+strategic_value = 8.0
+borders = ["government_quarter", "garrison_district", "media_district"]
+
+[map.regions.garrison_district]
+id = "garrison_district"
+name = "Garrison District"
+population = 220_000
+urbanization = 0.7
+initial_control = "incumbent"
+strategic_value = 9.0
+borders = ["government_quarter", "capital_core", "outer_districts"]
+
+[map.regions.media_district]
+id = "media_district"
+name = "Broadcast & Media District"
+population = 340_000
+urbanization = 0.85
+initial_control = "incumbent"
+strategic_value = 7.0
+borders = ["capital_core", "outer_districts"]
+
+[map.regions.outer_districts]
+id = "outer_districts"
+name = "Outer Districts"
+population = 2_100_000
+urbanization = 0.6
+initial_control = "incumbent"
+strategic_value = 3.0
+borders = ["garrison_district", "media_district", "periphery"]
+
+[map.regions.periphery]
+id = "periphery"
+name = "Periphery / Staging Ground"
+population = 180_000
+urbanization = 0.4
+initial_control = "coup_faction"
+strategic_value = 2.0
+borders = ["outer_districts"]
+
+[map.infrastructure.state_broadcast]
+id = "state_broadcast"
+name = "State Broadcast & Comms Hub"
+region = "media_district"
+infra_type = "MediaStation"
+criticality = 0.9
+initial_status = 1.0
+repairable = 6
+
+[map.infrastructure.command_comms]
+id = "command_comms"
+name = "Government Command Communications"
+region = "government_quarter"
+infra_type = "Telecommunications"
+criticality = 0.95
+initial_status = 1.0
+repairable = 8
+
+[[map.terrain]]
+region = "government_quarter"
+terrain_type = "Urban"
+movement_modifier = 0.6
+defense_modifier = 1.7
+visibility = 0.85
+
+[[map.terrain]]
+region = "capital_core"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "garrison_district"
+terrain_type = "Urban"
+movement_modifier = 0.7
+defense_modifier = 1.5
+visibility = 0.75
+
+[[map.terrain]]
+region = "media_district"
+terrain_type = "Urban"
+movement_modifier = 0.9
+defense_modifier = 1.1
+visibility = 0.65
+
+[[map.terrain]]
+region = "outer_districts"
+terrain_type = "Suburban"
+movement_modifier = 1.1
+defense_modifier = 0.8
+visibility = 0.45
+
+[[map.terrain]]
+region = "periphery"
+terrain_type = "Rural"
+movement_modifier = 1.3
+defense_modifier = 0.6
+visibility = 0.3
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.incumbent]
+id = "incumbent"
+name = "Incumbent Government"
+description = "Notional fragile-state incumbent defending against a coup attempt. Security institutions carry loyalty and fracture thresholds; a leadership cadre with a rehearsed succession blunts a decapitation strike. A forcing function for analyzing coup-proofing resilience; not a representation of any real state or leader."
+color = "#1f4e79"
+tech_access = ["counter_uas_capital", "comms_continuity", "loyalty_monitoring"]
+initial_morale = 0.74
+logistics_capacity = 600.0
+initial_resources = 12000.0
+resource_rate = 110.0
+# Coup-proofed succession: a rehearsed continuity-of-government plan
+# attenuates the morale shock of a decapitation strike. This is the
+# central defensive lever — sensitivity on command_resilience is called
+# out in the meta block.
+command_resilience = 0.65
+intelligence = 0.7
+diplomacy = [
+    { target_faction = "coup_faction", stance = "Hostile" },
+]
+doctrine = "CounterInsurgency"
+
+[factions.incumbent.faction_type]
+kind = "Government"
+
+[factions.incumbent.faction_type.institutions.presidential_guard]
+id = "presidential_guard"
+name = "Presidential Guard"
+institution_type = "Executive"
+loyalty = 0.9
+effectiveness = 0.85
+personnel = 5000
+fracture_threshold = 0.35
+
+[factions.incumbent.faction_type.institutions.regular_army]
+id = "regular_army"
+name = "Regular Army Command"
+institution_type = "NationalGuard"
+loyalty = 0.62
+effectiveness = 0.75
+personnel = 80000
+fracture_threshold = 0.5
+
+[factions.incumbent.faction_type.institutions.state_security]
+id = "state_security"
+name = "State Security Service"
+institution_type = "Intelligence"
+loyalty = 0.7
+effectiveness = 0.7
+personnel = 12000
+fracture_threshold = 0.45
+
+# Leadership cadre with a rehearsed succession. A LeadershipDecapitation
+# output advances the rank index and applies a one-shot morale shock,
+# attenuated by command_resilience; the cadre's depth is what lets the
+# incumbent survive a successful strike rather than collapsing.
+[factions.incumbent.leadership]
+succession_recovery_ticks = 6
+succession_floor = 0.5
+
+[[factions.incumbent.leadership.ranks]]
+id = "head_of_state"
+name = "Head of State"
+effectiveness = 1.0
+description = "Principal. A successful decapitation strike advances succession to the deputy."
+
+[[factions.incumbent.leadership.ranks]]
+id = "deputy"
+name = "Deputy / Acting Head"
+effectiveness = 0.6
+description = "First successor under the continuity-of-government plan."
+
+[[factions.incumbent.leadership.ranks]]
+id = "emergency_council"
+name = "Emergency Council"
+effectiveness = 0.35
+description = "Collective fallback authority if the principal and deputy are both removed."
+
+[factions.incumbent.forces.guard_brigade]
+id = "guard_brigade"
+name = "Presidential Guard Brigade"
+unit_type = "SpecialOperations"
+region = "government_quarter"
+strength = 320.0
+mobility = 0.7
+upkeep = 30.0
+morale_modifier = 0.12
+capabilities = []
+
+[factions.incumbent.forces.loyal_garrison]
+id = "loyal_garrison"
+name = "Loyal Garrison"
+unit_type = "Mechanized"
+region = "garrison_district"
+strength = 560.0
+mobility = 0.5
+upkeep = 60.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.incumbent.forces.cuas_detail]
+id = "cuas_detail"
+name = "Capital Counter-UAS Detail"
+unit_type = "AirDefense"
+region = "government_quarter"
+strength = 60.0
+mobility = 0.4
+upkeep = 8.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.coup_faction]
+id = "coup_faction"
+name = "Coup Faction"
+description = "Notional coup faction running a coordinated power seizure augmented by an uncrewed-systems element. A forcing function for analyzing coup-proofing resilience; not a representation of any real group."
+color = "#8e2a2a"
+tech_access = ["coup_uas_isr", "coup_comms_denial"]
+initial_morale = 0.88
+logistics_capacity = 80.0
+initial_resources = 600.0
+resource_rate = 8.0
+command_resilience = 0.5
+intelligence = 0.72
+diplomacy = [
+    { target_faction = "incumbent", stance = "Hostile" },
+]
+doctrine = "Disruption"
+
+[factions.coup_faction.faction_type]
+kind = "Insurgent"
+
+[factions.coup_faction.forces.coup_cell]
+id = "coup_cell"
+name = "Coup Plotter Cell"
+unit_type = "SpecialOperations"
+region = "periphery"
+strength = 90.0
+mobility = 1.4
+upkeep = 3.0
+morale_modifier = 0.1
+capabilities = []
+
+[factions.coup_faction.forces.uas_element]
+id = "uas_element"
+name = "Coup UAS Element"
+unit_type = "DroneSwarm"
+region = "periphery"
+strength = 40.0
+mobility = 2.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology — aggregate effect cards (effect-level only)
+# ============================================================================
+
+[technology]
+
+[technology.coup_uas_isr]
+id = "coup_uas_isr"
+name = "Coup ISR Drones"
+description = "Aggregate model of small uncrewed ISR augmenting the coup: mapping leadership movement and loyalist dispositions to cue the decapitation strike and time the defection cascade. Effect-level only; no targeting or operational detail."
+category = "Surveillance"
+cost_per_tick = 0.2
+deployment_cost = 8.0
+coverage_limit = 2
+countered_by = ["counter_uas_capital"]
+terrain_modifiers = [{ terrain = "Urban", effectiveness = 0.7 }]
+
+[[technology.coup_uas_isr.effects]]
+type = "IntelGain"
+probability = 0.35
+
+[[technology.coup_uas_isr.effects]]
+type = "DetectionModifier"
+factor = 0.6
+
+[technology.coup_comms_denial]
+id = "coup_comms_denial"
+name = "Coup Communications Denial"
+description = "Aggregate model of communications denial severing the incumbent's ability to rally loyal units and broadcast a counter-message during the coup window. Effect-level only."
+category = "ElectronicWarfare"
+cost_per_tick = 0.15
+deployment_cost = 10.0
+coverage_limit = 2
+countered_by = ["comms_continuity"]
+terrain_modifiers = []
+
+[[technology.coup_comms_denial.effects]]
+type = "CommsDisruption"
+factor = 0.55
+
+[[technology.coup_comms_denial.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.1
+
+[technology.counter_uas_capital]
+id = "counter_uas_capital"
+name = "Capital Counter-UAS"
+description = "Defensive control: counter-UAS detection and interdiction over the government quarter and garrison district. Effect-level only."
+category = "CounterDrone"
+cost_per_tick = 0.18
+deployment_cost = 16.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.counter_uas_capital.effects]]
+type = "CounterTech"
+target = "coup_uas_isr"
+reduction = 0.4
+
+[[technology.counter_uas_capital.effects]]
+type = "DetectionModifier"
+factor = 1.4
+
+[technology.comms_continuity]
+id = "comms_continuity"
+name = "Command Comms Continuity"
+description = "Defensive control: redundant and hardened command communications that preserve the incumbent's ability to rally loyal units under denial. Effect-level only."
+category = "Communications"
+cost_per_tick = 0.12
+deployment_cost = 14.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.comms_continuity.effects]]
+type = "CounterTech"
+target = "coup_comms_denial"
+reduction = 0.5
+
+[[technology.comms_continuity.effects]]
+type = "MoraleEffect"
+target = "Own"
+delta = 0.08
+
+[technology.loyalty_monitoring]
+id = "loyalty_monitoring"
+name = "Loyalty & Defection Monitoring"
+description = "Defensive control: monitoring of security-institution loyalty and early indicators of defection. Aggregate effect-level model; raises the incumbent's detection of the coup's preparatory phases."
+category = "Surveillance"
+cost_per_tick = 0.1
+deployment_cost = 12.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.loyalty_monitoring.effects]]
+type = "DetectionModifier"
+factor = 1.5
+
+[[technology.loyalty_monitoring.effects]]
+type = "MoraleEffect"
+target = "Own"
+delta = 0.05
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.62
+institutional_trust = 0.4
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.6
+disinformation_susceptibility = 0.6
+state_control = 0.55
+social_media_penetration = 0.7
+internet_availability = 0.8
+
+# ============================================================================
+# Events — institutional defection cascade
+# ============================================================================
+
+# Once coup momentum (coercion pressure) is high and the regular army's
+# loyalty has eroded past its fracture threshold, the regular army defects
+# to the coup — the tipping-point cascade the scenario measures.
+[events.army_defection]
+id = "army_defection"
+name = "Regular Army Defection"
+description = "Once coup momentum is high and command communications are degraded, the regular army command defects, modeling the coordination-cascade tipping point in coup dynamics."
+earliest_tick = 4
+latest_tick = 40
+probability = 0.18
+repeatable = false
+conditions = [
+    { condition = "TensionAbove", threshold = 0.7 },
+    { condition = "InstitutionLoyaltyBelow", institution = "regular_army", threshold = 0.5 },
+]
+
+[[events.army_defection.effects]]
+effect = "InstitutionDefection"
+institution = "regular_army"
+to_faction = "coup_faction"
+
+[[events.army_defection.effects]]
+effect = "MoraleShift"
+faction = "incumbent"
+delta = -0.15
+
+[[events.army_defection.effects]]
+effect = "MoraleShift"
+faction = "coup_faction"
+delta = 0.15
+
+[[events.army_defection.effects]]
+effect = "TensionShift"
+delta = 0.1
+
+[[events.army_defection.effects]]
+effect = "Narrative"
+text = "Regular army command announces it will not act against the coup; the defection cascade reaches the tipping point."
+
+# ============================================================================
+# Kill Chain — drone-assisted coup
+# ============================================================================
+
+[kill_chains.coup]
+id = "coup"
+name = "Drone-Assisted Coup Attempt"
+description = "Four-phase coup augmented by uncrewed systems: leadership ISR -> command-comms denial -> leadership decapitation strike -> institutional-defection consolidation. Momentum accumulates as CoercionPressure; the decapitation phase advances the incumbent's leadership succession, attenuated by command_resilience."
+attacker = "coup_faction"
+target = "incumbent"
+entry_phase = "leadership_isr"
+
+# -- Phase 1: leadership ISR ------------------------------------------------
+[kill_chains.coup.phases.leadership_isr]
+id = "leadership_isr"
+name = "Leadership ISR & Loyalist Mapping"
+description = "Aggregate model of uncrewed ISR mapping the incumbent's leadership movement and loyalist dispositions, building the picture needed to time the comms-denial window and the decapitation strike. Effect-level only — no targeting detail."
+base_success_probability = 0.85
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.05
+attribution_difficulty = 0.8
+parameter_confidence = "Medium"
+targets_domains = ["SignalsIntelligence", "ExecutiveProtection"]
+
+[kill_chains.coup.phases.leadership_isr.cost]
+attacker_dollars = 6_000.0
+defender_dollars = 3_000_000.0
+attacker_resources = 3.0
+confidence = "Medium"
+
+[[kill_chains.coup.phases.leadership_isr.outputs]]
+type = "IntelligenceGain"
+amount = 0.15
+
+[[kill_chains.coup.phases.leadership_isr.outputs]]
+type = "CoercionPressure"
+delta = 0.08
+
+[[kill_chains.coup.phases.leadership_isr.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "comms_denial"
+
+[[kill_chains.coup.phases.leadership_isr.branches]]
+condition = { type = "OnDetection" }
+next_phase = "coup_collapse"
+
+# -- Phase 2: command-comms denial ------------------------------------------
+[kill_chains.coup.phases.comms_denial]
+id = "comms_denial"
+name = "Command-Comms Denial Window"
+description = "Aggregate model of denying the incumbent's command communications during the coup window, degrading its ability to rally loyal units and broadcast a counter-message. The comms-continuity control raises this phase's difficulty. Effect-level only."
+prerequisites = ["leadership_isr"]
+base_success_probability = 0.72
+min_duration = 1
+max_duration = 3
+detection_probability_per_tick = 0.09
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.65
+parameter_confidence = "Medium"
+targets_domains = ["NetworkSecurity", "ExecutiveProtection"]
+
+[kill_chains.coup.phases.comms_denial.cost]
+attacker_dollars = 8_000.0
+defender_dollars = 5_000_000.0
+attacker_resources = 4.0
+confidence = "Medium"
+
+[[kill_chains.coup.phases.comms_denial.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.coup.phases.comms_denial.outputs]]
+type = "TensionDelta"
+delta = 0.12
+
+[[kill_chains.coup.phases.comms_denial.outputs]]
+type = "InstitutionalErosion"
+delta = 0.1
+
+[[kill_chains.coup.phases.comms_denial.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "decapitation_strike"
+
+[[kill_chains.coup.phases.comms_denial.branches]]
+condition = { type = "OnDetection" }
+next_phase = "coup_collapse"
+
+# -- Phase 3: leadership decapitation strike --------------------------------
+[kill_chains.coup.phases.decapitation_strike]
+id = "decapitation_strike"
+name = "Leadership Decapitation Strike"
+description = "Aggregate model of a decapitation strike against the incumbent's leadership cadre during the comms-denial window. Advances the incumbent's leadership succession by one rank; the one-shot morale shock is attenuated by the incumbent's command_resilience (a rehearsed continuity-of-government plan). Whether the cadre survives this strike is the central coup-proofing question. Effect-level only — no targeting detail."
+prerequisites = ["comms_denial"]
+base_success_probability = 0.5
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.2
+prerequisite_success_boost = 0.15
+attribution_difficulty = 0.45
+parameter_confidence = "Low"
+targets_domains = ["ExecutiveProtection", "CounterUAS"]
+
+[kill_chains.coup.phases.decapitation_strike.cost]
+attacker_dollars = 12_000.0
+defender_dollars = 8_000_000.0
+attacker_resources = 6.0
+confidence = "Low"
+
+[[kill_chains.coup.phases.decapitation_strike.outputs]]
+type = "LeadershipDecapitation"
+target_faction = "incumbent"
+morale_shock = 0.25
+
+[[kill_chains.coup.phases.decapitation_strike.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+[[kill_chains.coup.phases.decapitation_strike.outputs]]
+type = "TensionDelta"
+delta = 0.15
+
+[[kill_chains.coup.phases.decapitation_strike.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "defection_consolidation"
+
+[[kill_chains.coup.phases.decapitation_strike.branches]]
+condition = { type = "OnDetection" }
+next_phase = "coup_collapse"
+
+# -- Phase 4: defection consolidation (terminal) ----------------------------
+[kill_chains.coup.phases.defection_consolidation]
+id = "defection_consolidation"
+name = "Defection Consolidation"
+description = "Terminal phase. Aggregate model of consolidating power as security institutions defect past the tipping point. Accumulates the decisive coup-momentum (CoercionPressure) and erodes institutional cohesion. Whether this phase is reached before the loyalists consolidate is the scenario's central outcome."
+prerequisites = ["decapitation_strike"]
+base_success_probability = 0.6
+min_duration = 1
+max_duration = 4
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.4
+parameter_confidence = "Low"
+targets_domains = ["ExecutiveProtection", "InsiderThreat"]
+
+[kill_chains.coup.phases.defection_consolidation.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 20_000_000.0
+attacker_resources = 3.0
+confidence = "Low"
+
+[[kill_chains.coup.phases.defection_consolidation.outputs]]
+type = "CoercionPressure"
+delta = 0.3
+
+[[kill_chains.coup.phases.defection_consolidation.outputs]]
+type = "InstitutionalErosion"
+delta = 0.25
+
+[[kill_chains.coup.phases.defection_consolidation.outputs]]
+type = "MoraleDelta"
+faction = "incumbent"
+delta = -0.2
+
+# -- Terminal: coup collapse (defender disrupted the attempt) ---------------
+[kill_chains.coup.phases.coup_collapse]
+id = "coup_collapse"
+name = "Coup Collapse — Incumbent Disrupted the Attempt"
+description = "Terminal phase taken when the incumbent detects and disrupts the coup at any stage — the loyalists consolidated before the cascade reached the tipping point. Models the plotters' collapse and the residual evidence the incumbent recovers."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+attribution_difficulty = 0.4
+targets_domains = []
+
+[kill_chains.coup.phases.coup_collapse.cost]
+attacker_dollars = 2_000.0
+defender_dollars = 2_000_000.0
+attacker_resources = 2.0
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 50
+monte_carlo_runs = 400
+fog_of_war = true
+snapshot_interval = 5
+seed = 20260321
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+# Incumbent (coup-proofing) objective: hold the government quarter and
+# garrison district for the full horizon — the coup failed to consolidate.
+[victory_conditions.regime_held]
+id = "regime_held"
+name = "Coup Disrupted — Regime Holds"
+faction = "incumbent"
+
+[victory_conditions.regime_held.condition]
+type = "HoldRegions"
+regions = ["government_quarter", "garrison_district"]
+duration = 50
+
+# Coup objective: coup momentum (coercion pressure) crosses the tipping
+# point — enough institutions defected to flip the outcome.
+[victory_conditions.coup_success]
+id = "coup_success"
+name = "Coup Consolidated"
+faction = "coup_faction"
+
+[victory_conditions.coup_success.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.5

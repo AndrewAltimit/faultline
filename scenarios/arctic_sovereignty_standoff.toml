@@ -1,0 +1,548 @@
+# Arctic Sovereignty Standoff — Force-Projection Wargame
+# =======================================================
+#
+# Multi-domain great-power competition over a contested Arctic shipping
+# corridor and the sovereignty claims that surround it. As summer sea-ice
+# retreat opens a navigable high-latitude route, a revisionist coastal
+# power ("Northern Power") asserts expansive control over the corridor's
+# chokepoint and approaches, while a status-quo coalition ("Arctic
+# Coalition") and a third coastal claimant ("Coastal Claimant") contest
+# that assertion.
+#
+# The decisive military primitive is FORCE PROJECTION via standoff strike:
+# a forward-deployed, uncrewed long-range fires / loitering-munition
+# element on a Northern Power island outpost projects attrition into the
+# adjacent chokepoint and the Coalition's forward picket WITHOUT the
+# launching element ever maneuvering into contact. This is the Arctic's
+# tyranny-of-distance dynamic rendered as the engine's StandoffStrike
+# reach: the side that can hold a corridor at range without moving forces
+# forward gains coercive leverage over a transit route that the other
+# side cannot economically keep open under sustained fires.
+#
+# Analytical purpose: quantify how a standoff-fires posture from a single
+# fortified Arctic outpost shifts control of a navigable corridor over a
+# campaign horizon — and how a Coalition forward picket plus a deep
+# garrison either absorbs that attrition or is driven off the chokepoint.
+#
+# Modeling approach: baseline Lanchester combat resolves only where forces
+# co-locate; the Northern Power's projected fires element holds the
+# corridor at range. A HoldRegions victory condition for the Coalition
+# (keep the chokepoint and approaches for the full horizon) tests whether
+# the forward posture survives the projected attrition; a StrategicControl
+# condition for the Northern Power tests whether sustained fires plus a
+# limited amphibious push flips the corridor. Force-projection attrition is
+# surfaced in the report's `## Force Projection` section.
+#
+# OSINT provenance (aggregate statistical effects only — no platform,
+# guidance, or operational detail; describe effects, not implementations):
+#   - IISS Military Balance entries on Arctic basing, long-range fires,
+#     and uncrewed loitering-munition / standoff-strike reach envelopes.
+#   - CRS reporting on Arctic strategy, sea-route opening, and the
+#     U.S./allied vs. Russian Arctic force-posture gap.
+#   - RAND public research on Arctic security, distance/logistics
+#     constraints, and great-power competition in the high north.
+#   - Published open analyses of Arctic shipping-corridor economics and
+#     icebreaker / escort dependence.
+# No classified, CUI, or export-controlled material is used. This is a
+# defensive-planning wargame, not an operational plan.
+
+attacker_budget = 8_000_000.0
+defender_budget = 90_000_000.0
+
+[meta]
+schema_version = 1
+name = "Arctic Sovereignty Standoff"
+description = """
+Multi-domain great-power competition over a navigable Arctic shipping
+corridor. A revisionist coastal power asserts control of the corridor
+chokepoint using a forward standoff-fires outpost that projects attrition
+into the chokepoint and a status-quo coalition's forward picket without
+maneuvering forces forward. A coalition forward picket plus deep garrison
+contests the claim. Models whether a single fortified Arctic outpost's
+projected fires can flip control of a corridor the coalition cannot
+economically keep open under sustained attrition.
+
+Parameters are aggregate statistical effects from public IISS Military
+Balance, CRS Arctic reporting, RAND Arctic security research, and open
+shipping-corridor economic analyses. No platform, guidance, or operational
+detail is encoded.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["arctic", "sovereignty", "force-projection", "standoff-strike", "great-power-competition", "shipping-corridor"]
+confidence = "Medium"
+scenario_type = "red_team"
+analytical_purpose = "Quantify how a standoff-fires posture from a single fortified Arctic island outpost shifts control of a navigable shipping corridor over a campaign horizon, and whether a coalition forward picket plus deep garrison absorbs the projected attrition or is driven off the chokepoint."
+red_team_profile = "Revisionist Arctic coastal power asserting expansive corridor control. Posture is projected, not maneuvered: a forward island outpost fields an uncrewed long-range fires / loitering-munition element whose reach covers the chokepoint and the coalition forward picket, paired with a limited amphibious option to consolidate the chokepoint once the picket is attrited."
+blue_team_posture = "Status-quo Arctic coalition defending freedom of navigation through the corridor with a forward naval picket on the chokepoint and a deep garrison in the home approaches; a third coastal claimant holds a flank approach. The contested vulnerability is the economic and logistical cost of keeping the corridor open under sustained standoff fires at extreme distance."
+osint_sources = [
+    "IISS Military Balance entries on Arctic basing, long-range fires, and uncrewed standoff-strike reach envelopes",
+    "CRS reporting on Arctic strategy, sea-route opening, and the allied vs. Russian Arctic force-posture gap",
+    "RAND public research on Arctic security, distance/logistics constraints, and great-power competition in the high north",
+    "Published open analyses of Arctic shipping-corridor economics and icebreaker / escort dependence",
+]
+sensitivity_parameters = [
+    "standoff-fires per-engagement damage (force_projection.damage)",
+    "standoff-fires reach in km (force_projection.range -> adjacency hops)",
+    "coalition forward-picket starting strength",
+    "Arctic environmental window detection / visibility factors",
+]
+
+# ============================================================================
+# Map — Arctic corridor as a high-latitude geographic chain
+# ============================================================================
+#
+# A linear-plus-flank corridor running from the Northern Power's coast
+# through a contested chokepoint to the coalition home approaches:
+#
+#   northern_outpost (NP rear; standoff-fires element sits here)
+#     -- corridor_chokepoint (the navigable narrows; Coalition forward picket)
+#         -- coalition_approaches (Coalition deep garrison / home waters)
+#   flank_approach (Coastal Claimant; borders the chokepoint)
+#
+# A ~600 km standoff reach from the outpost is ~4 adjacency hops at the
+# ~150 km/hop mapping the engine uses; the chokepoint is 1 hop away and
+# the coalition approaches are 2 hops, so both forward Coalition positions
+# sit inside the reach envelope while the outpost itself never moves.
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.northern_outpost]
+id = "northern_outpost"
+name = "Northern Power Island Outpost"
+population = 4_000
+urbanization = 0.3
+initial_control = "northern_power"
+strategic_value = 6.0
+borders = ["corridor_chokepoint"]
+centroid = { lat = 80.4, lon = 58.0 }
+
+[map.regions.corridor_chokepoint]
+id = "corridor_chokepoint"
+name = "Corridor Chokepoint (Navigable Narrows)"
+population = 0
+urbanization = 0.0
+initial_control = "arctic_coalition"
+strategic_value = 10.0
+borders = ["northern_outpost", "coalition_approaches", "flank_approach"]
+centroid = { lat = 78.2, lon = 25.0 }
+
+[map.regions.coalition_approaches]
+id = "coalition_approaches"
+name = "Coalition Home Approaches"
+population = 120_000
+urbanization = 0.6
+initial_control = "arctic_coalition"
+strategic_value = 8.0
+borders = ["corridor_chokepoint"]
+centroid = { lat = 70.0, lon = 18.0 }
+
+[map.regions.flank_approach]
+id = "flank_approach"
+name = "Flank Approach (Coastal Claimant Waters)"
+population = 35_000
+urbanization = 0.5
+initial_control = "coastal_claimant"
+strategic_value = 5.0
+borders = ["corridor_chokepoint"]
+centroid = { lat = 74.0, lon = -20.0 }
+
+[map.infrastructure.corridor_navaids]
+id = "corridor_navaids"
+name = "Corridor Navigation & Escort Coordination"
+region = "corridor_chokepoint"
+infra_type = "Telecommunications"
+criticality = 0.9
+initial_status = 1.0
+repairable = 10
+
+[map.infrastructure.approach_port]
+id = "approach_port"
+name = "Coalition Forward Resupply Port"
+region = "coalition_approaches"
+infra_type = "TransportHub"
+criticality = 0.85
+initial_status = 1.0
+repairable = 14
+
+[[map.terrain]]
+region = "northern_outpost"
+terrain_type = "Arctic"
+movement_modifier = 0.5
+defense_modifier = 1.6
+visibility = 0.4
+
+[[map.terrain]]
+region = "corridor_chokepoint"
+terrain_type = "Arctic"
+movement_modifier = 0.6
+defense_modifier = 1.0
+visibility = 0.5
+
+[[map.terrain]]
+region = "coalition_approaches"
+terrain_type = "Coastal"
+movement_modifier = 0.9
+defense_modifier = 1.3
+visibility = 0.7
+
+[[map.terrain]]
+region = "flank_approach"
+terrain_type = "Arctic"
+movement_modifier = 0.6
+defense_modifier = 1.2
+visibility = 0.45
+
+# ============================================================================
+# Environment — Arctic conditions suppress detection and visibility
+# ============================================================================
+#
+# A persistent Arctic-conditions window (polar dark / weather) degrades
+# visibility on Arctic terrain and suppresses the global detection factor,
+# modeling the documented difficulty of sustained ISR over the high north.
+# A periodic deep-weather cycle deepens the effect intermittently.
+
+[[environment.windows]]
+id = "polar_conditions"
+name = "Polar Conditions"
+activation = { type = "Always" }
+applies_to = ["Arctic"]
+visibility_factor = 0.7
+detection_factor = 0.8
+
+[[environment.windows]]
+id = "deep_weather"
+name = "Deep Weather Window"
+activation = { type = "Cycle", period = 12, phase = 0, duration = 4 }
+applies_to = ["Arctic", "Coastal"]
+defense_factor = 1.2
+visibility_factor = 0.6
+detection_factor = 0.7
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.northern_power]
+id = "northern_power"
+name = "Northern Power"
+description = "Revisionist Arctic coastal power asserting expansive control of the corridor chokepoint. Holds a fortified island outpost in the rear and projects attrition forward with an uncrewed long-range fires element rather than maneuvering into contact. A forcing function for analyzing corridor resilience under standoff fires; not a representation of any real state."
+color = "#9a3412"
+tech_access = ["standoff_loitering_fires", "arctic_isr_screen"]
+initial_morale = 0.82
+logistics_capacity = 220.0
+initial_resources = 40_000.0
+resource_rate = 360.0
+command_resilience = 0.8
+intelligence = 0.7
+diplomacy = [
+    { target_faction = "arctic_coalition", stance = "Hostile" },
+    { target_faction = "coastal_claimant", stance = "Hostile" },
+]
+doctrine = "Disruption"
+
+[factions.northern_power.faction_type]
+kind = "Military"
+branch = "Combined"
+
+# Standoff-fires element on the rear outpost. force_projection declares a
+# ~600 km reach (~4 adjacency hops) covering the chokepoint (1 hop) and the
+# coalition approaches (2 hops). Per-engagement aggregate strength effect
+# of 70; the element never advances — its pressure is entirely projected.
+[factions.northern_power.forces.fires_element]
+id = "fires_element"
+name = "Uncrewed Standoff Fires Element"
+unit_type = "DroneSwarm"
+region = "northern_outpost"
+strength = 260.0
+mobility = 0.2
+upkeep = 40.0
+morale_modifier = 0.05
+capabilities = []
+
+[factions.northern_power.forces.fires_element.force_projection]
+mode = "StandoffStrike"
+range = 600.0
+damage = 22.0
+
+# Limited amphibious / consolidation force to seize the chokepoint once the
+# Coalition picket is attrited. Holds the outpost until then.
+[factions.northern_power.forces.consolidation_group]
+id = "consolidation_group"
+name = "Amphibious Consolidation Group"
+unit_type = "Naval"
+region = "northern_outpost"
+strength = 340.0
+mobility = 0.6
+upkeep = 70.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.arctic_coalition]
+id = "arctic_coalition"
+name = "Arctic Coalition"
+description = "Status-quo coalition defending freedom of navigation through the corridor. Maintains a forward naval picket on the chokepoint and a deep garrison in the home approaches. Bears the projected attrition of sustained standoff fires at extreme distance — the diagnostic signal of this scenario."
+color = "#1f6feb"
+tech_access = ["coalition_air_defense", "escort_continuity"]
+initial_morale = 0.8
+logistics_capacity = 500.0
+initial_resources = 70_000.0
+resource_rate = 620.0
+command_resilience = 0.85
+intelligence = 0.72
+diplomacy = [
+    { target_faction = "northern_power", stance = "Hostile" },
+    { target_faction = "coastal_claimant", stance = "Cooperative" },
+]
+doctrine = "Defensive"
+
+[factions.arctic_coalition.faction_type]
+kind = "Military"
+branch = "Combined"
+
+# Forward picket on the chokepoint — the unit that takes projected fires.
+# It declares its own limited counter-fires reach (~200 km, ~1 hop) so it
+# can attrit the rear fires element on the outpost, turning the corridor
+# into a standoff duel rather than a one-sided attrition. Whether the
+# coalition's counter-fires plus layered air defense can hold the corridor
+# is the central question this scenario explores.
+[factions.arctic_coalition.forces.forward_picket]
+id = "forward_picket"
+name = "Forward Naval Picket"
+unit_type = "Naval"
+region = "corridor_chokepoint"
+strength = 720.0
+mobility = 0.7
+upkeep = 110.0
+morale_modifier = 0.12
+capabilities = []
+
+[factions.arctic_coalition.forces.forward_picket.force_projection]
+mode = "StandoffStrike"
+range = 200.0
+damage = 18.0
+
+# Deep garrison in the home approaches — reserve depth and resupply anchor.
+[factions.arctic_coalition.forces.home_garrison]
+id = "home_garrison"
+name = "Home-Approaches Garrison"
+unit_type = "Mechanized"
+region = "coalition_approaches"
+strength = 980.0
+mobility = 0.5
+upkeep = 200.0
+morale_modifier = 0.05
+capabilities = []
+
+[factions.coastal_claimant]
+id = "coastal_claimant"
+name = "Coastal Claimant"
+description = "Third Arctic coastal state holding a flank approach and a competing corridor claim. Aligned with the coalition on freedom of navigation but with limited forces; included to model the multi-claimant character of Arctic sovereignty disputes."
+color = "#0e7490"
+tech_access = ["escort_continuity"]
+initial_morale = 0.74
+logistics_capacity = 180.0
+initial_resources = 24_000.0
+resource_rate = 200.0
+command_resilience = 0.75
+intelligence = 0.6
+diplomacy = [
+    { target_faction = "northern_power", stance = "Hostile" },
+    { target_faction = "arctic_coalition", stance = "Cooperative" },
+]
+doctrine = "Defensive"
+
+[factions.coastal_claimant.faction_type]
+kind = "Military"
+branch = "Navy"
+
+[factions.coastal_claimant.forces.flank_squadron]
+id = "flank_squadron"
+name = "Flank Coastal Squadron"
+unit_type = "Naval"
+region = "flank_approach"
+strength = 300.0
+mobility = 0.7
+upkeep = 55.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology — aggregate effect cards (effect-level only)
+# ============================================================================
+
+[technology]
+
+[technology.standoff_loitering_fires]
+id = "standoff_loitering_fires"
+name = "Standoff Loitering Fires"
+description = "Aggregate model of an uncrewed long-range loitering-munition / standoff-strike capability projecting attrition into in-range regions. Reach and per-engagement effect are published-envelope statistical descriptors; no platform, guidance, or operational detail is encoded."
+category = "OffensiveDrone"
+cost_per_tick = 0.4
+deployment_cost = 30.0
+coverage_limit = 2
+countered_by = ["coalition_air_defense"]
+terrain_modifiers = [
+    { terrain = "Arctic", effectiveness = 0.8 },
+    { terrain = "Coastal", effectiveness = 1.0 },
+]
+
+[[technology.standoff_loitering_fires.effects]]
+type = "CombatModifier"
+factor = 1.3
+
+[[technology.standoff_loitering_fires.effects]]
+type = "DetectionModifier"
+factor = 0.5
+
+[technology.arctic_isr_screen]
+id = "arctic_isr_screen"
+name = "Arctic ISR Screen"
+description = "Aggregate model of a persistent uncrewed ISR screen over the corridor providing targeting cueing for projected fires under degraded polar conditions. Effect-level only."
+category = "Surveillance"
+cost_per_tick = 0.2
+deployment_cost = 16.0
+coverage_limit = 2
+countered_by = []
+terrain_modifiers = [{ terrain = "Arctic", effectiveness = 0.7 }]
+
+[[technology.arctic_isr_screen.effects]]
+type = "IntelGain"
+probability = 0.3
+
+[[technology.arctic_isr_screen.effects]]
+type = "DetectionModifier"
+factor = 1.2
+
+[technology.coalition_air_defense]
+id = "coalition_air_defense"
+name = "Coalition Layered Air & Missile Defense"
+description = "Defensive control: layered air and missile defense screening the forward picket and corridor against standoff fires. Reduces the effectiveness of projected fires. Effect-level only."
+category = "CounterDrone"
+cost_per_tick = 0.35
+deployment_cost = 28.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.coalition_air_defense.effects]]
+type = "CounterTech"
+target = "standoff_loitering_fires"
+reduction = 0.4
+
+[[technology.coalition_air_defense.effects]]
+type = "InfraProtection"
+factor = 0.6
+
+[technology.escort_continuity]
+id = "escort_continuity"
+name = "Escort & Icebreaker Continuity"
+description = "Defensive control: convoy escort, icebreaker availability, and route-coordination continuity that sustain corridor transit and resupply under pressure. Effect-level only."
+category = "Logistics"
+cost_per_tick = 0.25
+deployment_cost = 14.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.escort_continuity.effects]]
+type = "InfraProtection"
+factor = 0.5
+
+[[technology.escort_continuity.effects]]
+type = "MoraleEffect"
+target = "Own"
+delta = 0.05
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.6
+institutional_trust = 0.65
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.45
+disinformation_susceptibility = 0.4
+state_control = 0.45
+social_media_penetration = 0.75
+internet_availability = 0.85
+
+# ============================================================================
+# Events — a standoff-strike escalation that raises projected-fires tempo
+# ============================================================================
+
+[events.fires_escalation]
+id = "fires_escalation"
+name = "Projected-Fires Escalation"
+description = "Once the corridor chokepoint comes under sustained pressure, the Northern Power escalates the tempo of projected fires, modeled as a morale shock to the forward picket and a tension rise."
+earliest_tick = 6
+latest_tick = 40
+probability = 0.08
+repeatable = false
+conditions = [
+    { condition = "TensionAbove", threshold = 0.6 },
+]
+
+[[events.fires_escalation.effects]]
+effect = "MoraleShift"
+faction = "arctic_coalition"
+delta = -0.08
+
+[[events.fires_escalation.effects]]
+effect = "TensionShift"
+delta = 0.1
+
+[[events.fires_escalation.effects]]
+effect = "Narrative"
+text = "Northern Power increases the tempo of projected fires against the corridor chokepoint; coalition escort losses mount."
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 48
+monte_carlo_runs = 400
+fog_of_war = true
+snapshot_interval = 4
+seed = 20260131
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.12 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+# Coalition objective: hold the chokepoint and home approaches for the full
+# horizon despite projected attrition — freedom of navigation preserved.
+[victory_conditions.corridor_held]
+id = "corridor_held"
+name = "Corridor Kept Open"
+faction = "arctic_coalition"
+
+[victory_conditions.corridor_held.condition]
+type = "HoldRegions"
+regions = ["corridor_chokepoint", "coalition_approaches"]
+duration = 48
+
+# Northern Power objective: drive overall strategic control of the theater
+# above threshold — sustained fires attrit the picket, then consolidation
+# seizes the chokepoint.
+[victory_conditions.corridor_seized]
+id = "corridor_seized"
+name = "Corridor Control Asserted"
+faction = "northern_power"
+
+[victory_conditions.corridor_seized.condition]
+type = "StrategicControl"
+threshold = 0.55
