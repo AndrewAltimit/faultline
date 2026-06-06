@@ -451,12 +451,13 @@ export class Editor {
       // Quote enum values the way TOML expects (bare-quoted strings). Only add
       // the closing quote if the user hasn't already typed one after the caret.
       const openedQuote = before.endsWith('"') || before.endsWith("'");
+      const closing = after.startsWith('"') || after.startsWith("'") ? '' : '"';
       if (!openedQuote) {
-        const closing = after.startsWith('"') || after.startsWith("'") ? '' : '"';
         insert = `"${item.label}${closing}`;
         newCaret = tokenAbsStart + 1 + item.label.length + (closing ? 1 : 0);
       } else {
-        newCaret = tokenAbsStart + item.label.length;
+        insert = `${item.label}${closing}`;
+        newCaret = tokenAbsStart + item.label.length + (closing ? 1 : 0);
       }
     }
 

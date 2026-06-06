@@ -168,6 +168,9 @@ export function completionContext(text, offset) {
   const lines = text.split('\n');
   const sectionCanon = canonicalizeSection(enclosingSection(lines, lineIdx));
 
+  // First `=` splits key from value. Quoted keys containing `=` (e.g.
+  // `"k=1" = "v"`) would mis-split here, but the scenario schema has no such
+  // keys, so this lightweight scan is intentional rather than quote-aware.
   const eq = line.indexOf('=');
   const onValueSide = eq !== -1 && col > eq;
 
