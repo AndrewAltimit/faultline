@@ -8,6 +8,32 @@
 import { US_REGIONS, isUSScenario } from './us-regions-geo.js';
 import { MAP_LIBRARY, detectMap, getMapRegions } from './map-library.js';
 
+/**
+ * Cached `:root` computed-style handle. `getComputedStyle` is comparatively
+ * expensive and `neutralColor()` is called per-region and per-unit during a
+ * render, so we resolve the handle once per paint (see {@link resetThemeCache})
+ * instead of on every lookup. Reset each render so a freshly-applied theme is
+ * picked up on the next paint.
+ */
+let _rootStyle = null;
+
+/** Drop the cached root style handle; called at the top of each render. */
+function resetThemeCache() {
+  _rootStyle = null;
+}
+
+/**
+ * Read a CSS custom property off `:root`, trimmed, with a fallback. Lets the
+ * map's structural colors (neutral region fill, label text) track the active
+ * light/dark theme instead of being pinned to the dark palette.
+ */
+function themeVar(name, fallback) {
+  if (typeof document === 'undefined' || !document.documentElement) return fallback;
+  if (!_rootStyle) _rootStyle = getComputedStyle(document.documentElement);
+  const v = _rootStyle.getPropertyValue(name).trim();
+  return v || fallback;
+}
+
 const UNIT_SHAPES = {
   Infantry: 'circle',
   Armor: 'square',
@@ -20,7 +46,11 @@ const UNIT_SHAPES = {
   IntelligenceUnit: 'diamond',
 };
 
-const NEUTRAL_COLOR = '#27272a';
+/** Neutral region fill — themed (tracks `--border`) so it stays visible
+ *  on both the dark and light palettes. */
+function neutralColor() {
+  return themeVar('--border', '#27272a');
+}
 const HOVER_ALPHA = 0.15;
 const FILL_ALPHA = 0.3;
 const GEO_FILL_ALPHA = 0.4;
@@ -77,6 +107,8 @@ export class MapRenderer {
 
   render(snapshot) {
     this.snapshot = snapshot;
+    // Resolve theme variables once for this paint rather than per region/unit.
+    resetThemeCache();
     const ctx = this.ctx;
     const dpr = window.devicePixelRatio || 1;
     const w = this.canvas.width / dpr;
@@ -128,7 +160,7 @@ export class MapRenderer {
       const controllingFaction = regionControl.get(rid);
       const factionColor = controllingFaction
         ? this._getFactionColor(factions, controllingFaction)
-        : NEUTRAL_COLOR;
+        : neutralColor();
 
       for (const screenPoly of geoData.screenPolygons) {
         ctx.save();
@@ -343,7 +375,7 @@ export class MapRenderer {
       const controllingFaction = regionControl.get(rid);
       const factionColor = controllingFaction
         ? this._getFactionColor(factions, controllingFaction)
-        : NEUTRAL_COLOR;
+        : neutralColor();
 
       ctx.save();
       this._roundRect(ctx, layout.x, layout.y, layout.w, layout.h, CORNER_RADIUS);
@@ -499,7 +531,7 @@ export class MapRenderer {
     const forcesByRegion = new Map();
 
     for (const [fid, faction] of Object.entries(factions)) {
-      const color = faction.color || NEUTRAL_COLOR;
+      const color = faction.color || neutralColor();
       const snapshotFaction = snapshot?.faction_states?.[fid];
 
       for (const [, unit] of Object.entries(faction.forces || {})) {
@@ -709,9 +741,9 @@ export class MapRenderer {
   }
 
   _getFactionColor(factions, fid) {
-    if (!factions) return NEUTRAL_COLOR;
+    if (!factions) return neutralColor();
     const faction = factions[fid];
-    return faction?.color || NEUTRAL_COLOR;
+    return faction?.color || neutralColor();
   }
 
   // ===================================================================

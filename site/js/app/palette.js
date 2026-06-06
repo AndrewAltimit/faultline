@@ -43,10 +43,12 @@ export const DURATION_SERIES = {
 };
 
 /**
- * Neutral / structural colors that match the dark dashboard theme. Kept
- * here so chart code never hard-codes hex literals.
+ * Default (dark) neutral / structural colors. Kept here so chart code never
+ * hard-codes hex literals, and so Node unit tests (which have no DOM and no
+ * stylesheet) resolve to the historical dark values — keeping the default
+ * appearance bit-identical to before the theming work.
  */
-export const NEUTRAL = {
+const NEUTRAL_DARK = {
   neutralFaction: '#8a8a93', // "no faction holds this" cells
   axis: 'rgba(161, 161, 170, 0.55)', // axis lines (text-muted @ 55%)
   gridline: 'rgba(82, 82, 91, 0.28)', // subtle interior gridlines
@@ -56,6 +58,68 @@ export const NEUTRAL = {
   text: '#e4e4e7', // primary in-chart text
   textDim: '#a1a1aa', // secondary in-chart text
 };
+
+// CSS custom property that backs each neutral slot. When the active theme
+// defines these (see css/app.css `--chart-*`), canvas charts pick up the
+// theme palette automatically; otherwise they fall back to the dark values
+// above. This is how light mode recolors the canvas-rendered charts/maps
+// without every call site special-casing the theme.
+const NEUTRAL_VARS = {
+  neutralFaction: '--chart-neutral-faction',
+  axis: '--chart-axis',
+  gridline: '--chart-gridline',
+  gridlineStrong: '--chart-gridline-strong',
+  trackBg: '--chart-track-bg',
+  tickLabel: '--chart-tick-label',
+  text: '--chart-text',
+  textDim: '--chart-text-dim',
+};
+
+let _cssLookup = null;
+/**
+ * Resolve a CSS custom property off `:root` at call time, trimmed. Returns
+ * an empty string when there is no DOM (Node tests) or the variable is
+ * undefined, so callers fall back to the dark defaults. Cached lazily; the
+ * cache is invalidated by {@link refreshNeutralPalette} on theme switch.
+ */
+function readCssVar(name) {
+  if (typeof document === 'undefined' || !document.documentElement) return '';
+  if (!_cssLookup) {
+    _cssLookup = getComputedStyle(document.documentElement);
+  }
+  return (_cssLookup.getPropertyValue(name) || '').trim();
+}
+
+/**
+ * Clear the cached `getComputedStyle` handle so the next neutral-color read
+ * reflects freshly-applied theme variables. Call this right after flipping
+ * `data-theme` on the document element, before redrawing charts.
+ */
+export function refreshNeutralPalette() {
+  _cssLookup = null;
+}
+
+/**
+ * Theme-aware neutral / structural chart colors. Each property reads its
+ * backing CSS variable lazily (falling back to the dark default), so the
+ * existing `NEUTRAL.gridline`-style call sites recolor on a theme switch
+ * with no code change. Read at draw time — don't destructure into a const
+ * and cache across a theme change.
+ */
+export const NEUTRAL = Object.create(
+  null,
+  Object.fromEntries(
+    Object.keys(NEUTRAL_DARK).map((key) => [
+      key,
+      {
+        enumerable: true,
+        get() {
+          return readCssVar(NEUTRAL_VARS[key]) || NEUTRAL_DARK[key];
+        },
+      },
+    ]),
+  ),
+);
 
 /**
  * Sequential single-hue ramp (light → dark blue), colorblind-safe, used

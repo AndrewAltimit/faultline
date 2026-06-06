@@ -14,10 +14,22 @@ import { readScenarioFromHash, clearScenarioHash } from './sharing.js';
 import { Tutorial } from './tutorial.js';
 import { TechCardsPanel } from './tech-cards.js';
 import { PinnedStore } from './pinned.js';
+import { ThemeController } from './theme.js';
+import { refreshNeutralPalette } from './palette.js';
 
 async function bootstrap() {
   const loading = document.getElementById('map-loading');
   const loadingText = document.getElementById('loading-text');
+
+  // Event bus first — the theme controller emits through it.
+  const bus = new EventBus();
+
+  // Apply the saved / preferred theme before anything paints, and mount the
+  // header toggle. `refreshNeutralPalette` clears the cached chart palette
+  // so canvas redraws pick up the new theme's `--chart-*` variables.
+  const theme = new ThemeController(bus, refreshNeutralPalette);
+  const navLinks = document.querySelector('.navbar .nav-links');
+  if (navLinks) theme.mountToggle(navLinks);
 
   // Show loading state.
   if (loading) loading.style.display = 'flex';
@@ -46,9 +58,16 @@ async function bootstrap() {
   // Hide loading overlay.
   if (loading) loading.style.display = 'none';
 
-  // Initialize event bus and modules.
-  const bus = new EventBus();
+  // Initialize modules.
   const map = new MapRenderer(document.getElementById('map-canvas'), bus);
+
+  // Redraw canvas surfaces when the theme flips so axes/labels/neutrals
+  // recolor immediately (the palette cache was already cleared by the
+  // controller's onChange hook).
+  bus.on('theme:changed', () => {
+    if (AppState.currentSnapshot) map.render(AppState.currentSnapshot);
+    else map.render(null);
+  });
 
   // Wire up the tutorial button.
   const tutorial = new Tutorial();
