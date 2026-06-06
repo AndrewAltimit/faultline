@@ -23,6 +23,14 @@ import {
   drawYGrid,
   drawVRule,
 } from './chart-helpers.js';
+import {
+  summaryToJSON,
+  summaryToCsv,
+  downloadText,
+  downloadCanvasPng,
+  exportFilename,
+} from './export.js';
+import { buildFeasibilityAxes } from './feasibility-radar.js';
 
 function escapeHtml(s) {
   if (s == null) return '';
@@ -123,6 +131,30 @@ export class Dashboard {
     bus.on('sim:finished', (outcome) => this._onFinished(outcome));
     bus.on('sim:reset', () => this._onReset());
     bus.on('scenario:loaded', () => this._onScenarioLoaded());
+    // Recolor the canvas charts in place when the theme flips. The chart
+    // DOM is left intact; we just re-run the draws so axes/labels/neutrals
+    // pick up the new palette.
+    bus.on('theme:changed', () => this.redrawCharts());
+  }
+
+  /**
+   * Redraw every currently-mounted Monte Carlo / sensitivity canvas chart
+   * from cached state, without rebuilding the surrounding HTML. Used on
+   * theme switch so the canvases recolor immediately. No-ops for charts
+   * whose canvas isn't in the DOM (the helpers null-check).
+   */
+  redrawCharts() {
+    const scenario = AppState.scenario;
+    const summary = AppState.mcResult?.summary;
+    if (summary) {
+      this._drawWinProbChart(summary, scenario);
+      this._drawDurationChart(summary);
+      if (summary.regional_control) this._drawRegionalChart(summary, scenario);
+      const heatmap = buildRegionalHeatmap(AppState.mcResult?.runs);
+      if (heatmap) this._drawRegionalHeatmap(heatmap, scenario);
+      this._drawFeasibilityRadar(summary);
+    }
+    if (AppState.sensResult) this._drawTornadoChart(AppState.sensResult, scenario);
   }
 
   _onScenarioLoaded() {
@@ -369,6 +401,15 @@ export class Dashboard {
     const scenario = AppState.scenario;
     let html = '';
 
+    // Export toolbar — JSON / CSV of the summary, PNG of every chart canvas.
+    html +=
+      '<div class="mc-export-bar">' +
+      '<span class="mc-export-label">Export</span>' +
+      '<button class="btn-label mc-export-btn" id="btn-export-json" title="Download the summary as JSON">JSON</button>' +
+      '<button class="btn-label mc-export-btn" id="btn-export-csv" title="Download the summary as CSV">CSV</button>' +
+      '<button class="btn-label mc-export-btn" id="btn-export-png" title="Download every chart as a PNG image">Charts PNG</button>' +
+      '</div>';
+
     // Win probability bar chart.
     html += '<div class="chart-title">Win Probability</div>';
     html += '<div class="chart-container"><canvas id="chart-win-prob" height="120"></canvas></div>';
@@ -422,6 +463,8 @@ export class Dashboard {
     html += this._renderSeamPanel(summary);
 
     this.mcResultsContainer.innerHTML = html;
+    this._bindExportButtons(summary);
+    this._bindFeasibilityToggle();
 
     // Draw charts after DOM update.
     requestAnimationFrame(() => {
@@ -433,6 +476,66 @@ export class Dashboard {
       if (heatmap) {
         this._drawRegionalHeatmap(heatmap, scenario);
       }
+      this._drawFeasibilityRadar(summary);
+    });
+  }
+
+  /** Wire the JSON / CSV / PNG export buttons to the in-memory summary. */
+  _bindExportButtons(summary) {
+    const name = AppState.scenario?.meta?.name || 'faultline-results';
+    const btnJson = document.getElementById('btn-export-json');
+    const btnCsv = document.getElementById('btn-export-csv');
+    const btnPng = document.getElementById('btn-export-png');
+    if (btnJson) {
+      btnJson.addEventListener('click', () => {
+        downloadText(
+          summaryToJSON(summary, { scenarioName: name }),
+          exportFilename(name, 'json'),
+          'application/json',
+        );
+      });
+    }
+    if (btnCsv) {
+      btnCsv.addEventListener('click', () => {
+        downloadText(
+          summaryToCsv(summary, { scenarioName: name }),
+          exportFilename(name, 'csv'),
+          'text/csv',
+        );
+      });
+    }
+    if (btnPng) {
+      btnPng.addEventListener('click', () => this._exportChartsPng(name));
+    }
+  }
+
+  /** Download every mounted chart canvas in the results panel as a PNG. */
+  _exportChartsPng(name) {
+    const canvases = this.mcResultsContainer.querySelectorAll('canvas');
+    canvases.forEach((canvas) => {
+      const id = (canvas.id || 'chart').replace(/^chart-/, '');
+      downloadCanvasPng(canvas, exportFilename(`${name}-${id}`, 'png'));
+    });
+  }
+
+  /** Toggle between the feasibility table and radar views. */
+  _bindFeasibilityToggle() {
+    const wrap = this.mcResultsContainer.querySelector('.feasibility-views');
+    if (!wrap) return;
+    wrap.querySelectorAll('.feasibility-view-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        wrap.querySelectorAll('.feasibility-view-btn').forEach((b) => {
+          b.classList.toggle('active', b === btn);
+        });
+        const table = wrap.querySelector('.feasibility-table-wrap');
+        const radar = wrap.querySelector('.feasibility-radar-wrap');
+        if (table) table.hidden = view !== 'table';
+        if (radar) radar.hidden = view !== 'radar';
+        if (view === 'radar') {
+          requestAnimationFrame(() => this._drawFeasibilityRadar(AppState.mcResult?.summary));
+        }
+      });
     });
   }
 
@@ -449,7 +552,13 @@ export class Dashboard {
     const rows = summary.feasibility_matrix || [];
     if (!rows.length) return '';
 
-    let h = '<div class="chart-title" style="margin-top: 16px;">Feasibility Matrix</div>';
+    let h = '<div class="chart-title feasibility-title" style="margin-top: 16px;">Feasibility Matrix';
+    h +=
+      '<span class="feasibility-view-switch">' +
+      '<button class="feasibility-view-btn active" data-view="table" title="Table view">Table</button>' +
+      '<button class="feasibility-view-btn" data-view="radar" title="Radar view">Radar</button>' +
+      '</span></div>';
+    h += '<div class="feasibility-views">';
     h += '<div class="feasibility-table-wrap">';
     h += '<table class="feasibility-table"><thead><tr>';
     h += '<th>Chain</th><th title="Average phase base success probability">Tech</th>';
@@ -470,6 +579,15 @@ export class Dashboard {
       </tr>`;
     }
     h += '</tbody></table></div>';
+
+    // Radar view (hidden until toggled). One closed polygon per kill chain
+    // across the seven feasibility axes, normalized to a shared [0,1] scale.
+    h += '<div class="feasibility-radar-wrap" hidden>';
+    h += '<div class="chart-container"><canvas id="chart-feasibility-radar" height="300"></canvas></div>';
+    h += '<div class="chart-legend" id="feasibility-radar-legend"></div>';
+    h += '</div>';
+
+    h += '</div>'; // .feasibility-views
     h += '<div class="chart-subtitle">Confidence: <span class="conf-H">H</span> high · <span class="conf-M">M</span> medium · <span class="conf-L">L</span> low (MC variance)</div>';
     return h;
   }
@@ -950,6 +1068,113 @@ export class Dashboard {
       ctx.fillText(`T${ticks[i]}`, x, labelY);
     }
     ctx.restore();
+  }
+
+  /**
+   * Feasibility radar: one closed polygon per kill chain over the seven
+   * feasibility axes, each normalized to a shared [0, 1] radial scale (see
+   * feasibility-radar.js). A denser, comparative alternative to the wide
+   * table — the eye can spot a chain's "shape" (e.g. high success / low
+   * detection) at a glance. All Canvas 2D, colorblind-safe palette.
+   */
+  _drawFeasibilityRadar(summary) {
+    const canvas = document.getElementById('chart-feasibility-radar');
+    if (!canvas) return;
+    const { axes, series } = buildFeasibilityAxes(summary?.feasibility_matrix);
+    if (!series.length) return;
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const h = 300;
+    const w = rect.width;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const cx = w / 2;
+    const cy = h / 2 + 4;
+    const radius = Math.max(40, Math.min(cx, cy) - 56);
+    const n = axes.length;
+    const angleFor = (i) => -Math.PI / 2 + (i / n) * 2 * Math.PI;
+    const point = (i, t) => {
+      const a = angleFor(i);
+      return [cx + Math.cos(a) * radius * t, cy + Math.sin(a) * radius * t];
+    };
+
+    // Concentric grid rings at 0.25 / 0.5 / 0.75 / 1.0.
+    ctx.save();
+    ctx.strokeStyle = NEUTRAL.gridline;
+    ctx.lineWidth = 1;
+    for (const ring of [0.25, 0.5, 0.75, 1]) {
+      ctx.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const [px, py] = point(i % n, ring);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    // Radial spokes + axis labels.
+    ctx.fillStyle = NEUTRAL.tickLabel;
+    ctx.font = '500 10px Inter, system-ui, sans-serif';
+    for (let i = 0; i < n; i++) {
+      const [ex, ey] = point(i, 1);
+      ctx.strokeStyle = NEUTRAL.gridline;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      const [lx, ly] = point(i, 1.16);
+      const a = angleFor(i);
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = Math.abs(Math.cos(a)) < 0.3 ? 'center' : Math.cos(a) > 0 ? 'left' : 'right';
+      ctx.fillText(axes[i].label, lx, ly);
+    }
+    ctx.restore();
+
+    // One polygon per kill chain.
+    series.forEach((s, si) => {
+      const color = qualitative(si);
+      ctx.save();
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const [px, py] = point(i, s.values[i]);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = withAlpha(color, 0.14);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.75;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      // Vertex dots.
+      ctx.fillStyle = color;
+      for (let i = 0; i < n; i++) {
+        const [px, py] = point(i, s.values[i]);
+        ctx.beginPath();
+        ctx.arc(px, py, 2.2, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    // Legend keyed to the same qualitative slots.
+    const legend = document.getElementById('feasibility-radar-legend');
+    if (legend) {
+      legend.innerHTML = series
+        .map(
+          (s, si) =>
+            `<span class="legend-item"><span class="legend-swatch" style="background:${qualitative(si)}"></span>${this._esc(s.chainName)}</span>`,
+        )
+        .join('');
+    }
   }
 
   // -------------------------------------------------------------------
