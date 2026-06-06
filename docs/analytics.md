@@ -14,7 +14,7 @@ For command invocations see `docs/cli.md`. For scenario schema see
 ## Monte Carlo report sections
 
 Every `cargo run -p faultline-cli -- <scenario> -n <N>` run produces a
-`report.md` in the output directory. The report contains exactly 28
+`report.md` in the output directory. The report contains exactly 29
 sections rendered in this fixed order:
 
 1. **Header** — scenario name, author, version, schema version, tags,
@@ -108,11 +108,16 @@ sections rendered in this fixed order:
     and the `true → believed` confusion-pair table. Elides unless the
     scenario opts into `belief_model.believed_attribution` and at least
     one detection fired a roll, so non-opted-in scenarios are unchanged.
-27. **Calibration** — back-testing verdict against a declared
+27. **Force Projection** — per-attacker rollup of standoff strikes
+    delivered into regions a unit reached without entering (the
+    `force_projection` standoff-strike reach). Elides unless at least
+    one unit declared a reach and connected a strike, so scenarios
+    with no `force_projection` render byte-identically.
+28. **Calibration** — back-testing verdict against a declared
     `[meta.historical_analogue]` (Pass/Marginal/Fail per observation
     plus a roll-up), or a "purely synthetic" disclaimer when no
     analogue is declared. **Always emits.**
-28. **Methodology & Confidence** — explanation of statistical methods
+29. **Methodology & Confidence** — explanation of statistical methods
     (Wilson score intervals, bootstrap CIs) and a per-scenario
     calibration-confidence tag (`[H] Pass`, `[M] Marginal`, `[L]
     Fail`) when an analogue is declared and runs are available.
@@ -126,7 +131,7 @@ It is decomposed one file per section:
 ```
 crates/faultline-stats/src/report/
   mod.rs                 — public API, ReportSection trait, monte_carlo_sections() array
-  <section>.rs           — one file per Monte Carlo section (27 total)
+  <section>.rs           — one file per Monte Carlo section (28 total)
   coevolve.rs            — render_coevolve_markdown (co-evolution report type)
   comparison.rs          — render_comparison_markdown (counterfactual/comparison)
   robustness.rs          — render_robustness_markdown (robustness report type)
@@ -145,7 +150,7 @@ pub trait ReportSection {
 
 Each section struct implements the trait and owns its own elision
 logic. The composer (`render_markdown`) simply iterates
-`monte_carlo_sections()` — a `[&'static dyn ReportSection; 28]` array
+`monte_carlo_sections()` — a `[&'static dyn ReportSection; 29]` array
 — and calls `render` on each entry. The composer never grows
 conditional chains.
 

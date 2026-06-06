@@ -28,7 +28,7 @@ here when you need depth on a particular area:
 |-----|--------|
 | [docs/cli.md](docs/cli.md) | Full CLI reference — every flag, run mode, output artifact, and bundled-archetype demo command. |
 | [docs/engine-model.md](docs/engine-model.md) | The per-tick simulation model: phase order, combat, diplomacy, supply, defender capacity, leadership, narrative/displacement, command effectiveness, multi-term utility AI, belief asymmetry. |
-| [docs/analytics.md](docs/analytics.md) | What Faultline computes across runs: the 28 Monte Carlo report sections, report module layout, search / robustness / co-evolution, calibration, and scenario explain. |
+| [docs/analytics.md](docs/analytics.md) | What Faultline computes across runs: the 29 Monte Carlo report sections, report module layout, search / robustness / co-evolution, calibration, and scenario explain. |
 | [docs/parameter-audit.md](docs/parameter-audit.md) | The R3-2 effort to wire up previously-silent scenario parameters, plus the closed-vs-deferred status. |
 | [docs/testing-and-ci.md](docs/testing-and-ci.md) | How to run tests, the property-test suites, the 10-stage CI pipeline, the GitHub Actions workflows, and the advisory exemption. |
 | [docs/scenario_schema.md](docs/scenario_schema.md) | The complete scenario TOML schema reference. |

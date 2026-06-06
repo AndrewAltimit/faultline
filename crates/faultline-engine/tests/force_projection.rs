@@ -186,6 +186,12 @@ fn build_scenario(
             confidence: None,
             schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
             historical_analogue: None,
+            analytical_purpose: None,
+            scenario_type: None,
+            osint_sources: vec![],
+            red_team_profile: None,
+            blue_team_posture: None,
+            sensitivity_parameters: vec![],
         },
         map: MapConfig {
             source: MapSource::Grid {
