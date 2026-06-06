@@ -6,7 +6,9 @@
 use wasm_bindgen::prelude::*;
 
 use faultline_engine::{Engine, validate_scenario};
-use faultline_stats::{MonteCarloRunner, sensitivity::run_sensitivity};
+use faultline_stats::{
+    MonteCarloRunner, explain, sensitivity::run_sensitivity, warnings::collect_warnings,
+};
 use faultline_types::migration::{CURRENT_SCHEMA_VERSION, LoadedScenario, load_scenario_str};
 use faultline_types::scenario::Scenario;
 use faultline_types::stats::MonteCarloConfig;
@@ -119,6 +121,85 @@ pub fn validate_scenario_wasm(toml_str: &str) -> Result<JsValue, JsValue> {
 
     serde_wasm_bindgen::to_value(&serde_json::json!({ "valid": true }))
         .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// Advisory warnings (non-fatal, no sim)
+// ---------------------------------------------------------------------------
+
+/// Run the non-fatal advisory checks over a scenario without simulating.
+///
+/// Surfaces modelling smells the hard validator deliberately permits:
+/// a faction named by no victory condition, a region referenced by
+/// nothing, a kill-chain phase unreachable from its entry phase. The
+/// check logic lives in [`faultline_stats::warnings`] so it is testable
+/// in Rust and reusable by the CLI.
+///
+/// Returns the serialized [`WarningReport`](faultline_stats::warnings::WarningReport)
+/// — `{ "warnings": [ { kind, subject, message }, ... ] }`. An empty
+/// array means the scenario passed every advisory check. Unlike
+/// [`validate_scenario_wasm`], a scenario that trips these still loads
+/// and runs; the panel is purely advisory.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string only if the TOML fails to parse /
+/// migrate — i.e. the scenario could not be loaded at all. A loadable
+/// scenario always yields a (possibly empty) report rather than an error.
+#[wasm_bindgen]
+pub fn scenario_warnings_wasm(toml_str: &str) -> Result<JsValue, JsValue> {
+    let scenario = parse_scenario(toml_str)?;
+
+    let report = collect_warnings(&scenario);
+
+    serde_wasm_bindgen::to_value(&report)
+        .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// Explain (pure-schema "what does this scenario model?")
+// ---------------------------------------------------------------------------
+
+/// Produce the structured "what does this scenario actually model?"
+/// explainer for the editor's Explain button.
+///
+/// Calls the same [`faultline_stats::explain`] producer and Markdown
+/// renderer the CLI's `--explain` flag uses, so the in-app view never
+/// forks from the CLI output. Returns a JSON object with two keys:
+///
+/// - `markdown`: the rendered Markdown string (what the panel displays);
+/// - `report`: the structured [`ExplainReport`](faultline_stats::explain::ExplainReport)
+///   for any downstream tooling that wants the data, not the prose.
+///
+/// # Errors
+///
+/// Returns a `JsValue` error string if the TOML fails to parse / migrate.
+#[wasm_bindgen]
+pub fn explain_scenario_wasm(toml_str: &str) -> Result<JsValue, JsValue> {
+    let scenario = parse_scenario(toml_str)?;
+
+    let report = explain::explain(&scenario);
+    let markdown = explain::render_markdown(&report);
+
+    // Serialize the structured report to a JsValue, then bundle it with
+    // the rendered Markdown under a stable two-key envelope. We build the
+    // envelope with js_sys so the `report` value keeps serde_wasm_bindgen's
+    // native shape (Maps for BTreeMaps, etc.) rather than being flattened
+    // through serde_json.
+    let report_value = serde_wasm_bindgen::to_value(&report)
+        .map_err(|e| JsValue::from_str(&format!("serialization error: {e}")))?;
+
+    let out = js_sys::Object::new();
+    js_sys::Reflect::set(
+        &out,
+        &JsValue::from_str("markdown"),
+        &JsValue::from_str(&markdown),
+    )
+    .map_err(|_| JsValue::from_str("failed to set markdown field"))?;
+    js_sys::Reflect::set(&out, &JsValue::from_str("report"), &report_value)
+        .map_err(|_| JsValue::from_str("failed to set report field"))?;
+
+    Ok(out.into())
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +430,65 @@ mod tests {
         let mut scenario = load_toml(TUTORIAL_TOML);
         scenario.factions.clear();
         assert!(validate_scenario(&scenario).is_err());
+    }
+
+    // -- Advisory warnings (scenario_warnings_wasm underlying logic) ------
+
+    #[test]
+    fn warnings_tutorial_is_clean() {
+        // The wasm export serializes whatever collect_warnings returns;
+        // exercise that call so the export's contract is pinned natively.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let report = collect_warnings(&scenario);
+        assert!(
+            report.is_empty(),
+            "tutorial should be advisory-clean, got {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn warnings_report_serializes_to_json() {
+        // The browser consumes the JSON shape `{ warnings: [...] }`;
+        // confirm the report round-trips through serde_json with the
+        // field names the JS panel reads.
+        let mut scenario = load_toml(TUTORIAL_TOML);
+        scenario
+            .victory_conditions
+            .retain(|_, vc| vc.faction.0 != "bravo");
+        let report = collect_warnings(&scenario);
+        let json = serde_json::to_string(&report).expect("report should serialize");
+        assert!(json.contains("\"warnings\""));
+        assert!(json.contains("\"faction_no_objective\""));
+        assert!(json.contains("\"subject\""));
+        assert!(json.contains("\"message\""));
+    }
+
+    // -- Explain (explain_scenario_wasm underlying logic) ----------------
+
+    #[test]
+    fn explain_produces_markdown_and_report() {
+        // Mirror what explain_scenario_wasm does after parsing: build the
+        // report and render its Markdown, the two payloads the export
+        // bundles into its JS envelope.
+        let scenario = load_toml(TUTORIAL_TOML);
+        let report = explain::explain(&scenario);
+        let markdown = explain::render_markdown(&report);
+
+        assert_eq!(report.scale.factions, 2);
+        assert!(
+            markdown.contains("Tutorial"),
+            "explain markdown should mention the scenario name"
+        );
+        assert!(
+            markdown.contains('#'),
+            "explain output should be Markdown with headings"
+        );
+
+        // The structured report must serialize for the `report` envelope key.
+        let json = serde_json::to_string(&report).expect("explain report should serialize");
+        assert!(json.contains("\"factions\""));
+        assert!(json.contains("\"scale\""));
     }
 
     // -- Engine lifecycle (WasmEngine logic paths) -----------------------

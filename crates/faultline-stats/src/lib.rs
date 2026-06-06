@@ -27,6 +27,7 @@ pub mod sensitivity;
 pub mod time_dynamics;
 pub mod uncertainty;
 pub mod utility_decomposition;
+pub mod warnings;
 
 use std::collections::BTreeMap;
 

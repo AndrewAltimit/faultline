@@ -6,6 +6,7 @@ import { PRESETS } from './presets.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildShareUrl } from './sharing.js';
 import { renderDiff } from './diff.js';
+import { renderWarnings, warningsClean, renderExplain } from './explain-panel.js';
 /** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 
 export class Editor {
@@ -24,6 +25,7 @@ export class Editor {
     this.textarea = document.getElementById('toml-editor');
     this.presetSelect = document.getElementById('preset-select');
     this.btnValidate = document.getElementById('btn-validate');
+    this.btnExplain = document.getElementById('btn-explain');
     this.btnLoad = document.getElementById('btn-load');
     this.btnDiff = document.getElementById('btn-diff');
     this.btnImport = document.getElementById('btn-import');
@@ -31,6 +33,8 @@ export class Editor {
     this.btnShare = document.getElementById('btn-share');
     this.fileInput = document.getElementById('file-import');
     this.validationMsg = document.getElementById('validation-msg');
+    this.warningsPanel = document.getElementById('warnings-panel');
+    this.explainPanel = document.getElementById('explain-panel');
 
     // Last preset/imported text — used as one of the diff baselines so
     // the user can see "what I changed since loading this scenario".
@@ -57,6 +61,7 @@ export class Editor {
     // Event listeners.
     this.presetSelect.addEventListener('change', () => this._loadPreset());
     this.btnValidate.addEventListener('click', () => this._validate());
+    if (this.btnExplain) this.btnExplain.addEventListener('click', () => this._explain());
     this.btnLoad.addEventListener('click', () => this._loadAndRun());
     if (this.btnDiff) this.btnDiff.addEventListener('click', () => this._openDiff());
     this.btnImport.addEventListener('click', () => this.fileInput.click());
@@ -156,6 +161,77 @@ export class Editor {
       this._showError(String(e));
       return false;
     }
+  }
+
+  /**
+   * Explain the current scenario without running a simulation: render the
+   * structured "what does this scenario model?" summary (same producer as
+   * the CLI `--explain`) and surface the inline advisory-warnings panel
+   * (factions with no objective, unreferenced regions, unreachable
+   * kill-chain phases).
+   *
+   * Both call into WASM exports that load the scenario but never simulate,
+   * so this stays cheap enough to run on demand. A scenario that fails to
+   * load (bad TOML, refused migration) surfaces the load error in the
+   * usual validation message and leaves the panels hidden.
+   */
+  _explain() {
+    const toml = this.textarea.value.trim();
+    if (!toml) {
+      this._showError('No TOML content to explain');
+      return;
+    }
+
+    // Advisory warnings — non-fatal. A loadable scenario always yields a
+    // (possibly empty) report; only a load failure throws.
+    let warningsReport;
+    try {
+      warningsReport = mapsToObjects(this.wasm.scenario_warnings_wasm(toml));
+    } catch (e) {
+      this._showError(String(e));
+      this._hidePanels();
+      return;
+    }
+    this._showWarnings(warningsReport);
+
+    // Explain summary. The export returns `{ markdown, report }`; we
+    // render the Markdown verbatim in the panel.
+    try {
+      const result = mapsToObjects(this.wasm.explain_scenario_wasm(toml));
+      this._showExplain(result && result.markdown ? result.markdown : '');
+      this._showSuccess('Scenario explained');
+    } catch (e) {
+      this._showError(String(e));
+      this._hideExplain();
+    }
+  }
+
+  _showWarnings(report) {
+    if (!this.warningsPanel) return;
+    this.warningsPanel.innerHTML = renderWarnings(report);
+    this.warningsPanel.classList.toggle('clean', warningsClean(report));
+    this.warningsPanel.hidden = false;
+  }
+
+  _showExplain(markdown) {
+    if (!this.explainPanel) return;
+    this.explainPanel.innerHTML = renderExplain(markdown);
+    this.explainPanel.hidden = false;
+  }
+
+  _hideExplain() {
+    if (this.explainPanel) {
+      this.explainPanel.hidden = true;
+      this.explainPanel.innerHTML = '';
+    }
+  }
+
+  _hidePanels() {
+    if (this.warningsPanel) {
+      this.warningsPanel.hidden = true;
+      this.warningsPanel.innerHTML = '';
+    }
+    this._hideExplain();
   }
 
   _loadAndRun() {
@@ -367,5 +443,8 @@ export class Editor {
   _clearValidation() {
     this.validationMsg.className = '';
     this.validationMsg.textContent = '';
+    // Stale explain / warnings output for the previous scenario would be
+    // misleading once a new preset / import replaces the editor text.
+    this._hidePanels();
   }
 }
