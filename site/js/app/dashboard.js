@@ -513,6 +513,10 @@ export class Dashboard {
   _exportChartsPng(name) {
     const canvases = this.mcResultsContainer.querySelectorAll('canvas');
     canvases.forEach((canvas) => {
+      // Skip canvases inside a hidden container (e.g. the feasibility radar
+      // while the table view is active); they are blank/unrendered and would
+      // export as a transparent default-sized PNG.
+      if (canvas.closest('[hidden]')) return;
       const id = (canvas.id || 'chart').replace(/^chart-/, '');
       downloadCanvasPng(canvas, exportFilename(`${name}-${id}`, 'png'));
     });
@@ -520,12 +524,16 @@ export class Dashboard {
 
   /** Toggle between the feasibility table and radar views. */
   _bindFeasibilityToggle() {
+    // The toggle buttons live in `.feasibility-view-switch` (inside the title),
+    // while the table/radar panes live in the sibling `.feasibility-views`, so
+    // query each from the shared results container rather than from one wrap.
+    const btns = this.mcResultsContainer.querySelectorAll('.feasibility-view-btn');
     const wrap = this.mcResultsContainer.querySelector('.feasibility-views');
-    if (!wrap) return;
-    wrap.querySelectorAll('.feasibility-view-btn').forEach((btn) => {
+    if (!btns.length || !wrap) return;
+    btns.forEach((btn) => {
       btn.addEventListener('click', () => {
         const view = btn.dataset.view;
-        wrap.querySelectorAll('.feasibility-view-btn').forEach((b) => {
+        btns.forEach((b) => {
           b.classList.toggle('active', b === btn);
         });
         const table = wrap.querySelector('.feasibility-table-wrap');
