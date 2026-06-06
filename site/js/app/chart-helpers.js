@@ -23,14 +23,26 @@ import { NEUTRAL } from './palette.js';
  */
 export function percentile(values, p) {
   const xs = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
-  if (xs.length === 0) return NaN;
-  if (xs.length === 1) return xs[0];
-  const rank = (clamp(p, 0, 100) / 100) * (xs.length - 1);
+  return percentileSorted(xs, p);
+}
+
+/**
+ * Percentile of an array that is ALREADY filtered + ascending-sorted. Lets
+ * callers that need several percentiles of the same data sort once.
+ *
+ * @param {number[]} sorted
+ * @param {number} p
+ * @returns {number}
+ */
+function percentileSorted(sorted, p) {
+  if (sorted.length === 0) return NaN;
+  if (sorted.length === 1) return sorted[0];
+  const rank = (clamp(p, 0, 100) / 100) * (sorted.length - 1);
   const lo = Math.floor(rank);
   const hi = Math.ceil(rank);
-  if (lo === hi) return xs[lo];
+  if (lo === hi) return sorted[lo];
   const frac = rank - lo;
-  return xs[lo] + (xs[hi] - xs[lo]) * frac;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
 }
 
 /**
@@ -57,15 +69,17 @@ export function summaryStats(values) {
   let varSum = 0;
   for (const v of xs) varSum += (v - mean) * (v - mean);
   const std = n > 1 ? Math.sqrt(varSum / (n - 1)) : 0;
+  // Sort once for all three percentiles instead of re-sorting per call.
+  const sorted = xs.slice().sort((a, b) => a - b);
   return {
     n,
     min,
     max,
     mean,
     std,
-    p5: percentile(xs, 5),
-    p50: percentile(xs, 50),
-    p95: percentile(xs, 95),
+    p5: percentileSorted(sorted, 5),
+    p50: percentileSorted(sorted, 50),
+    p95: percentileSorted(sorted, 95),
   };
 }
 
@@ -109,8 +123,14 @@ export function kde(values, opts = {}) {
   if (xs.length < 2) return null;
   const samples = Math.max(2, opts.samples || 96);
   const bandwidth = opts.bandwidth && opts.bandwidth > 0 ? opts.bandwidth : silvermanBandwidth(xs);
-  let lo = Math.min(...xs);
-  let hi = Math.max(...xs);
+  // Loop rather than spread: Math.min(...xs)/Math.max(...xs) blow the
+  // call-stack argument limit (~125k) on long MC runs.
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of xs) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
   if (lo === hi) {
     // Degenerate (all identical) — widen so we still draw a spike.
     lo -= 1;
@@ -209,7 +229,7 @@ export function drawXGrid(ctx, opts) {
 
 /** Horizontal gridlines + y-axis tick labels at the given data values. */
 export function drawYGrid(ctx, opts) {
-  const { left, right, yScale, ticks, fmt, labelX } = opts;
+  const { left, right, top, bottom, yScale, ticks, fmt, labelX } = opts;
   ctx.save();
   ctx.font = '400 9px "JetBrains Mono", monospace';
   ctx.textAlign = 'right';
@@ -217,6 +237,10 @@ export function drawYGrid(ctx, opts) {
   ctx.lineWidth = 1;
   for (const t of ticks) {
     const py = Math.round(yScale(t)) + 0.5;
+    // Skip ticks that snap outside the plot area (mirrors drawXGrid). The
+    // guard is a no-op when top/bottom are omitted.
+    if (top != null && py < top - 0.5) continue;
+    if (bottom != null && py > bottom + 0.5) continue;
     ctx.strokeStyle = NEUTRAL.gridline;
     ctx.beginPath();
     ctx.moveTo(left, py);

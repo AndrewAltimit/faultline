@@ -692,27 +692,31 @@ input[type="range"]::-moz-range-thumb {
   flex-shrink: 0;
 }
 
-/* Colorblind-safe (Okabe-Ito) swatches matching the canvas chart series. */
+/*
+ * Colorblind-safe (Okabe-Ito) swatches matching the canvas chart series.
+ * Only structure lives here; the actual colors are injected inline by
+ * dashboard.js from the shared palette so the legend can never desync from
+ * the rendered series.
+ */
 .legend-band {
-  background: rgba(0, 114, 178, 0.18);
-  border: 1px solid rgba(0, 114, 178, 0.45);
+  border: 1px solid;
 }
 
 .legend-kde {
   height: 0;
-  border-top: 2px solid #e69f00;
+  border-top: 2px solid;
   border-radius: 0;
 }
 
 .legend-median {
   height: 0;
-  border-top: 2px solid #cc79a7;
+  border-top: 2px solid;
   border-radius: 0;
 }
 
 .legend-mean {
   height: 0;
-  border-top: 2px dashed #009e73;
+  border-top: 2px dashed;
   border-radius: 0;
 }
 

@@ -375,12 +375,19 @@ export class Dashboard {
     // Duration histogram + KDE overlay + p5–p95 band.
     html += '<div class="chart-title">Duration Distribution</div>';
     html += '<div class="chart-container"><canvas id="chart-duration" height="160"></canvas></div>';
+    // Swatch colors are derived from the same palette slots the canvas chart
+    // uses (band=qualitative(0), KDE=1, mean=2, median=3) so a palette change
+    // can never silently desync the legend from the rendered series.
+    const cBand = qualitative(0);
+    const cKde = qualitative(1);
+    const cMean = qualitative(2);
+    const cMedian = qualitative(3);
     html +=
       '<div class="chart-legend">' +
-      '<span class="legend-item"><span class="legend-swatch legend-band"></span>p5–p95</span>' +
-      '<span class="legend-item"><span class="legend-swatch legend-kde"></span>density (KDE)</span>' +
-      '<span class="legend-item"><span class="legend-swatch legend-median"></span>median</span>' +
-      '<span class="legend-item"><span class="legend-swatch legend-mean"></span>mean</span>' +
+      `<span class="legend-item"><span class="legend-swatch legend-band" style="background:${withAlpha(cBand, 0.18)};border-color:${withAlpha(cBand, 0.45)}"></span>p5–p95</span>` +
+      `<span class="legend-item"><span class="legend-swatch legend-kde" style="border-top-color:${cKde}"></span>density (KDE)</span>` +
+      `<span class="legend-item"><span class="legend-swatch legend-median" style="border-top-color:${cMedian}"></span>median</span>` +
+      `<span class="legend-item"><span class="legend-swatch legend-mean" style="border-top-color:${cMean}"></span>mean</span>` +
       '</div>';
 
     // Summary stats.
@@ -707,6 +714,8 @@ export class Dashboard {
     drawYGrid(ctx, {
       left: padding.left,
       right: w - padding.right,
+      top: plotTop,
+      bottom: plotBottom,
       yScale,
       ticks: niceTicks(0, maxCount, 4),
       fmt: (t) => String(Math.round(t)),
