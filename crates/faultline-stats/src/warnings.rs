@@ -199,8 +199,24 @@ fn check_unreferenced_regions(scenario: &Scenario, out: &mut Vec<Warning>) {
     for kc in scenario.kill_chains.values() {
         for phase in kc.phases.values() {
             for output in &phase.outputs {
-                if let PhaseOutput::InfraDamage { region, .. } = output {
-                    referenced.insert(region.clone());
+                // Exhaustive on purpose: `InfraDamage` is the only output
+                // that names a `RegionId` today. Listing the rest forces a
+                // compile error here the moment a new region-bearing variant
+                // is added, so it can never silently produce a false-positive
+                // `UnreferencedRegion` advisory.
+                match output {
+                    PhaseOutput::InfraDamage { region, .. } => {
+                        referenced.insert(region.clone());
+                    },
+                    PhaseOutput::IntelligenceGain { .. }
+                    | PhaseOutput::TensionDelta { .. }
+                    | PhaseOutput::MoraleDelta { .. }
+                    | PhaseOutput::InformationDominance { .. }
+                    | PhaseOutput::InstitutionalErosion { .. }
+                    | PhaseOutput::CoercionPressure { .. }
+                    | PhaseOutput::PoliticalCost { .. }
+                    | PhaseOutput::Custom { .. }
+                    | PhaseOutput::LeadershipDecapitation { .. } => {},
                 }
             }
         }

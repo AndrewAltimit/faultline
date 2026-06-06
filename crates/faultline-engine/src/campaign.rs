@@ -563,7 +563,13 @@ fn draw_believed_attribution(
     // `first` is purely defensive against a pathological all-zero set.
     let chosen = if total > 0.0 {
         let mut roll = rng.r#gen::<f64>() * total;
-        let mut pick = first.clone();
+        // Default to the final bucket: if floating-point accumulation in
+        // `total` lets `roll` reach the sum of all weights, the subtractive
+        // walk exhausts without a strict `roll < w` hit, and the residual
+        // mass logically belongs to the last candidate, not the first.
+        let mut pick = weights
+            .last()
+            .map_or_else(|| first.clone(), |(fid, _)| fid.clone());
         for (fid, w) in &weights {
             if roll < *w {
                 pick = fid.clone();
