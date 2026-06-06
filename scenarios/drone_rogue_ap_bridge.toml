@@ -1,0 +1,797 @@
+# Drone-Delivered Rogue-AP Network Bridge — Defensive Planning Wargame
+# =====================================================================
+#
+# Cyber-physical convergence archetype. A drone emplaces a battery- or
+# solar-powered rogue wireless access point (Wi-Fi / cellular relay) on
+# or adjacent to a target facility, bridging an over-the-air foothold
+# into a segmented operational-technology (OT) network that the operator
+# assumed was isolated from the internet. The campaign is a multi-phase
+# kill chain that crosses the seam between counter-UAS (the airborne
+# delivery vehicle), physical security (the emplaced device), wireless /
+# RF monitoring (the rogue beacon), and network / OT security (the
+# segmentation the bridge defeats).
+#
+# Analytical purpose: quantify the defender's detection window and
+# cost-asymmetry against an adversary that uses an aerial delivery vehicle
+# to defeat physical access controls and an over-the-air bridge to defeat
+# network segmentation — i.e., the doctrinal gap that opens when a SOC
+# watches the wired network, a physical-security team watches the
+# perimeter, a C-UAS team watches the airspace, and an RF cell watches the
+# spectrum, but no single owner watches the *convergence* of all four.
+#
+# Modeling approach: a six-phase kill chain (airspace ingress -> device
+# emplacement -> rogue-AP beacon -> segmentation bridge -> OT enumeration
+# -> manipulation/exfiltration). The defender is modeled with a bounded
+# investigative queue (a tier-1 SOC cell) that a noisy enumeration phase
+# floods, so a later quiet phase rolls its detection against a saturated
+# queue — the alert-fatigue mechanism. Analytical outputs are the
+# feasibility matrix, cost-asymmetry ratio, detection rate, attribution
+# confidence, and cross-domain seam exploitation surfaced in the report.
+#
+# OSINT provenance (aggregate statistical effects only — describe effects,
+# not implementations; no exploit, configuration, or tradecraft detail):
+#   - CISA public advisories on UAS threats and ICS/OT security, and the
+#     guidance on rogue/unauthorized wireless devices on enterprise and
+#     OT networks.
+#   - NIST SP 800-82 (Guide to ICS Security) and NIST guidance on network
+#     segmentation and wireless security, at the control-effect level.
+#   - GAO reporting on C-UAS coordination gaps and critical-infrastructure
+#     cybersecurity.
+#   - RAND public research on small-UAS adversary capabilities.
+#   - Published SOC-economics surveys (alert volumes, triage throughput,
+#     median dwell time) used to size the defender investigative queue.
+#   - Open security-research literature on rogue access points, wireless
+#     bridging, and air-gap / segmentation assumptions.
+# No classified, CUI, or export-controlled material is used. This is a
+# defensive-planning wargame, not an operational playbook.
+
+# Budget caps. The full chain's maximum attacker spend is well under the
+# cap; the cap is non-binding and present for completeness. The defender
+# cap is sized so a successful late-phase OT manipulation can push the
+# defender past it, exercising the over-budget detection penalty.
+attacker_budget = 200_000.0
+defender_budget = 60_000_000.0
+
+[meta]
+schema_version = 1
+name = "Drone-Delivered Rogue-AP Network Bridge"
+description = """
+Cyber-physical convergence wargame. A drone emplaces a rogue wireless
+access point adjacent to a target facility, bridging an over-the-air
+foothold into a segmented OT network the operator assumed was isolated.
+A six-phase kill chain (airspace ingress, device emplacement, rogue-AP
+beacon, segmentation bridge, OT enumeration, manipulation/exfiltration)
+crosses the counter-UAS / physical-security / RF-monitoring / network-OT
+seams. A noisy enumeration phase floods the defender's tier-1 investigative
+queue so the quiet bridge phase rolls detection against a saturated SOC.
+Outputs are the detection window, cost-asymmetry ratio, attribution
+confidence, and cross-domain seam exploitation.
+
+Parameters are aggregate statistical effects from public CISA UAS/ICS
+advisories, NIST SP 800-82, GAO C-UAS reporting, RAND small-UAS research,
+SOC-economics surveys, and open rogue-AP / segmentation research. No
+exploit, configuration, or tradecraft detail is encoded.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["kill-chain", "cyber-physical", "rogue-ap", "drone", "ot-security", "segmentation", "defensive-planning", "c-uas", "alert-fatigue"]
+confidence = "Medium"
+scenario_type = "red_team"
+analytical_purpose = "Quantify the defender's detection window and cost-asymmetry against a drone-delivered rogue-AP bridge that defeats physical access controls with an aerial delivery vehicle and defeats network segmentation with an over-the-air foothold, when counter-UAS, physical security, RF monitoring, and network/OT defense are owned by separate teams and no one watches their convergence."
+red_team_profile = "Capable cyber-physical adversary using a small uncrewed aircraft to emplace a battery/solar rogue wireless access point on or adjacent to a target facility, bridging into a segmented OT network. Tradecraft includes a deliberately noisy network-enumeration phase that floods the defender's tier-1 triage queue so the quiet bridge phase evades a saturated SOC. Composite open-source profile; not a model of any specific named group."
+blue_team_posture = "Critical-infrastructure operator with a fragmented defensive posture: a SOC watching the wired enterprise network with bounded tier-1/tier-2 triage capacity, a physical-security team watching the perimeter, a counter-UAS team watching the airspace, and an RF cell watching the spectrum — organizationally separated, so the cross-domain convergence is the measured gap. Defends with OT segmentation, rogue-device detection, and wireless intrusion monitoring controls."
+osint_sources = [
+    "CISA public advisories on UAS threats, ICS/OT security, and unauthorized/rogue wireless devices",
+    "NIST SP 800-82 (Guide to ICS Security) and NIST guidance on network segmentation and wireless security (control-effect level)",
+    "GAO reporting on C-UAS coordination gaps and critical-infrastructure cybersecurity",
+    "RAND public research on small-UAS adversary capabilities",
+    "Published SOC-economics surveys on alert volumes, triage throughput, and median intrusion dwell time",
+    "Open security-research literature on rogue access points, wireless bridging, and segmentation assumptions",
+]
+sensitivity_parameters = [
+    "rogue-AP beacon detection_probability_per_tick (RF monitoring coverage)",
+    "tier-1 SOC service_rate and saturated_detection_factor (alert-fatigue depth)",
+    "segmentation-bridge base_success_probability (OT segmentation strength)",
+    "airspace-ingress detection_probability_per_tick (C-UAS coverage)",
+]
+
+# ============================================================================
+# Map — a single critical-infrastructure facility with IT / OT separation
+# ============================================================================
+#
+# A 2x2 grid abstracting the facility's domains:
+#   perimeter_airspace  -- the airspace the drone transits (C-UAS owner)
+#   facility_perimeter  -- the physical grounds where the AP is emplaced
+#   enterprise_it       -- the wired enterprise network (SOC owner)
+#   ot_segment          -- the segmented operational-technology network
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.perimeter_airspace]
+id = "perimeter_airspace"
+name = "Facility Perimeter Airspace"
+population = 0
+urbanization = 0.4
+initial_control = "facility_operator"
+strategic_value = 4.0
+borders = ["facility_perimeter", "enterprise_it"]
+
+[map.regions.facility_perimeter]
+id = "facility_perimeter"
+name = "Facility Physical Perimeter"
+population = 1_200
+urbanization = 0.7
+initial_control = "facility_operator"
+strategic_value = 6.0
+borders = ["perimeter_airspace", "enterprise_it", "ot_segment"]
+
+[map.regions.enterprise_it]
+id = "enterprise_it"
+name = "Enterprise IT Network"
+population = 800
+urbanization = 0.9
+initial_control = "facility_operator"
+strategic_value = 7.0
+borders = ["perimeter_airspace", "facility_perimeter", "ot_segment"]
+
+[map.regions.ot_segment]
+id = "ot_segment"
+name = "Segmented OT Network"
+population = 150
+urbanization = 0.9
+initial_control = "facility_operator"
+strategic_value = 10.0
+borders = ["facility_perimeter", "enterprise_it"]
+
+[map.infrastructure.ot_controllers]
+id = "ot_controllers"
+name = "OT Process Controllers"
+region = "ot_segment"
+infra_type = "SupplyChain"
+criticality = 1.0
+initial_status = 1.0
+repairable = 12
+
+[map.infrastructure.enterprise_dir]
+id = "enterprise_dir"
+name = "Enterprise Directory & Auth"
+region = "enterprise_it"
+infra_type = "Internet"
+criticality = 0.8
+initial_status = 1.0
+repairable = 8
+
+[[map.terrain]]
+region = "perimeter_airspace"
+terrain_type = "Suburban"
+movement_modifier = 1.4
+defense_modifier = 0.4
+visibility = 0.5
+
+[[map.terrain]]
+region = "facility_perimeter"
+terrain_type = "Urban"
+movement_modifier = 0.7
+defense_modifier = 1.4
+visibility = 0.75
+
+[[map.terrain]]
+region = "enterprise_it"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 0.5
+
+[[map.terrain]]
+region = "ot_segment"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.2
+visibility = 0.4
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.facility_operator]
+id = "facility_operator"
+name = "Critical-Infrastructure Operator"
+description = "Operator of a critical-infrastructure facility with an organizationally fragmented defensive posture: a SOC watching the wired enterprise network with bounded triage capacity, plus separate physical-security, counter-UAS, and RF-monitoring teams. The cross-domain convergence between those teams is the doctrinal gap under test."
+color = "#1f4e79"
+tech_access = ["ot_segmentation", "rogue_device_detection", "wireless_ids", "cuas_perimeter_watch"]
+initial_morale = 0.78
+logistics_capacity = 500.0
+initial_resources = 9000.0
+resource_rate = 90.0
+command_resilience = 0.7
+intelligence = 0.7
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.facility_operator.faction_type]
+kind = "Government"
+
+[factions.facility_operator.faction_type.institutions.soc]
+id = "soc"
+name = "Security Operations Center"
+institution_type = "Intelligence"
+loyalty = 0.85
+effectiveness = 0.65
+personnel = 60
+fracture_threshold = 0.35
+
+[factions.facility_operator.faction_type.institutions.physical_security]
+id = "physical_security"
+name = "Physical Security & Guard Force"
+institution_type = "LawEnforcement"
+loyalty = 0.88
+effectiveness = 0.7
+personnel = 120
+fracture_threshold = 0.3
+
+[factions.facility_operator.faction_type.institutions.ot_engineering]
+id = "ot_engineering"
+name = "OT / Controls Engineering"
+institution_type = "FederalAgency"
+loyalty = 0.82
+effectiveness = 0.6
+personnel = 40
+fracture_threshold = 0.4
+
+# Tier-1 SOC triage queue. Capacity is set below the noisy-enumeration
+# phase's burst rate so a backlog accumulates, persisting into the quiet
+# bridge phase's detection window — the alert-fatigue mechanism. Service
+# rate and saturated factor are sized from published SOC-economics surveys
+# (analyst-shift triage throughput; alert-fatigue catch-rate degradation).
+[factions.facility_operator.defender_capacities.tier1_triage]
+id = "tier1_triage"
+name = "Tier-1 SOC Alert Triage"
+description = "Initial alert pipeline watching the wired enterprise network: high volume, low context, bounded analyst throughput. A flood of low-context enumeration alerts saturates the queue, so genuine signal from the over-the-air bridge sits in backlog and is rolled against an impaired catch rate. Overflow is Backlog because real ticketing systems accumulate rather than drop alerts; the cost is the impaired catch rate during dig-out, sized from published SOC-economics surveys."
+queue_depth = 80
+service_rate = 9.0
+overflow = "Backlog"
+saturated_detection_factor = 0.35
+
+[factions.facility_operator.forces.guard_force]
+id = "guard_force"
+name = "Guard Force"
+unit_type = "LawEnforcement"
+region = "facility_perimeter"
+strength = 120.0
+mobility = 0.6
+upkeep = 8.0
+morale_modifier = 0.05
+capabilities = []
+
+[factions.facility_operator.forces.soc_analysts]
+id = "soc_analysts"
+name = "SOC Analyst Cell"
+unit_type = "CyberUnit"
+region = "enterprise_it"
+strength = 70.0
+mobility = 0.1
+upkeep = 7.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.facility_operator.forces.cuas_watch]
+id = "cuas_watch"
+name = "Counter-UAS Watch"
+unit_type = "AirDefense"
+region = "perimeter_airspace"
+strength = 45.0
+mobility = 0.4
+upkeep = 6.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.threat_actor]
+id = "threat_actor"
+name = "Cyber-Physical Threat Actor"
+description = "Capable adversary converging an aerial delivery vehicle with an over-the-air network bridge to defeat both physical access controls and network segmentation. A forcing function for quantifying the defender's cross-domain seam; composite open-source profile, not a model of any specific named group."
+color = "#8e2a2a"
+tech_access = ["delivery_uas", "rogue_ap_relay"]
+initial_morale = 0.9
+logistics_capacity = 40.0
+initial_resources = 300.0
+resource_rate = 4.0
+command_resilience = 0.55
+intelligence = 0.7
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.threat_actor.faction_type]
+kind = "Insurgent"
+
+[factions.threat_actor.forces.delivery_drone]
+id = "delivery_drone"
+name = "Delivery UAS Element"
+unit_type = "DroneSwarm"
+region = "perimeter_airspace"
+strength = 10.0
+mobility = 2.0
+upkeep = 0.5
+morale_modifier = 0.0
+capabilities = []
+
+[factions.threat_actor.forces.operator_cell]
+id = "operator_cell"
+name = "Remote Operator Cell"
+unit_type = "CyberUnit"
+region = "perimeter_airspace"
+strength = 8.0
+mobility = 0.2
+upkeep = 0.3
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology — aggregate effect cards (effect-level only)
+# ============================================================================
+
+[technology]
+
+[technology.delivery_uas]
+id = "delivery_uas"
+name = "Small UAS Delivery Vehicle"
+description = "Aggregate model of a small commercial-class uncrewed aircraft used to transport and emplace a payload on or adjacent to a facility. Reach and signature are published-envelope statistical descriptors; no platform or operational detail is encoded."
+category = "OffensiveDrone"
+cost_per_tick = 0.2
+deployment_cost = 6.0
+coverage_limit = 2
+countered_by = ["cuas_perimeter_watch"]
+terrain_modifiers = []
+
+[[technology.delivery_uas.effects]]
+type = "DetectionModifier"
+factor = 0.5
+
+[technology.rogue_ap_relay]
+id = "rogue_ap_relay"
+name = "Rogue Wireless Access-Point Relay"
+description = "Aggregate model of a battery/solar-powered rogue wireless access point bridging an over-the-air foothold into a segmented network. Effect-level only; no configuration, protocol, or exploit detail is encoded."
+category = "Cyber"
+cost_per_tick = 0.1
+deployment_cost = 3.0
+coverage_limit = 2
+countered_by = ["wireless_ids", "rogue_device_detection"]
+terrain_modifiers = []
+
+[[technology.rogue_ap_relay.effects]]
+type = "CommsDisruption"
+factor = 0.3
+
+[[technology.rogue_ap_relay.effects]]
+type = "IntelGain"
+probability = 0.35
+
+[technology.ot_segmentation]
+id = "ot_segmentation"
+name = "OT Network Segmentation"
+description = "Defensive control: enforced segmentation and conduit controls between enterprise IT and the OT network (NIST SP 800-82 control-effect level). Raises the difficulty of bridging into the OT segment."
+category = { Custom = "ScadaIcs" }
+cost_per_tick = 0.12
+deployment_cost = 20.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.ot_segmentation.effects]]
+type = "CounterTech"
+target = "rogue_ap_relay"
+reduction = 0.45
+
+[[technology.ot_segmentation.effects]]
+type = "InfraProtection"
+factor = 0.6
+
+[technology.rogue_device_detection]
+id = "rogue_device_detection"
+name = "Rogue-Device Detection"
+description = "Defensive control: network access control and unauthorized-device detection on the enterprise and OT networks. Effect-level only."
+category = "CounterDrone"
+cost_per_tick = 0.1
+deployment_cost = 14.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.rogue_device_detection.effects]]
+type = "DetectionModifier"
+factor = 1.4
+
+[technology.wireless_ids]
+id = "wireless_ids"
+name = "Wireless Intrusion Detection"
+description = "Defensive control: continuous RF/wireless intrusion monitoring that detects unauthorized access-point beacons in and around the facility. Effect-level only."
+category = "Surveillance"
+cost_per_tick = 0.1
+deployment_cost = 12.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.wireless_ids.effects]]
+type = "CounterTech"
+target = "rogue_ap_relay"
+reduction = 0.4
+
+[[technology.wireless_ids.effects]]
+type = "DetectionModifier"
+factor = 1.5
+
+[technology.cuas_perimeter_watch]
+id = "cuas_perimeter_watch"
+name = "Counter-UAS Perimeter Watch"
+description = "Defensive control: airspace monitoring and counter-UAS detection over the facility perimeter. Effective against larger UAS signatures; small commercial-class vehicles below threshold may slip through. Effect-level only."
+category = "CounterDrone"
+cost_per_tick = 0.15
+deployment_cost = 18.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.cuas_perimeter_watch.effects]]
+type = "CounterTech"
+target = "delivery_uas"
+reduction = 0.35
+
+[[technology.cuas_perimeter_watch.effects]]
+type = "DetectionModifier"
+factor = 1.3
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.85
+internet_availability = 0.95
+
+# ============================================================================
+# Events — minimal; the analytical signal comes from the kill chain
+# ============================================================================
+
+[events]
+
+# ============================================================================
+# Kill Chain — drone-delivered rogue-AP network bridge
+# ============================================================================
+
+[kill_chains.bridge]
+id = "bridge"
+name = "Drone-Delivered Rogue-AP Network Bridge"
+description = "Six-phase cyber-physical convergence: airspace ingress -> device emplacement -> rogue-AP beacon -> segmentation bridge -> OT enumeration -> manipulation/exfiltration. The chain crosses the counter-UAS, physical-security, RF-monitoring, and network/OT seams; a noisy enumeration phase floods the tier-1 SOC queue so the quiet bridge phase evades a saturated defender."
+attacker = "threat_actor"
+target = "facility_operator"
+entry_phase = "airspace_ingress"
+
+# -- Phase 1: airspace ingress (C-UAS seam) ---------------------------------
+[kill_chains.bridge.phases.airspace_ingress]
+id = "airspace_ingress"
+name = "Airspace Ingress & Approach"
+description = "Aggregate model of a small UAS transiting the facility perimeter airspace to an emplacement point. Exploits the gap where a small commercial-class signature falls below the counter-UAS detection threshold. Effect-level only — no flight-profile or operational detail."
+base_success_probability = 0.88
+min_duration = 1
+max_duration = 3
+detection_probability_per_tick = 0.06
+attribution_difficulty = 0.8
+parameter_confidence = "Medium"
+targets_domains = ["CounterUAS", "PhysicalSecurity"]
+
+[kill_chains.bridge.phases.airspace_ingress.cost]
+attacker_dollars = 4_000.0
+defender_dollars = 1_500_000.0
+attacker_resources = 2.0
+confidence = "Medium"
+
+[[kill_chains.bridge.phases.airspace_ingress.outputs]]
+type = "IntelligenceGain"
+amount = 0.1
+
+[[kill_chains.bridge.phases.airspace_ingress.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "device_emplacement"
+
+[[kill_chains.bridge.phases.airspace_ingress.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 2: device emplacement (physical-security seam) -------------------
+[kill_chains.bridge.phases.device_emplacement]
+id = "device_emplacement"
+name = "Rogue-AP Device Emplacement"
+description = "Aggregate model of the UAS emplacing a battery/solar rogue access point on or adjacent to the facility, where the perimeter physical-security posture does not expect an airborne emplacement. Defeats physical access controls via the aerial vector. Effect-level only."
+prerequisites = ["airspace_ingress"]
+base_success_probability = 0.82
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.05
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.85
+parameter_confidence = "Medium"
+targets_domains = ["PhysicalSecurity", "CounterUAS"]
+
+[kill_chains.bridge.phases.device_emplacement.cost]
+attacker_dollars = 2_000.0
+defender_dollars = 2_000_000.0
+attacker_resources = 1.0
+confidence = "Medium"
+
+[[kill_chains.bridge.phases.device_emplacement.outputs]]
+type = "IntelligenceGain"
+amount = 0.12
+
+[[kill_chains.bridge.phases.device_emplacement.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "rogue_ap_beacon"
+
+[[kill_chains.bridge.phases.device_emplacement.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 3: rogue-AP beacon (RF-monitoring seam) --------------------------
+[kill_chains.bridge.phases.rogue_ap_beacon]
+id = "rogue_ap_beacon"
+name = "Rogue-AP Beacon & Foothold"
+description = "Aggregate model of the emplaced access point beaconing and establishing an over-the-air foothold. The most RF-observable phase — its detection rate is the proxy for the defender's wireless-intrusion-monitoring coverage. A facility relying on episodic rather than continuous RF monitoring has a wide exposure window here."
+prerequisites = ["device_emplacement"]
+base_success_probability = 0.8
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.04
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.75
+parameter_confidence = "Medium"
+targets_domains = ["SignalsIntelligence", "NetworkSecurity"]
+
+[kill_chains.bridge.phases.rogue_ap_beacon.cost]
+attacker_dollars = 1_500.0
+defender_dollars = 1_200_000.0
+attacker_resources = 1.0
+confidence = "Medium"
+
+[[kill_chains.bridge.phases.rogue_ap_beacon.outputs]]
+type = "IntelligenceGain"
+amount = 0.15
+
+[[kill_chains.bridge.phases.rogue_ap_beacon.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "noisy_enumeration"
+
+[[kill_chains.bridge.phases.rogue_ap_beacon.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 4: noisy enumeration — floods the SOC queue ----------------------
+[kill_chains.bridge.phases.noisy_enumeration]
+id = "noisy_enumeration"
+name = "Noisy Network Enumeration"
+description = "Aggregate model of high-volume network enumeration across the enterprise IT network that deliberately generates a flood of low-context alerts. Its analytical purpose is to saturate the tier-1 SOC triage queue so the subsequent quiet segmentation-bridge phase rolls its detection against an impaired catch rate — the alert-fatigue mechanism. Generates more alerts/tick than the queue can service."
+prerequisites = ["rogue_ap_beacon"]
+base_success_probability = 0.9
+min_duration = 3
+max_duration = 6
+detection_probability_per_tick = 0.18
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.6
+parameter_confidence = "Medium"
+targets_domains = ["NetworkSecurity"]
+
+[kill_chains.bridge.phases.noisy_enumeration.cost]
+attacker_dollars = 1_000.0
+defender_dollars = 800_000.0
+attacker_resources = 1.0
+confidence = "High"
+
+[[kill_chains.bridge.phases.noisy_enumeration.defender_noise]]
+defender = "facility_operator"
+role = "tier1_triage"
+items_per_tick = 40.0
+
+[[kill_chains.bridge.phases.noisy_enumeration.outputs]]
+type = "IntelligenceGain"
+amount = 0.18
+
+[[kill_chains.bridge.phases.noisy_enumeration.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "segmentation_bridge"
+
+[[kill_chains.bridge.phases.noisy_enumeration.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 5: segmentation bridge — quiet, gated by saturated SOC -----------
+[kill_chains.bridge.phases.segmentation_bridge]
+id = "segmentation_bridge"
+name = "IT-to-OT Segmentation Bridge"
+description = "Aggregate model of bridging from the enterprise IT foothold across the segmentation boundary into the OT network. Deliberately quiet — it generates few alerts of its own. `gated_by_defender` says its detection probability is multiplied by the tier-1 saturated factor while the SOC queue the enumeration phase flooded is still backlogged. The OT-segmentation control raises this phase's difficulty; that interaction is the central defensive question."
+prerequisites = ["noisy_enumeration"]
+base_success_probability = 0.6
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.07
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.8
+parameter_confidence = "Low"
+targets_domains = ["NetworkSecurity", "SupplyChainSecurity"]
+gated_by_defender = { faction = "facility_operator", role = "tier1_triage" }
+
+[kill_chains.bridge.phases.segmentation_bridge.cost]
+attacker_dollars = 3_000.0
+defender_dollars = 6_000_000.0
+attacker_resources = 2.0
+confidence = "Low"
+
+[[kill_chains.bridge.phases.segmentation_bridge.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.bridge.phases.segmentation_bridge.outputs]]
+type = "InstitutionalErosion"
+delta = 0.05
+
+[[kill_chains.bridge.phases.segmentation_bridge.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ot_enumeration"
+
+[[kill_chains.bridge.phases.segmentation_bridge.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 6a: OT enumeration -----------------------------------------------
+[kill_chains.bridge.phases.ot_enumeration]
+id = "ot_enumeration"
+name = "OT Asset Enumeration"
+description = "Aggregate model of passively mapping OT process assets once inside the segment. Builds the targeting picture for the terminal manipulation phase. Quiet and gated by the still-backlogged SOC queue."
+prerequisites = ["segmentation_bridge"]
+base_success_probability = 0.78
+min_duration = 2
+max_duration = 5
+detection_probability_per_tick = 0.06
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.75
+parameter_confidence = "Low"
+targets_domains = ["SupplyChainSecurity", "NetworkSecurity"]
+gated_by_defender = { faction = "facility_operator", role = "tier1_triage" }
+
+[kill_chains.bridge.phases.ot_enumeration.cost]
+attacker_dollars = 2_500.0
+defender_dollars = 4_000_000.0
+attacker_resources = 2.0
+confidence = "Low"
+
+[[kill_chains.bridge.phases.ot_enumeration.outputs]]
+type = "IntelligenceGain"
+amount = 0.22
+
+[[kill_chains.bridge.phases.ot_enumeration.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ot_manipulation"
+
+[[kill_chains.bridge.phases.ot_enumeration.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Phase 6b: terminal manipulation / exfiltration -------------------------
+[kill_chains.bridge.phases.ot_manipulation]
+id = "ot_manipulation"
+name = "OT Manipulation / Exfiltration"
+description = "Terminal phase. Aggregate model of either manipulating an OT process or exfiltrating sensitive OT/engineering data via the over-the-air bridge. Analytical outputs are infrastructure damage, the coercion-pressure and institutional-erosion metrics, and the large defender remediation cost — which can push the defender past its gap-closing budget."
+prerequisites = ["ot_enumeration"]
+base_success_probability = 0.55
+min_duration = 1
+max_duration = 3
+# Intentionally NOT `gated_by_defender`. Unlike the preceding quiet recon phases
+# (`segmentation_bridge`, `ot_enumeration`), whose low-and-slow activity only
+# surfaces through the IT-side tier-1 SOC queue the enumeration phase flooded,
+# actively manipulating an OT process or pulling a bulk exfiltration trips
+# OT-specific alarms that route to the OT / Controls Engineering team directly.
+# That alerting path does not depend on the saturated tier-1 IT triage queue, so
+# detection here is modeled with a flat (un-gated) per-tick probability of 0.25.
+detection_probability_per_tick = 0.25
+prerequisite_success_boost = 0.15
+attribution_difficulty = 0.6
+parameter_confidence = "Low"
+targets_domains = ["SupplyChainSecurity", "NetworkSecurity", "CivilianEmergency"]
+
+[kill_chains.bridge.phases.ot_manipulation.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 45_000_000.0
+attacker_resources = 3.0
+confidence = "Low"
+
+[[kill_chains.bridge.phases.ot_manipulation.outputs]]
+type = "InfraDamage"
+region = "ot_segment"
+factor = 0.4
+
+[[kill_chains.bridge.phases.ot_manipulation.outputs]]
+type = "CoercionPressure"
+delta = 0.4
+
+[[kill_chains.bridge.phases.ot_manipulation.outputs]]
+type = "InstitutionalErosion"
+delta = 0.2
+
+[[kill_chains.bridge.phases.ot_manipulation.outputs]]
+type = "TensionDelta"
+delta = 0.2
+
+# Intentional terminus: a successful manipulation/exfiltration is the end of the
+# kill chain, so there is deliberately no `OnSuccess` branch (the chain stops
+# here on success). The only branch is the abort path taken if the defender
+# detects the campaign mid-manipulation.
+[[kill_chains.bridge.phases.ot_manipulation.branches]]
+condition = { type = "OnDetection" }
+next_phase = "bridge_abort"
+
+# -- Terminal: aborted (defender detected and interrupted) ------------------
+[kill_chains.bridge.phases.bridge_abort]
+id = "bridge_abort"
+name = "Campaign Interrupted — Defender Detected"
+description = "Terminal phase taken when the defender detects the campaign at any stage. Models adversary withdrawal and the residual forensic footprint (the recovered rogue-AP device) the defender uses for attribution."
+base_success_probability = 1.0
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+attribution_difficulty = 0.5
+targets_domains = []
+
+[kill_chains.bridge.phases.bridge_abort.cost]
+attacker_dollars = 500.0
+defender_dollars = 1_000_000.0
+attacker_resources = 1.0
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 60
+monte_carlo_runs = 400
+fog_of_war = true
+snapshot_interval = 5
+seed = 20260219
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+# Defender objective: keep the security posture intact (hold the OT segment
+# and enterprise network for the full horizon).
+[victory_conditions.posture_held]
+id = "posture_held"
+name = "Facility Posture Maintained"
+faction = "facility_operator"
+
+[victory_conditions.posture_held.condition]
+type = "StrategicControl"
+threshold = 0.9
+
+# Attacker objective: accumulated coercion pressure from a successful OT
+# manipulation crosses the operator's resilience threshold.
+[victory_conditions.bridge_success]
+id = "bridge_success"
+name = "OT Bridge Achieved"
+faction = "threat_actor"
+
+[victory_conditions.bridge_success.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.35
