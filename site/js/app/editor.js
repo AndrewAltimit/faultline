@@ -8,6 +8,7 @@ import { buildShareUrl } from './sharing.js';
 import { renderDiff } from './diff.js';
 import { renderWarnings, warningsClean, renderExplain, renderFieldDoc } from './explain-panel.js';
 import { docAtOffset } from './field-docs.js';
+import { completionsAt } from './autocomplete.js';
 /** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 
 export class Editor {
@@ -74,6 +75,11 @@ export class Editor {
     // field key pops a tooltip explaining what the field means, its type,
     // default, and whether it has an engine effect.
     this._initFieldDocs();
+
+    // Schema-driven autocomplete: as the user types a key (or an enum value),
+    // offer valid completions for the current `[table]` context, sourced from
+    // the same field-doc catalog that powers the hover tooltip.
+    this._initAutocomplete();
 
     // Other modules can request the editor load arbitrary TOML
     // (e.g. dashboard "Load TOML" on a pinned result).
@@ -191,6 +197,296 @@ export class Editor {
     if (this._fieldDocEl) {
       this._fieldDocEl.hidden = true;
     }
+  }
+
+  // -------------------------------------------------------------------
+  // Schema-driven autocomplete
+  // -------------------------------------------------------------------
+
+  /**
+   * Wire the schema-driven completion popover on the editor textarea.
+   *
+   * A focused custom popover over the existing `<textarea>` (rather than a
+   * Monaco/CodeMirror swap) keeps the frontend dependency-free and low-risk.
+   * The completion *content* — which keys are valid in the current `[table]`
+   * and which enum values a field accepts — comes entirely from
+   * {@link completionsAt}, which reads the shared field-doc catalog.
+   *
+   * Interaction model:
+   *   - `input` recomputes completions for the caret context and (re)shows the
+   *     popover when there are matches and a non-empty token is being typed, or
+   *     when the user explicitly invokes it.
+   *   - ArrowUp/ArrowDown move the highlighted item; Enter/Tab accept it;
+   *     Escape dismisses. These are intercepted only while the popover is open
+   *     so normal editing is unaffected.
+   *   - Ctrl/Cmd+Space force-opens the popover even on an empty token (the
+   *     "show me everything valid here" affordance).
+   *   - Blur / scroll / clicking elsewhere dismiss it.
+   */
+  _initAutocomplete() {
+    if (!this.textarea) return;
+
+    /** @type {import('./autocomplete.js').Completion[]} */
+    this._acItems = [];
+    this._acIndex = 0;
+    this._acContext = null;
+
+    this.textarea.addEventListener('input', () => this._updateAutocomplete(false));
+    this.textarea.addEventListener('keydown', (e) => this._onAutocompleteKeydown(e));
+    this.textarea.addEventListener('blur', () => {
+      // Defer so a click on a popover item lands before the popover is torn
+      // down (mousedown on the item fires before the textarea blur completes,
+      // but the click handler runs after).
+      setTimeout(() => this._hideAutocomplete(), 120);
+    });
+    this.textarea.addEventListener('scroll', () => this._hideAutocomplete());
+  }
+
+  /**
+   * Intercept navigation / accept / dismiss keys while the popover is open,
+   * and the force-open chord. Returns early (doing nothing) when the popover
+   * is closed so ordinary typing is never swallowed.
+   * @param {KeyboardEvent} e
+   */
+  _onAutocompleteKeydown(e) {
+    // Force-open: Ctrl/Cmd + Space.
+    if ((e.ctrlKey || e.metaKey) && (e.key === ' ' || e.code === 'Space')) {
+      e.preventDefault();
+      this._updateAutocomplete(true);
+      return;
+    }
+
+    if (!this._acItems || this._acItems.length === 0 || !this._acEl || this._acEl.hidden) {
+      return;
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this._acIndex = (this._acIndex + 1) % this._acItems.length;
+        this._renderAutocomplete();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        this._acIndex = (this._acIndex - 1 + this._acItems.length) % this._acItems.length;
+        this._renderAutocomplete();
+        break;
+      case 'Enter':
+      case 'Tab':
+        e.preventDefault();
+        this._acceptCompletion(this._acItems[this._acIndex]);
+        break;
+      case 'Escape':
+        e.preventDefault();
+        this._hideAutocomplete();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * Recompute completions for the current caret and show/hide the popover.
+   * @param {boolean} forced True when invoked via the force-open chord, which
+   *   shows the popover even on an empty token.
+   */
+  _updateAutocomplete(forced) {
+    const offset = this.textarea.selectionStart;
+    if (typeof offset !== 'number') {
+      this._hideAutocomplete();
+      return;
+    }
+    const { context, items } = completionsAt(this.textarea.value, offset);
+    // When not forced, only auto-pop once the user has begun a token — popping
+    // on every keystroke (including right after `=` with no prefix) is noisy.
+    if (!forced && (!context.prefix || context.prefix.length === 0)) {
+      this._hideAutocomplete();
+      return;
+    }
+    if (!items || items.length === 0) {
+      this._hideAutocomplete();
+      return;
+    }
+    this._acItems = items;
+    this._acContext = context;
+    this._acIndex = 0;
+    this._renderAutocomplete();
+  }
+
+  /** Render the popover list and position it near the textarea caret. */
+  _renderAutocomplete() {
+    if (!this._acEl) {
+      const el = document.createElement('div');
+      el.className = 'ac-popover';
+      el.setAttribute('role', 'listbox');
+      el.hidden = true;
+      document.body.appendChild(el);
+      this._acEl = el;
+    }
+
+    const rows = this._acItems
+      .map((item, i) => {
+        const active = i === this._acIndex ? ' active' : '';
+        const effectClass = item.engineEffect ? 'has-effect' : 'no-effect';
+        const effectLabel = item.engineEffect ? 'engine' : 'descriptive';
+        const meta = [];
+        if (item.type) meta.push(this._acEsc(item.type));
+        if (item.range) meta.push(this._acEsc(item.range));
+        if (item.default !== undefined && item.default !== null && item.default !== '') {
+          meta.push(`default ${this._acEsc(item.default)}`);
+        }
+        const summary = item.summary
+          ? `<div class="ac-item-summary">${this._acEsc(item.summary)}</div>`
+          : '';
+        return `<div class="ac-item${active}" role="option" data-index="${i}" aria-selected="${i === this._acIndex}">
+  <div class="ac-item-head">
+    <span class="ac-item-label">${this._acEsc(item.label)}</span>
+    <span class="ac-item-effect ${effectClass}">${effectLabel}</span>
+  </div>
+  <div class="ac-item-meta">${meta.join(' · ')}</div>
+  ${summary}
+</div>`;
+      })
+      .join('');
+    this._acEl.innerHTML = rows;
+    this._acEl.hidden = false;
+
+    // Click-to-accept (mousedown so it precedes the textarea blur).
+    this._acEl.querySelectorAll('.ac-item').forEach((row) => {
+      row.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        const idx = Number(row.getAttribute('data-index'));
+        this._acceptCompletion(this._acItems[idx]);
+      });
+    });
+
+    // Position the popover below the (approximate) caret. Textareas don't
+    // expose per-caret geometry, so we estimate from the caret's line/column
+    // using the computed font metrics — good enough to anchor the list near
+    // where the user is typing, then clamp inside the viewport.
+    const pos = this._caretClientPoint();
+    const margin = 12;
+    const rect = this._acEl.getBoundingClientRect();
+    let left = pos.x;
+    let top = pos.y + 4;
+    if (left + rect.width + margin > window.innerWidth) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (top + rect.height + margin > window.innerHeight) {
+      top = Math.max(margin, pos.y - rect.height - 4);
+    }
+    this._acEl.style.left = `${left}px`;
+    this._acEl.style.top = `${top}px`;
+  }
+
+  /**
+   * Estimate the caret's viewport point from its line/column and the
+   * textarea's font metrics, accounting for scroll and padding. Approximate by
+   * design — a textarea is an opaque native widget — but stable enough to keep
+   * the popover near the typing position.
+   * @returns {{x: number, y: number}}
+   */
+  _caretClientPoint() {
+    const ta = this.textarea;
+    const rect = ta.getBoundingClientRect();
+    const style = window.getComputedStyle(ta);
+    const padL = parseFloat(style.paddingLeft) || 0;
+    const padT = parseFloat(style.paddingTop) || 0;
+    const fontSize = parseFloat(style.fontSize) || 13;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.6;
+    // Monospace char width ≈ 0.6em for the editor's mono font.
+    const charW = fontSize * 0.6;
+
+    const upto = ta.value.slice(0, ta.selectionStart);
+    const nl = upto.lastIndexOf('\n');
+    const col = upto.length - (nl + 1);
+    const row = upto.split('\n').length - 1;
+
+    const x = rect.left + padL + col * charW - ta.scrollLeft;
+    const y = rect.top + padT + (row + 1) * lineHeight - ta.scrollTop;
+    // Clamp inside the textarea's visible box so an off-screen caret (long
+    // scroll) still anchors the popover somewhere sensible.
+    return {
+      x: Math.min(Math.max(x, rect.left + 4), rect.right - 4),
+      y: Math.min(Math.max(y, rect.top + 4), rect.bottom - 4),
+    };
+  }
+
+  /**
+   * Replace the partial token under the caret with the accepted completion.
+   * For a value completion we also drop the surrounding quotes into place when
+   * the field is a string-quoted enum (TOML enum values are bare-quoted
+   * strings), matching how the schema serializes them.
+   * @param {import('./autocomplete.js').Completion} item
+   */
+  _acceptCompletion(item) {
+    if (!item || !this._acContext) {
+      this._hideAutocomplete();
+      return;
+    }
+    const ta = this.textarea;
+    const value = ta.value;
+    const caret = ta.selectionStart;
+    const ctx = this._acContext;
+
+    // The token being replaced spans [lineStart + tokenStart, caret).
+    const lineStart = value.lastIndexOf('\n', caret - 1) + 1;
+    const tokenAbsStart = lineStart + ctx.tokenStart;
+    const before = value.slice(0, tokenAbsStart);
+    const after = value.slice(caret);
+
+    let insert = item.label;
+    let newCaret = tokenAbsStart + insert.length;
+    if (item.kind === 'key') {
+      // If the line has no `=` yet, scaffold the assignment so the caret lands
+      // ready to type the value.
+      const lineEndRel = value.indexOf('\n', caret);
+      const lineEnd = lineEndRel === -1 ? value.length : lineEndRel;
+      const restOfLine = value.slice(caret, lineEnd);
+      if (!restOfLine.includes('=')) {
+        insert = `${item.label} = `;
+        newCaret = tokenAbsStart + insert.length;
+      }
+    } else if (item.kind === 'value') {
+      // Quote enum values the way TOML expects (bare-quoted strings). Only add
+      // the closing quote if the user hasn't already typed one after the caret.
+      const openedQuote = before.endsWith('"') || before.endsWith("'");
+      if (!openedQuote) {
+        const closing = after.startsWith('"') || after.startsWith("'") ? '' : '"';
+        insert = `"${item.label}${closing}`;
+        newCaret = tokenAbsStart + 1 + item.label.length + (closing ? 1 : 0);
+      } else {
+        newCaret = tokenAbsStart + item.label.length;
+      }
+    }
+
+    ta.value = before + insert + after;
+    AppState.toml = ta.value;
+    ta.selectionStart = ta.selectionEnd = newCaret;
+    ta.focus();
+    this._hideAutocomplete();
+  }
+
+  /** Hide and reset the completion popover. */
+  _hideAutocomplete() {
+    this._acItems = [];
+    this._acContext = null;
+    this._acIndex = 0;
+    if (this._acEl) this._acEl.hidden = true;
+  }
+
+  /**
+   * Local HTML escape for popover text. Mirrors `explain-panel`'s escape but
+   * kept inline to avoid widening that module's import surface for one use.
+   * @param {string} s
+   */
+  _acEsc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   async _share() {

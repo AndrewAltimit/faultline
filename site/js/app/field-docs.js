@@ -26,6 +26,11 @@
  *                                   false for purely descriptive / reporting metadata.
  * @property {string} [section]      The `[section]` (or section family) this key belongs to.
  *                                   Used to disambiguate identically-named keys.
+ * @property {string[]} [enumValues] When the field is an enum, the exact variant
+ *                                   names (PascalCase, as serialized) the editor's
+ *                                   autocomplete offers as value completions. Kept in
+ *                                   sync with the variants listed in `summary` by the
+ *                                   field-docs unit tests so the two never drift.
  */
 
 /**
@@ -120,6 +125,13 @@ export const FIELD_DOCS = {
       type: 'enum',
       section: '[kill_chains]',
       engineEffect: true,
+      enumValues: [
+        'Tension',
+        'InformationDominance',
+        'InstitutionalErosion',
+        'CoercionPressure',
+        'PoliticalCost',
+      ],
     },
   ],
 
@@ -168,6 +180,18 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[map.infrastructure]',
     engineEffect: true,
+    enumValues: [
+      'PowerGrid',
+      'Telecommunications',
+      'TransportHub',
+      'GovernmentBuilding',
+      'MediaStation',
+      'WaterSystem',
+      'FuelDepot',
+      'Hospital',
+      'SupplyChain',
+      'Internet',
+    ],
   },
   criticality: [
     {
@@ -204,6 +228,17 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[[map.terrain]]',
     engineEffect: true,
+    enumValues: [
+      'Urban',
+      'Suburban',
+      'Rural',
+      'Forest',
+      'Mountain',
+      'Desert',
+      'Coastal',
+      'Riverine',
+      'Arctic',
+    ],
   },
   movement_modifier: {
     summary: 'Per-region movement speed multiplier. Higher = faster movement through the region.',
@@ -336,6 +371,15 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[factions]',
     engineEffect: true,
+    enumValues: [
+      'Conventional',
+      'Guerrilla',
+      'Defensive',
+      'Disruption',
+      'CounterInsurgency',
+      'Blitzkrieg',
+      'Adaptive',
+    ],
   },
   posture: {
     summary: 'One-line summary of the faction\'s rules-of-engagement stance. Declarative — surfaced in Policy Implications.',
@@ -405,11 +449,13 @@ export const FIELD_DOCS = {
     engineEffect: true,
   },
   new_stance: {
-    summary: 'Diplomatic stance to flip to when an alliance-fracture rule fires.',
+    summary:
+      'Diplomatic stance to flip to when an alliance-fracture rule fires: War, Hostile, Neutral, Cooperative, or Allied.',
     type: 'Diplomacy',
     default: 'Hostile',
     section: '[factions.alliance_fracture]',
     engineEffect: true,
+    enumValues: ['War', 'Hostile', 'Neutral', 'Cooperative', 'Allied'],
   },
   condition: [
     {
@@ -443,6 +489,7 @@ export const FIELD_DOCS = {
     default: 'DropNew',
     section: '[factions.defender_capacities]',
     engineEffect: true,
+    enumValues: ['DropNew', 'DropOldest', 'Backlog'],
   },
   saturated_detection_factor: {
     summary: 'Detection-roll multiplier for phases gated by this role while its queue is saturated. 1.0 = no penalty.',
@@ -476,6 +523,18 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[factions.faction_type.institutions]',
     engineEffect: true,
+    enumValues: [
+      'LawEnforcement',
+      'Intelligence',
+      'Judiciary',
+      'Legislature',
+      'Executive',
+      'NationalGuard',
+      'FederalAgency',
+      'FinancialRegulator',
+      'MediaRegulator',
+      'Custom',
+    ],
   },
   unit_type: {
     summary:
@@ -483,6 +542,23 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[factions.forces]',
     engineEffect: true,
+    enumValues: [
+      'Infantry',
+      'Mechanized',
+      'Armor',
+      'Artillery',
+      'AirSupport',
+      'Naval',
+      'SpecialOperations',
+      'CyberUnit',
+      'DroneSwarm',
+      'LawEnforcement',
+      'Militia',
+      'Logistics',
+      'AirDefense',
+      'ElectronicWarfare',
+      'Custom',
+    ],
   },
   strength: {
     summary: 'Combat strength of a force unit.',
@@ -548,6 +624,18 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[technology]',
     engineEffect: true,
+    enumValues: [
+      'Surveillance',
+      'OffensiveDrone',
+      'CounterDrone',
+      'ElectronicWarfare',
+      'Cyber',
+      'Communications',
+      'InformationWarfare',
+      'Concealment',
+      'Logistics',
+      'Custom',
+    ],
   },
   effects: [
     {
@@ -791,6 +879,7 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[simulation]',
     engineEffect: true,
+    enumValues: ['LanchesterLinear', 'LanchesterSquare', 'Hybrid', 'Stochastic'],
   },
   snapshot_interval: [
     {
@@ -1012,6 +1101,7 @@ export const FIELD_DOCS = {
     type: 'enum?',
     section: '[kill_chains.phases]',
     engineEffect: false,
+    enumValues: ['High', 'Medium', 'Low'],
   },
   warning_indicators: {
     summary: 'IWI / IOC observables surfaced in the Countermeasure Analysis report section. Declarative.',
@@ -1054,6 +1144,17 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[kill_chains.phases.warning_indicators]',
     engineEffect: false,
+    enumValues: [
+      'SIGINT',
+      'HUMINT',
+      'OSINT',
+      'GEOINT',
+      'MASINT',
+      'CYBINT',
+      'FININT',
+      'Physical',
+      'Custom',
+    ],
   },
   detectability: {
     summary: 'Probability of catching the observable if the defender is actively looking for it.',
@@ -1081,6 +1182,7 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[kill_chains.phases.branches]',
     engineEffect: true,
+    enumValues: ['Above', 'Below'],
   },
   sustained_ticks: {
     summary: 'Consecutive end-of-tick snapshots the predicate must hold before an escalation branch fires. Built-in hysteresis. 0 = "currently true".',
@@ -1171,6 +1273,7 @@ export const FIELD_DOCS = {
     type: 'enum',
     section: '[factions]',
     engineEffect: true,
+    enumValues: ['War', 'Hostile', 'Neutral', 'Cooperative', 'Allied'],
   },
   confidence: {
     summary: 'Coarse author confidence tag (high / medium / low). Signals defensibility; does not affect simulation.',
