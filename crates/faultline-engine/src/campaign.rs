@@ -518,8 +518,13 @@ fn draw_believed_attribution(
         .map(collect_deceived_implications)
         .unwrap_or_default();
 
-    // Degenerate guard: no one to attribute to but the defender.
+    // Degenerate guard: no one to attribute to but the defender. Consume
+    // one draw before returning so this path advances the RNG stream by
+    // exactly one, identical to both the `if total > 0.0` and `else`
+    // branches below — otherwise hitting this guard would shift every
+    // subsequent draw in the run by one position and break reproducibility.
     let Some(first) = candidates.first().cloned() else {
+        let _: f64 = rng.r#gen();
         return BelievedAttribution {
             faction: true_attacker.clone(),
             misattributed: false,
