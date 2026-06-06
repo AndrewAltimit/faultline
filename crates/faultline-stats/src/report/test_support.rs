@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use faultline_types::map::{MapConfig, MapSource};
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
+use faultline_types::simulation::SimulationConfig;
 use faultline_types::stats::MonteCarloSummary;
 
 pub(crate) fn empty_summary() -> MonteCarloSummary {
@@ -48,10 +48,6 @@ pub(crate) fn minimal_scenario() -> Scenario {
             description: "description".into(),
             author: "test".into(),
             version: "0.0.1".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -59,14 +55,9 @@ pub(crate) fn minimal_scenario() -> Scenario {
                 width: 1,
                 height: 1,
             },
-            regions: BTreeMap::new(),
-            infrastructure: BTreeMap::new(),
-            terrain: vec![],
+            ..Default::default()
         },
-        factions: BTreeMap::new(),
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
-            tension: 0.0,
             institutional_trust: 0.5,
             media_landscape: MediaLandscape {
                 fragmentation: 0.5,
@@ -75,26 +66,14 @@ pub(crate) fn minimal_scenario() -> Scenario {
                 social_media_penetration: 0.7,
                 internet_availability: 0.8,
             },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks: 1,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(0),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
-            snapshot_interval: 0,
-            belief_model: None,
+            ..Default::default()
         },
-        victory_conditions: BTreeMap::new(),
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: std::collections::BTreeMap::new(),
+        ..Default::default()
     }
 }

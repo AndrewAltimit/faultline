@@ -4,7 +4,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use faultline_types::faction::{Diplomacy, DiplomaticStance, ForceUnit, UnitType};
+use faultline_types::faction::{Diplomacy, DiplomaticStance, ForceUnit};
 use faultline_types::ids::{FactionId, ForceId, RegionId};
 use faultline_types::strategy::{Doctrine, FactionAction};
 
@@ -28,15 +28,11 @@ fn make_ai_test_state() -> SimulationState {
         ForceUnit {
             id: ForceId::from("alpha_inf"),
             name: "Alpha Infantry".into(),
-            unit_type: UnitType::Infantry,
             region: nw.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
 
@@ -46,15 +42,11 @@ fn make_ai_test_state() -> SimulationState {
         ForceUnit {
             id: ForceId::from("bravo_inf"),
             name: "Bravo Infantry".into(),
-            unit_type: UnitType::Infantry,
             region: se.clone(),
             strength: 100.0,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 2.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         },
     );
 
@@ -292,15 +284,11 @@ fn ai_evaluates_defend_for_threatened_region() {
             ForceUnit {
                 id: ForceId::from("bravo_threat"),
                 name: "Bravo Threat".into(),
-                unit_type: UnitType::Infantry,
                 region: RegionId::from("ne"),
                 strength: 80.0,
                 mobility: 1.0,
-                force_projection: None,
                 upkeep: 2.0,
-                morale_modifier: 0.0,
-                capabilities: vec![],
-                move_progress: 0.0,
+                ..Default::default()
             },
         );
 
@@ -358,15 +346,11 @@ fn ai_evaluates_attack_for_weak_enemy() {
             ForceUnit {
                 id: ForceId::from("bravo_weak"),
                 name: "Bravo Weak".into(),
-                unit_type: UnitType::Infantry,
                 region: RegionId::from("ne"),
                 strength: 10.0,
                 mobility: 1.0,
-                force_projection: None,
                 upkeep: 1.0,
-                morale_modifier: 0.0,
-                capabilities: vec![],
-                move_progress: 0.0,
+                ..Default::default()
             },
         );
 
@@ -423,24 +407,13 @@ fn allied_neighbor_preserves_downstream_rng_state() {
             faction_type: faultline_types::faction::FactionType::Military {
                 branch: faultline_types::faction::MilitaryBranch::Army,
             },
-            description: String::new(),
             color: "#000000".into(),
-            forces: BTreeMap::new(),
-            tech_access: vec![],
             initial_morale: 0.8,
             logistics_capacity: 50.0,
             initial_resources: 1_000.0,
             resource_rate: 10.0,
-            recruitment: None,
-            command_resilience: 0.0,
             intelligence: 0.5,
-            diplomacy: vec![],
-            doctrine: Doctrine::Conventional,
-            escalation_rules: None,
-            defender_capacities: BTreeMap::new(),
-            leadership: None,
-            alliance_fracture: None,
-            utility: None,
+            ..Default::default()
         },
     );
     let alpha_def = neutral_scenario
@@ -487,15 +460,11 @@ fn allied_neighbor_preserves_downstream_rng_state() {
             ForceUnit {
                 id: ForceId::from("charlie_inf"),
                 name: "Charlie Infantry".into(),
-                unit_type: UnitType::Infantry,
                 region: sw.clone(),
                 strength: 50.0,
                 mobility: 1.0,
-                force_projection: None,
                 upkeep: 1.0,
-                morale_modifier: 0.0,
-                capabilities: vec![],
-                move_progress: 0.0,
+                ..Default::default()
             },
         );
         fs

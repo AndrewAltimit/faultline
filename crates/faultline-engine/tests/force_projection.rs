@@ -16,14 +16,12 @@ use std::collections::BTreeMap;
 use faultline_engine::{Engine, validate_scenario};
 use faultline_types::faction::{
     Diplomacy, DiplomaticStance, Faction, FactionType, ForceProjection, ForceUnit, MilitaryBranch,
-    UnitType,
 };
 use faultline_types::ids::{FactionId, ForceId, RegionId, VictoryId};
 use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
-use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+use faultline_types::politics::PoliticalClimate;
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-use faultline_types::strategy::Doctrine;
+use faultline_types::simulation::SimulationConfig;
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
 // ---------------------------------------------------------------------------
@@ -44,19 +42,15 @@ fn make_region(id: &str, borders: Vec<&str>, controller: &str) -> Region {
     }
 }
 
+/// Build a stationary test force. Unset fields take `ForceUnit::default()`
+/// values — notably `mobility: 0.0`, so the unit never moves on its own.
 fn make_force(id: &str, region: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: RegionId::from(region),
         strength,
-        mobility: 0.0, // never moves on its own
-        force_projection: None,
-        upkeep: 0.0,
-        morale_modifier: 0.0,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -71,24 +65,12 @@ fn make_faction(id: &str, forces: Vec<ForceUnit>, diplomacy: Vec<DiplomaticStanc
         faction_type: FactionType::Military {
             branch: MilitaryBranch::Army,
         },
-        description: String::new(),
         color: "#000".into(),
         forces: fmap,
-        tech_access: vec![],
         initial_morale: 0.8,
-        logistics_capacity: 0.0,
-        initial_resources: 0.0,
-        resource_rate: 0.0,
-        recruitment: None,
-        command_resilience: 0.0,
         intelligence: 0.5,
         diplomacy,
-        doctrine: Doctrine::Conventional,
-        escalation_rules: None,
-        defender_capacities: BTreeMap::new(),
-        leadership: None,
-        alliance_fracture: None,
-        utility: None,
+        ..Default::default()
     }
 }
 
@@ -179,19 +161,9 @@ fn build_scenario(
     Scenario {
         meta: ScenarioMeta {
             name: "force projection test".into(),
-            description: String::new(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
-            analytical_purpose: None,
-            scenario_type: None,
-            osint_sources: vec![],
-            red_team_profile: None,
-            blue_team_posture: None,
-            sensitivity_parameters: vec![],
+            ..Default::default()
         },
         map: MapConfig {
             source: MapSource::Grid {
@@ -199,42 +171,22 @@ fn build_scenario(
                 height: 1,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain,
+            ..Default::default()
         },
         factions,
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
-            tension: 0.0,
             institutional_trust: 0.5,
-            media_landscape: MediaLandscape {
-                fragmentation: 0.0,
-                disinformation_susceptibility: 0.0,
-                state_control: 0.0,
-                social_media_penetration: 0.0,
-                internet_availability: 0.0,
-            },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(seed),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
-            snapshot_interval: 0,
-            belief_model: None,
+            ..Default::default()
         },
         victory_conditions,
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: BTreeMap::new(),
+        ..Default::default()
     }
 }
 

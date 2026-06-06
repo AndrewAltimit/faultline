@@ -2037,8 +2037,8 @@ mod tests {
     use faultline_types::map::{MapConfig, MapSource, Region};
     use faultline_types::politics::{MediaLandscape, PoliticalClimate};
     use faultline_types::scenario::ScenarioMeta;
-    use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-    use faultline_types::strategy::Doctrine;
+    use faultline_types::simulation::SimulationConfig;
+
     use faultline_types::victory::{VictoryCondition, VictoryType};
 
     pub(crate) fn minimal_scenario() -> Scenario {
@@ -2069,22 +2069,13 @@ mod tests {
                 faction_type: FactionType::Insurgent,
                 description: "Test faction".into(),
                 color: "#000000".into(),
-                forces: BTreeMap::new(),
-                tech_access: vec![],
                 initial_morale: 0.8,
                 logistics_capacity: 100.0,
                 initial_resources: 1000.0,
                 resource_rate: 10.0,
-                recruitment: None,
                 command_resilience: 0.9,
                 intelligence: 0.5,
-                diplomacy: vec![],
-                doctrine: Doctrine::Conventional,
-                escalation_rules: None,
-                defender_capacities: BTreeMap::new(),
-                leadership: None,
-                alliance_fracture: None,
-                utility: None,
+                ..Default::default()
             },
         );
 
@@ -2105,10 +2096,6 @@ mod tests {
                 description: "Test scenario".into(),
                 author: "test".into(),
                 version: "0.1.0".into(),
-                tags: vec![],
-                confidence: None,
-                schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-                historical_analogue: None,
                 ..Default::default()
             },
             map: MapConfig {
@@ -2117,11 +2104,9 @@ mod tests {
                     height: 1,
                 },
                 regions,
-                infrastructure: BTreeMap::new(),
-                terrain: vec![],
+                ..Default::default()
             },
             factions,
-            technology: BTreeMap::new(),
             political_climate: PoliticalClimate {
                 tension: 0.5,
                 institutional_trust: 0.7,
@@ -2132,27 +2117,17 @@ mod tests {
                     social_media_penetration: 0.8,
                     internet_availability: 0.9,
                 },
-                population_segments: vec![],
-                global_modifiers: vec![],
+                ..Default::default()
             },
-            events: BTreeMap::new(),
             simulation: SimulationConfig {
                 max_ticks: 100,
-                tick_duration: TickDuration::Days(1),
                 monte_carlo_runs: 10,
                 seed: Some(42),
-                fog_of_war: false,
-                attrition_model: AttritionModel::LanchesterLinear,
                 snapshot_interval: 10,
-                belief_model: None,
+                ..Default::default()
             },
             victory_conditions,
-            kill_chains: BTreeMap::new(),
-            defender_budget: None,
-            attacker_budget: None,
-            environment: faultline_types::map::EnvironmentSchedule::default(),
-            strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-            networks: std::collections::BTreeMap::new(),
+            ..Default::default()
         }
     }
 

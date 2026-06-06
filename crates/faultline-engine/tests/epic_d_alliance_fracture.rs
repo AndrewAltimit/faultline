@@ -12,16 +12,13 @@ use faultline_engine::Engine;
 use faultline_engine::fracture as fracture_engine;
 use faultline_types::events::{EventCondition, EventDefinition, EventEffect};
 use faultline_types::faction::{
-    AllianceFracture, Diplomacy, DiplomaticStance, Faction, FactionType, ForceUnit,
-    FractureCondition, FractureRule, UnitType,
+    AllianceFracture, Diplomacy, DiplomaticStance, Faction, ForceUnit, FractureCondition,
+    FractureRule,
 };
 use faultline_types::ids::{EventId, FactionId, ForceId, RegionId, VictoryId};
-use faultline_types::map::{
-    InfrastructureNode, MapConfig, MapSource, Region, TerrainModifier, TerrainType,
-};
+use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
 use faultline_types::scenario::Scenario;
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-use faultline_types::strategy::Doctrine;
+use faultline_types::simulation::{AttritionModel, SimulationConfig};
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
 fn region(id: &str, neighbors: &[&str]) -> Region {
@@ -41,15 +38,11 @@ fn force(id: &str, region_id: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: RegionId::from(region_id),
         strength,
         mobility: 1.0,
-        force_projection: None,
         upkeep: 1.0,
-        morale_modifier: 0.0,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -63,25 +56,15 @@ fn make_faction(id: &str, region_id: &str) -> Faction {
     Faction {
         id: FactionId::from(id),
         name: id.into(),
-        faction_type: FactionType::Civilian,
-        description: String::new(),
         color: "#888888".into(),
         forces,
-        tech_access: vec![],
         initial_morale: 0.7,
         logistics_capacity: 10.0,
         initial_resources: 100.0,
         resource_rate: 1.0,
-        recruitment: None,
         command_resilience: 0.5,
         intelligence: 0.5,
-        diplomacy: vec![],
-        doctrine: Doctrine::default(),
-        escalation_rules: None,
-        defender_capacities: BTreeMap::new(),
-        leadership: None,
-        alliance_fracture: None,
-        utility: None,
+        ..Default::default()
     }
 }
 
@@ -134,18 +117,15 @@ fn three_faction_scenario() -> Scenario {
                 height: 2,
             },
             regions,
-            infrastructure: BTreeMap::<faultline_types::ids::InfraId, InfrastructureNode>::new(),
             terrain,
+            ..Default::default()
         },
         simulation: SimulationConfig {
             max_ticks: 20,
             monte_carlo_runs: 1,
-            fog_of_war: false,
-            snapshot_interval: 0,
-            belief_model: None,
             seed: Some(42),
-            tick_duration: TickDuration::Days(1),
             attrition_model: AttritionModel::Stochastic { noise: 0.0 },
+            ..Default::default()
         },
         victory_conditions,
         ..Default::default()

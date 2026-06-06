@@ -16,14 +16,13 @@ use faultline_engine::Engine;
 use faultline_engine::diplomacy::{ai_threat_multiplier, combat_blocked};
 use faultline_types::events::{EventCondition, EventDefinition, EventEffect};
 use faultline_types::faction::{
-    Diplomacy, DiplomaticStance, Faction, FactionType, ForceUnit, MilitaryBranch, UnitType,
+    Diplomacy, DiplomaticStance, Faction, FactionType, ForceUnit, MilitaryBranch,
 };
 use faultline_types::ids::{EventId, FactionId, ForceId, RegionId};
 use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
-use faultline_types::politics::{MediaLandscape, PoliticalClimate};
+use faultline_types::politics::PoliticalClimate;
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-use faultline_types::strategy::Doctrine;
+use faultline_types::simulation::SimulationConfig;
 
 // ---------------------------------------------------------------------------
 // Shared fixture
@@ -46,15 +45,11 @@ fn make_force(id: &str, region: &RegionId, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: region.clone(),
         strength,
         mobility: 1.0,
-        force_projection: None,
         upkeep: 1.0,
-        morale_modifier: 0.0,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -67,24 +62,15 @@ fn make_faction(id: &str, region: &RegionId, diplomacy: Vec<DiplomaticStance>) -
         faction_type: FactionType::Military {
             branch: MilitaryBranch::Army,
         },
-        description: String::new(),
         color: "#000000".into(),
         forces,
-        tech_access: vec![],
         initial_morale: 0.8,
         logistics_capacity: 50.0,
         initial_resources: 1_000.0,
         resource_rate: 10.0,
-        recruitment: None,
-        command_resilience: 0.0,
         intelligence: 0.5,
         diplomacy,
-        doctrine: Doctrine::Conventional,
-        escalation_rules: None,
-        defender_capacities: BTreeMap::new(),
-        leadership: None,
-        alliance_fracture: None,
-        utility: None,
+        ..Default::default()
     }
 }
 
@@ -97,13 +83,8 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
     Scenario {
         meta: ScenarioMeta {
             name: "diplomacy_behavior".into(),
-            description: String::new(),
             author: "test".into(),
             version: "0.1.0".into(),
-            tags: vec![],
-            confidence: None,
-            schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -112,7 +93,6 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
                 height: 1,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain: vec![TerrainModifier {
                 region: r1,
                 terrain_type: TerrainType::Rural,
@@ -120,40 +100,20 @@ fn empty_scenario(seed: u64, max_ticks: u32) -> Scenario {
                 defense_modifier: 1.0,
                 visibility: 1.0,
             }],
+            ..Default::default()
         },
-        factions: BTreeMap::new(),
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
-            tension: 0.0,
             institutional_trust: 0.5,
-            media_landscape: MediaLandscape {
-                fragmentation: 0.0,
-                disinformation_susceptibility: 0.0,
-                state_control: 0.0,
-                social_media_penetration: 0.0,
-                internet_availability: 0.0,
-            },
-            population_segments: vec![],
-            global_modifiers: vec![],
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(seed),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
             snapshot_interval: 10,
-            belief_model: None,
+            ..Default::default()
         },
-        victory_conditions: BTreeMap::new(),
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: faultline_types::map::EnvironmentSchedule::default(),
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: BTreeMap::new(),
+        ..Default::default()
     }
 }
 

@@ -760,11 +760,8 @@ mod tests {
             region: RegionId::from(region),
             strength,
             mobility: 1.0,
-            force_projection: None,
             upkeep: 1.0,
-            morale_modifier: 0.0,
-            capabilities: vec![],
-            move_progress: 0.0,
+            ..Default::default()
         };
         (fid, unit)
     }

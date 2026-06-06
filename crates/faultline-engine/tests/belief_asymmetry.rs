@@ -18,15 +18,12 @@ use faultline_types::belief::{
     BeliefModelConfig, BeliefSource, DeceptionPayload, IntelligencePayload,
 };
 use faultline_types::events::{EventDefinition, EventEffect};
-use faultline_types::faction::{Faction, FactionType, ForceUnit, UnitType};
+use faultline_types::faction::{Faction, FactionType, ForceUnit};
 use faultline_types::ids::{EventId, FactionId, ForceId, RegionId, VictoryId};
-use faultline_types::map::{
-    EnvironmentSchedule, MapConfig, MapSource, Region, TerrainModifier, TerrainType,
-};
+use faultline_types::map::{MapConfig, MapSource, Region, TerrainModifier, TerrainType};
 use faultline_types::politics::{MediaLandscape, PoliticalClimate};
 use faultline_types::scenario::{Scenario, ScenarioMeta};
-use faultline_types::simulation::{AttritionModel, SimulationConfig, TickDuration};
-use faultline_types::strategy::Doctrine;
+use faultline_types::simulation::SimulationConfig;
 use faultline_types::victory::{VictoryCondition, VictoryType};
 
 fn region(id: &str, controller: Option<&str>, borders: Vec<&str>) -> (RegionId, Region) {
@@ -60,15 +57,11 @@ fn force(id: &str, region_id: &str, strength: f64) -> ForceUnit {
     ForceUnit {
         id: ForceId::from(id),
         name: id.into(),
-        unit_type: UnitType::Infantry,
         region: RegionId::from(region_id),
         strength,
         mobility: 1.0,
-        force_projection: None,
         upkeep: 1.0,
-        morale_modifier: 0.0,
-        capabilities: vec![],
-        move_progress: 0.0,
+        ..Default::default()
     }
 }
 
@@ -83,24 +76,15 @@ fn faction(id: &str, region_id: &str, force_id: &str, strength: f64) -> (Faction
             id: fid,
             name: id.into(),
             faction_type: FactionType::Insurgent,
-            description: String::new(),
             color: "#000000".into(),
             forces,
-            tech_access: vec![],
             initial_morale: 0.8,
             logistics_capacity: 100.0,
             initial_resources: 100.0,
             resource_rate: 5.0,
-            recruitment: None,
             command_resilience: 0.5,
             intelligence: 0.5,
-            diplomacy: vec![],
-            doctrine: Doctrine::Conventional,
-            escalation_rules: None,
-            defender_capacities: BTreeMap::new(),
-            leadership: None,
-            alliance_fracture: None,
-            utility: None,
+            ..Default::default()
         },
     )
 }
@@ -154,9 +138,6 @@ fn base_scenario(belief_enabled: bool) -> Scenario {
             description: "test".into(),
             author: "test".into(),
             version: "0.0.1".into(),
-            tags: vec![],
-            confidence: None,
-            historical_analogue: None,
             ..Default::default()
         },
         map: MapConfig {
@@ -165,16 +146,13 @@ fn base_scenario(belief_enabled: bool) -> Scenario {
                 height: 1,
             },
             regions,
-            infrastructure: BTreeMap::new(),
             terrain: vec![terrain("alpha_home"), terrain("bravo_home")],
+            ..Default::default()
         },
         factions,
-        technology: BTreeMap::new(),
         political_climate: PoliticalClimate {
             tension: 0.3,
             institutional_trust: 0.7,
-            population_segments: vec![],
-            global_modifiers: vec![],
             media_landscape: MediaLandscape {
                 fragmentation: 0.3,
                 disinformation_susceptibility: 0.2,
@@ -182,25 +160,17 @@ fn base_scenario(belief_enabled: bool) -> Scenario {
                 social_media_penetration: 0.5,
                 internet_availability: 0.9,
             },
+            ..Default::default()
         },
-        events: BTreeMap::new(),
         simulation: SimulationConfig {
             max_ticks: 30,
-            tick_duration: TickDuration::Days(1),
             monte_carlo_runs: 1,
             seed: Some(42),
-            fog_of_war: false,
-            attrition_model: AttritionModel::LanchesterLinear,
-            snapshot_interval: 0,
             belief_model,
+            ..Default::default()
         },
         victory_conditions,
-        kill_chains: BTreeMap::new(),
-        defender_budget: None,
-        attacker_budget: None,
-        environment: EnvironmentSchedule { windows: vec![] },
-        strategy_space: faultline_types::strategy_space::StrategySpace::default(),
-        networks: BTreeMap::new(),
+        ..Default::default()
     }
 }
 
