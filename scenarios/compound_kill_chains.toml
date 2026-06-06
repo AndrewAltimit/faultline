@@ -49,6 +49,21 @@ description = "Research simulation of three concurrent archetypal adversary camp
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["kill-chain", "compound", "phase-6", "red-team", "defensive-planning", "c-uas"]
+scenario_type = "red_team"
+analytical_purpose = "Quantify doctrinal seams between counter-UAS, cyber, and physical security by running three concurrent archetypal adversary campaigns against an integrated federal security posture."
+red_team_profile = "Three concurrent campaigns: Alpha (intelligence-led pressure: passive sensing -> wireless mapping -> credential harvest -> disclosure), Bravo (non-lethal swarm proof-of-capability), Charlie (cyber-physical convergence: drone-delivered rogue-AP relay into ICS/SCADA plus an inert physical diversion)."
+blue_team_posture = "Notional integrated federal security posture whose layered C-UAS / cyber / physical-security integration gaps are the measured output."
+osint_sources = [
+    "GAO reports on C-UAS coordination gaps",
+    "CISA public insights on UAS threats and ICS security",
+    "RAND public research on small-UAS adversary capabilities",
+    "IISS Military Balance C-UAS deployment descriptions",
+    "Open reporting on published ransomware and intrusion case studies",
+]
+sensitivity_parameters = [
+    "per-campaign phase success / detection probabilities",
+    "defender attention split across concurrent campaigns",
+]
 
 # ============================================================================
 # Map — DC Metro operational theater

@@ -174,6 +174,36 @@ pub struct RunResult {
     /// single per-batch divergence rate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attribution_events: Vec<AttributionEventReport>,
+    /// Per-attacker standoff-strike force-projection roll-up for this
+    /// run. Only populated for factions that landed at least one
+    /// standoff strike (a unit declaring
+    /// `ForceProjection::StandoffStrike` removed strength from a hostile
+    /// force in an in-range region). Empty when no unit declares
+    /// `force_projection` or no strike ever connected — legacy scenarios
+    /// elide entirely. Keyed by attacker `FactionId` for deterministic
+    /// rendering. The cross-run aggregator
+    /// `MonteCarloSummary.force_projection_summaries` rolls these into
+    /// per-attacker means.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub force_projection_reports: BTreeMap<FactionId, ForceProjectionReport>,
+}
+
+/// Per-attacker standoff-strike force-projection report for one run.
+///
+/// Captured by the engine's force-projection phase: each time a unit
+/// declaring `ForceProjection::StandoffStrike` removes strength from a
+/// hostile force in a region within its reach, the strike is credited
+/// here. `strikes` counts individual (region, target) applications;
+/// `total_strength_removed` sums the strength actually subtracted (which
+/// can be less than the declared `damage` when the target had less
+/// strength present); `regions_struck` lists the distinct regions hit,
+/// in sorted order.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ForceProjectionReport {
+    pub attacker: FactionId,
+    pub strikes: u32,
+    pub total_strength_removed: f64,
+    pub regions_struck: Vec<RegionId>,
 }
 
 /// One believed-attribution roll captured for cross-run analytics
@@ -868,6 +898,31 @@ pub struct MonteCarloSummary {
     /// `faultline_stats::misattribution::compute_misattribution_summary`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub misattribution_summary: Option<MisattributionSummary>,
+    /// Per-attacker standoff-strike force-projection analytics across
+    /// runs. Empty when no scenario unit declares `force_projection` or
+    /// no strike ever landed — the `## Force Projection` report section
+    /// elides on that signal. Keyed by attacker `FactionId` for
+    /// deterministic rendering. Producer:
+    /// `faultline_stats::compute_force_projection_summaries`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub force_projection_summaries: BTreeMap<FactionId, ForceProjectionSummary>,
+}
+
+/// Per-attacker standoff-strike force-projection analytics across runs.
+///
+/// Aggregates every per-run [`ForceProjectionReport`] for one attacker
+/// faction. `mean_strikes_per_run` and `mean_strength_removed_per_run`
+/// average over the runs where the attacker landed at least one strike;
+/// `runs_with_strikes` is that denominator. `max_strength_removed` is
+/// the single deepest run-total observed across the batch — useful for
+/// sizing the tail effect of a standoff-strike posture.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ForceProjectionSummary {
+    pub attacker: FactionId,
+    pub runs_with_strikes: u32,
+    pub mean_strikes_per_run: f64,
+    pub mean_strength_removed_per_run: f64,
+    pub max_strength_removed: f64,
 }
 
 /// Cross-run believed-attribution analytics (Epic M round-two).
@@ -1764,4 +1819,9 @@ pub struct DeltaEncodedRun {
     /// verbatim. Empty when `belief_model.believed_attribution = false`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attribution_events: Vec<AttributionEventReport>,
+    /// Per-attacker standoff-strike force-projection roll-up — preserved
+    /// verbatim. Empty when no unit declares `force_projection` or no
+    /// strike landed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub force_projection_reports: BTreeMap<FactionId, ForceProjectionReport>,
 }

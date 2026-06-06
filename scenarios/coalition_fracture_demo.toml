@@ -29,6 +29,14 @@ description = "Three-faction archetype showing an alliance fracturing under attr
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["alliance-fracture", "kill-chain", "attribution", "coalition", "epic-d"]
+scenario_type = "demo"
+analytical_purpose = "Demonstrate the alliance-fracture mechanic: a cooperative neighbor flips hostile once attribution confidence on an attacker crosses a threshold — the 'covert operation loses deniability' dynamic."
+red_team_profile = "Attacker running a covert kill chain whose attribution confidence accumulates with each phase."
+blue_team_posture = "A coalition whose cohesion depends on a neighbor staying cooperative until attribution crosses the fracture threshold."
+sensitivity_parameters = [
+    "attribution-confidence fracture threshold",
+    "kill-chain phase attribution accrual",
+]
 
 [map]
 [map.source]

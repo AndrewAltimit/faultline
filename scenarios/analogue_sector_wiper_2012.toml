@@ -1,0 +1,434 @@
+# Historical-analogue scenario
+# =============================
+#
+# Single named-event analogue: the August 2012 destructive-malware
+# availability incident against a single named-sector target — a major
+# national energy company. An intrusion set with prior network access
+# detonated a destructive (disk-overwriting) payload that rendered on the
+# order of 30,000 workstations inoperable in a single coordinated action,
+# disrupting the company's corporate IT for a sustained period before
+# rebuild-led recovery. It is a canonical public example of a single-target
+# destructive availability event in a critical sector — distinct from a
+# self-propagating supply-chain wiper — which makes it a clean single-event
+# calibration analogue.
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("sector_wiper"): a destructive intrusion set that, having
+#   already obtained internal access, staged and detonated a
+#   disk-overwriting payload across the target's corporate workstation
+#   estate in a single coordinated action timed for maximum disruption.
+# Defender ("energy_company"): a major national energy company whose
+#   corporate IT estate (workstations, file shares, business systems)
+#   had limited internal segmentation and host-recovery automation at the
+#   time, so the destructive action degraded business operations until a
+#   large-scale rebuild restored systems.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# malware internals, no exploit detail, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Kill-chain shape (existing internal access → staging of the
+#   destructive payload → coordinated detonation → mass workstation
+#   destruction → rebuild-led recovery) is drawn from public incident
+#   reporting and defensive-community analyses of the 2012 event. Only the
+#   AGGREGATE phase structure and public outcome are encoded — no malware
+#   internals or exploit detail.
+# - Outcome: attacker-success at the scale of disruption — on the order
+#   of 30,000 workstations rendered inoperable in a single action,
+#   degrading corporate operations for a sustained period. Encoded as
+#   high phase-success probabilities and an attacker win on the
+#   destructive-impact metric.
+# - Duration: the destructive action itself was effectively
+#   simultaneous, with the resulting outage and rebuild spanning days to
+#   a couple of weeks per public reporting. Modeled at one tick = one day
+#   over a short horizon; the duration band brackets the documented
+#   detonation-plus-degradation window with two-sided uncertainty.
+#
+# All figures (~30,000 workstations destroyed, single-target destructive
+# action against a national energy company, rebuild-led recovery) are
+# from public reporting and contain no classified, CUI, or
+# export-controlled material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Sector-Targeted Destructive Wiper (Aug 2012)"
+description = """
+Single-event historical analogue: the August 2012 destructive-malware
+availability incident against a single major national energy company. An
+intrusion set with existing internal access detonated a disk-overwriting
+payload that rendered on the order of 30,000 workstations inoperable in a
+single coordinated action, degrading corporate operations for a sustained
+period before a large-scale rebuild restored systems — a canonical public
+example of a single-target destructive availability event in a critical
+sector. The documented attacker-success outcome and short
+(detonation-plus-degradation) duration are encoded as calibration
+observations and back-tested against the Monte Carlo distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public incident reporting and defensive-community
+analyses. No malware internals, exploit detail, classified, CUI, or
+export-controlled material is encoded — only the aggregate statistical
+effects the engine consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "wiper", "destructive", "energy-sector"]
+confidence = "High"
+
+[meta.historical_analogue]
+name = "August 2012 sector-targeted destructive wiper"
+description = """
+A destructive-malware action against a single major national energy
+company that rendered ~30,000 corporate workstations inoperable in a
+single coordinated detonation, degrading business operations for days to
+a couple of weeks before rebuild-led recovery. The analogue back-tests
+whether this scenario's kill-chain parameters reproduce both the
+documented victor (the attacker, on the destructive-impact metric) and
+the documented short detonation-plus-degradation duration.
+"""
+period = "2012-08-15"
+sources = [
+    "Public incident reporting on the August 2012 sector-targeted destructive event",
+    "Congressional Research Service reporting on cyber threats to energy-sector infrastructure",
+    "Published academic / defensive-community analyses of single-target destructive malware",
+    "Public reporting on the scale of impact (~30,000 workstations rendered inoperable)",
+]
+confidence = "High"
+
+# Documented victor: the attacker achieved mass destructive impact.
+[[meta.historical_analogue.observations]]
+notes = "Public reporting: the destructive action rendered ~30,000 corporate workstations inoperable at a single named energy company in one coordinated detonation."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "sector_wiper"
+
+# Win-rate band: a staged destructive action from existing internal
+# access against an estate with limited segmentation and host-recovery
+# automation achieves mass impact with very high reliability once
+# detonated. Band kept wide for single-case uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "A staged destructive action from existing internal access against limited segmentation achieves mass impact with very high reliability once detonated; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "sector_wiper"
+low = 0.75
+high = 1.0
+
+# Duration: detonation effectively simultaneous; outage and rebuild
+# spanned days to a couple of weeks. One tick = one day; interval [2, 14]
+# brackets the detonation-plus-degradation window.
+[[meta.historical_analogue.observations]]
+notes = "Detonation was effectively simultaneous; the resulting outage and rebuild spanned days to a couple of weeks. Modeled at one tick = one day; band brackets the window."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 2
+high = 14
+
+# -- Map (staging foothold → corporate core → workstation estate) ----------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.staging_foothold]
+id = "staging_foothold"
+name = "Internal Staging Foothold"
+population = 200
+urbanization = 0.9
+initial_control = "energy_company"
+strategic_value = 0.4
+borders = ["corporate_core"]
+
+[map.regions.corporate_core]
+id = "corporate_core"
+name = "Corporate Core (business systems)"
+population = 8000
+urbanization = 0.9
+initial_control = "energy_company"
+strategic_value = 0.8
+borders = ["staging_foothold", "workstation_estate"]
+
+[map.regions.workstation_estate]
+id = "workstation_estate"
+name = "Corporate Workstation Estate (~30k hosts)"
+population = 60000
+urbanization = 0.85
+initial_control = "energy_company"
+strategic_value = 1.0
+borders = ["corporate_core"]
+
+[map.infrastructure.workstation_fleet]
+id = "workstation_fleet"
+name = "Corporate Workstation Fleet"
+region = "workstation_estate"
+infra_type = "SupplyChain"
+criticality = 1.0
+initial_status = 1.0
+repairable = 12
+
+[map.infrastructure.business_systems]
+id = "business_systems"
+name = "Corporate Business Systems"
+region = "corporate_core"
+infra_type = "GovernmentBuilding"
+criticality = 0.8
+initial_status = 1.0
+repairable = 10
+
+[[map.terrain]]
+region = "staging_foothold"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "corporate_core"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "workstation_estate"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.5
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.sector_wiper]
+id = "sector_wiper"
+name = "Sector Wiper (Threat Actor)"
+description = "Destructive intrusion set that staged and detonated a disk-overwriting payload across a single energy company's workstation estate."
+color = "#7c2d12"
+tech_access = []
+initial_morale = 0.9
+logistics_capacity = 35.0
+initial_resources = 700.0
+resource_rate = 18.0
+command_resilience = 0.85
+intelligence = 0.8
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.sector_wiper.faction_type]
+kind = "Foreign"
+is_proxy = true
+
+[factions.sector_wiper.forces.wiper_cell]
+id = "wiper_cell"
+name = "Destructive Operations Cell"
+unit_type = "CyberUnit"
+region = "staging_foothold"
+strength = 70.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.energy_company]
+id = "energy_company"
+name = "Energy Company (Defender)"
+description = "Major national energy company whose corporate IT estate had limited internal segmentation and host-recovery automation at the time."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.6
+logistics_capacity = 50.0
+initial_resources = 600.0
+resource_rate = 24.0
+command_resilience = 0.5
+intelligence = 0.45
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.energy_company.faction_type]
+kind = "Civilian"
+
+[factions.energy_company.forces.it_response]
+id = "it_response"
+name = "Corporate IT Response"
+unit_type = "LawEnforcement"
+region = "corporate_core"
+strength = 55.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.7
+internet_availability = 0.9
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: staged destructive detonation -----------------------------
+#
+# Four short phases. Once the destructive payload is staged from existing
+# internal access, detonation is near-certain and fast (high success, low
+# detection in the staging window). Cumulative destructive-impact pressure
+# crosses the 0.55 threshold within a few days — the
+# detonation-plus-degradation window before rebuild-led recovery. High
+# base success probabilities reflect the existing internal access and the
+# limited segmentation.
+
+[kill_chains.wiper_op]
+id = "wiper_op"
+name = "Staged Destructive Detonation"
+description = "Aggregate model of the single-target destructive action: leveraging existing internal access, staging the destructive payload, coordinated detonation, and mass workstation destruction."
+attacker = "sector_wiper"
+target = "energy_company"
+entry_phase = "leverage_access"
+
+[kill_chains.wiper_op.phases.leverage_access]
+id = "leverage_access"
+name = "Leverage Existing Internal Access"
+description = "Aggregate model of consolidating existing internal access and reach across the corporate estate. Effect-level only; no technique detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.8
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.wiper_op.phases.leverage_access.outputs]]
+type = "CoercionPressure"
+delta = 0.14
+
+[[kill_chains.wiper_op.phases.leverage_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "stage_payload"
+
+[kill_chains.wiper_op.phases.stage_payload]
+id = "stage_payload"
+name = "Stage Destructive Payload"
+description = "Aggregate model of distributing the destructive payload to staging points across the corporate workstation estate ahead of detonation."
+prerequisites = ["leverage_access"]
+base_success_probability = 0.94
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.02
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.8
+targets_domains = ["NetworkSecurity", "SupplyChainSecurity"]
+
+[[kill_chains.wiper_op.phases.stage_payload.outputs]]
+type = "CoercionPressure"
+delta = 0.16
+
+[[kill_chains.wiper_op.phases.stage_payload.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "coordinated_detonation"
+
+[kill_chains.wiper_op.phases.coordinated_detonation]
+id = "coordinated_detonation"
+name = "Coordinated Detonation"
+description = "Aggregate model of the single coordinated trigger that begins disk overwriting across the staged hosts simultaneously."
+prerequisites = ["stage_payload"]
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.8
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.wiper_op.phases.coordinated_detonation.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.wiper_op.phases.coordinated_detonation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "mass_destruction"
+
+[kill_chains.wiper_op.phases.mass_destruction]
+id = "mass_destruction"
+name = "Mass Workstation Destruction"
+description = "Terminal phase. Aggregate model of the disk-overwriting effect rendering ~30,000 corporate workstations inoperable, degrading business operations until rebuild."
+prerequisites = ["coordinated_detonation"]
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.8
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.wiper_op.phases.mass_destruction.outputs]]
+type = "CoercionPressure"
+delta = 0.16
+
+[[kill_chains.wiper_op.phases.mass_destruction.outputs]]
+type = "InfraDamage"
+region = "workstation_estate"
+factor = 0.9
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 18-day cap brackets the documented detonation-plus-degradation window
+# with headroom. One tick = one day. The attacker wins by crossing the
+# destructive-impact (CoercionPressure) threshold; the defender wins only
+# by keeping its workstation estate operational for the full horizon.
+
+[simulation]
+max_ticks = 18
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2012
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Days = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: mass destructive impact (cumulative destructive
+# pressure crosses the estate's resilience threshold).
+[victory_conditions.estate_destroyed]
+id = "estate_destroyed"
+name = "Sector Wiper Achieves Mass Destruction"
+faction = "sector_wiper"
+
+[victory_conditions.estate_destroyed.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep the workstation estate operational for the
+# full horizon.
+[victory_conditions.estate_survives]
+id = "estate_survives"
+name = "Energy Company Estate Survives Intact"
+faction = "energy_company"
+
+[victory_conditions.estate_survives.condition]
+type = "HoldRegions"
+regions = ["workstation_estate"]
+duration = 18

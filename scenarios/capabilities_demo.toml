@@ -26,6 +26,16 @@ rooftop inspection, MDM enforcement).
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["demo", "tech-cards", "drone-threat"]
+scenario_type = "demo"
+analytical_purpose = "Give every faction access to the full Drone Threat Library so an analyst can experiment with how offensive and defensive capability cards interact."
+osint_sources = [
+    "IISS Military Balance",
+    "Congressional testimony and academic literature on UAS / counter-UAS",
+    "Open-source UAS / counter-UAS threat-assessment writing",
+]
+sensitivity_parameters = [
+    "drone-threat tech-card capability parameters",
+]
 
 # -- Map --------------------------------------------------------------------
 

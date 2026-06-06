@@ -29,6 +29,19 @@ description = "Two-network defender (supply + comms) under scripted interdiction
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["networks", "resilience", "interdiction", "epic-l", "supply-chain", "comms"]
+scenario_type = "demo"
+analytical_purpose = "Make networked failure modes (single-points-of-failure, cascading degradation) directly observable via a two-network defender under scripted interdiction, rather than implicitly modeling them through region control."
+red_team_profile = "Scripted attacker that disrupts the comms layer before interdicting the logistics layer."
+blue_team_posture = "Defender operating two interdependent networks (a logistics graph and a comms graph)."
+osint_sources = [
+    "DoD logistics studies",
+    "Public comms-resilience analyses",
+    "RAND Civil Reserve Air Fleet reports",
+]
+sensitivity_parameters = [
+    "network topology (critical-node betweenness)",
+    "disruption / interdiction event timing",
+]
 confidence = "Medium"
 
 # ============================================================================

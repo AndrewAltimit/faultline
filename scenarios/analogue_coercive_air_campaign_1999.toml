@@ -1,0 +1,457 @@
+# Historical-analogue scenario
+# =============================
+#
+# Single named-event analogue: the spring 1999 coercive air campaign
+# over the Balkans, modeled as a sustained air-pressure operation whose
+# documented end state was the adversary's acceptance of a negotiated
+# withdrawal after roughly eleven weeks of bombing. It is one of the
+# best-documented modern cases of coercion-by-airpower, which makes it a
+# clean single-event calibration analogue for a kinetic-coercion episode
+# resolved without a ground invasion.
+#
+# ---------------------------------------------------------------------
+# Modeling choice (read this first)
+# ---------------------------------------------------------------------
+# Faultline's combat model resolves attrition only where opposing forces
+# co-locate, and the AI will not assault a defended interior, so a clean
+# "victory by conquest" verdict is not reliably reachable at realistic
+# force ratios over a short horizon. The decisive feature of this
+# campaign was not territorial seizure but the COERCION of the target
+# government into accepting terms. It is therefore modeled at the level
+# of COERCIVE PRESSURE: the air coalition runs a phased campaign whose
+# successful phases accumulate the engine's generic `CoercionPressure`
+# metric, and the run resolves when that pressure crosses the target's
+# political-resilience threshold — i.e. the point at which the target
+# accepts the negotiated terms. This is the engine's reliable,
+# well-instrumented subsystem (kill chains + non-kinetic accumulators)
+# and is the analytically honest way to encode "air pressure compelled a
+# settlement in weeks."
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Coercer ("air_coalition"): a large multinational air coalition with
+#   decisive air superiority conducting a phased campaign — air-defense
+#   suppression, fielded-force and fixed-target strikes, then escalation
+#   to strategic infrastructure and leadership-relevant targets — to
+#   raise the political cost of continued resistance.
+# Target ("target_state"): a medium conventional state with a layered
+#   but outmatched integrated air-defense system and limited strategic
+#   depth, defending home territory and a contested province.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# order-of-battle reconstruction, no targeting detail, no classified or
+# CUI material)
+# ---------------------------------------------------------------------
+# - Air dominance: open-source post-conflict analyses (IISS Military
+#   Balance editions for the period; RAND and other public assessments
+#   of the air campaign) describe decisive coalition air superiority
+#   against an outmatched, if resilient, integrated air-defense system.
+#   Encoded as high base success probabilities on the campaign's
+#   pressure phases (an overmatched coercive air campaign rarely stalls
+#   outright), not as a literal aircraft-count ratio.
+# - Duration: the campaign ran roughly eleven weeks (late March to early
+#   June 1999) before the target accepted withdrawal terms, per the
+#   widely-reported public timeline. Modeled at one tick = three days
+#   over a multi-week horizon, so ~11 weeks maps to the mid-teens of
+#   ticks; the duration band brackets this with two-sided uncertainty.
+# - Outcome: the coalition achieved its coercive objective — the target
+#   accepted a negotiated withdrawal — a decisive coercer result.
+#
+# All figures (eleven-week campaign, air-superiority overmatch, coerced
+# withdrawal) are from public reporting and contain no classified, CUI,
+# or export-controlled material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Coercive Air Campaign (Spring 1999)"
+description = """
+Single-event historical analogue: the spring 1999 coercive air campaign
+over the Balkans, modeled as a sustained air-pressure operation. A large
+multinational air coalition coerces a medium conventional state into
+accepting a negotiated withdrawal after roughly eleven weeks of bombing.
+The documented outcome — decisive coercer success in weeks, without a
+ground invasion — is encoded as calibration observations and back-tested
+against the Monte Carlo distribution. The coercion is modeled via the
+engine's non-kinetic `CoercionPressure` accumulator (its reliable
+kill-chain subsystem) rather than territorial seizure; see the header
+comment for the rationale.
+
+Parameters are aggregate phase success / duration / pressure values
+sourced from public OSINT (IISS Military Balance, RAND and other public
+post-conflict assessments of the air campaign, academic
+coercion-by-airpower literature, the public campaign timeline). No
+order-of-battle reconstruction, targeting detail, classified, CUI, or
+export-controlled material is encoded — only the aggregate statistical
+effects the engine consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "air-campaign", "coercion", "inter-state", "kinetic"]
+confidence = "Medium"
+
+[meta.historical_analogue]
+name = "Spring 1999 coercive air campaign — coerced withdrawal"
+description = """
+The roughly eleven-week air campaign (late March to early June 1999)
+ending in the target state's acceptance of a negotiated withdrawal. A
+large multinational air coalition coerced a medium conventional state
+into terms without a ground invasion. The analogue back-tests whether
+this scenario's coercion-campaign parameters reproduce both the
+documented victor (the coalition) and the documented multi-week duration.
+"""
+period = "1999-03-24 to 1999-06-10"
+sources = [
+    "IISS Military Balance (annual editions covering 1998-2000)",
+    "RAND and other public post-conflict assessments of the 1999 air campaign",
+    "Academic literature on coercion by airpower and air-campaign outcomes",
+    "Public campaign timeline reporting (late March to early June 1999)",
+]
+confidence = "Medium"
+
+# Documented victor: the coalition coerced acceptance of withdrawal terms.
+[[meta.historical_analogue.observations]]
+notes = "Public post-conflict consensus: the air coalition achieved its coercive objective and the target accepted a negotiated withdrawal."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "air_coalition"
+
+# Win-rate band: a sustained coercive air campaign with decisive air
+# superiority against an outmatched target succeeds at a high rate. Band
+# kept wide for single-case + reference-set uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "Coercer success rate for sustained air campaigns with decisive air superiority against an outmatched target is high; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "air_coalition"
+low = 0.65
+high = 1.0
+
+# Duration: ~11 weeks at one tick = three days maps to roughly the
+# mid-teens of ticks. Interval [8, 22] brackets the documented figure
+# with two-sided uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "Campaign ran ~11 weeks (late March to early June 1999); at one tick = three days this maps to roughly the mid-teens of ticks. Band brackets it on both sides."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 8
+high = 22
+
+# -- Map (coalition basing + contested province + target interior) ---------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.coalition_basing]
+id = "coalition_basing"
+name = "Coalition Air Basing"
+population = 200000
+urbanization = 0.6
+initial_control = "air_coalition"
+strategic_value = 0.3
+borders = ["contested_province"]
+
+[map.regions.contested_province]
+id = "contested_province"
+name = "Contested Province (disputed)"
+population = 1800000
+urbanization = 0.4
+initial_control = "target_state"
+strategic_value = 0.7
+borders = ["coalition_basing", "target_interior"]
+
+[map.regions.target_interior]
+id = "target_interior"
+name = "Target State — Interior"
+population = 5000000
+urbanization = 0.6
+initial_control = "target_state"
+strategic_value = 1.0
+borders = ["contested_province"]
+
+[map.infrastructure.target_iads]
+id = "target_iads"
+name = "Integrated Air-Defense & C2 Network"
+region = "target_interior"
+infra_type = "GovernmentBuilding"
+criticality = 0.9
+initial_status = 1.0
+repairable = 12
+
+[map.infrastructure.target_power]
+id = "target_power"
+name = "Strategic Power & Infrastructure Grid"
+region = "target_interior"
+infra_type = "PowerGrid"
+criticality = 0.8
+initial_status = 1.0
+repairable = 14
+
+[[map.terrain]]
+region = "coalition_basing"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 0.9
+
+[[map.terrain]]
+region = "contested_province"
+terrain_type = "Mountain"
+movement_modifier = 0.8
+defense_modifier = 1.2
+visibility = 0.6
+
+[[map.terrain]]
+region = "target_interior"
+terrain_type = "Urban"
+movement_modifier = 0.9
+defense_modifier = 1.15
+visibility = 0.8
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.air_coalition]
+id = "air_coalition"
+name = "Air Coalition (Coercer)"
+description = "Large multinational air coalition with decisive air superiority running a phased coercive air campaign."
+color = "#3366CC"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 90.0
+initial_resources = 1800.0
+resource_rate = 70.0
+command_resilience = 0.8
+intelligence = 0.75
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.air_coalition.faction_type]
+kind = "Military"
+branch = "AirForce"
+
+[factions.air_coalition.forces.coalition_air]
+id = "coalition_air"
+name = "Coalition Air Component"
+unit_type = "AirSupport"
+region = "coalition_basing"
+strength = 600.0
+mobility = 1.4
+upkeep = 7.0
+morale_modifier = 0.1
+capabilities = []
+
+[factions.target_state]
+id = "target_state"
+name = "Target State (Defender)"
+description = "Medium conventional state with a layered but outmatched integrated air-defense system and limited strategic depth."
+color = "#CC3333"
+tech_access = []
+initial_morale = 0.6
+logistics_capacity = 30.0
+initial_resources = 300.0
+resource_rate = 14.0
+command_resilience = 0.4
+intelligence = 0.5
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.target_state.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.target_state.forces.target_iads_force]
+id = "target_iads_force"
+name = "Integrated Air-Defense Force"
+unit_type = "AirDefense"
+region = "target_interior"
+strength = 180.0
+mobility = 0.5
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none) ------------------------------------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.8
+institutional_trust = 0.55
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.55
+social_media_penetration = 0.2
+internet_availability = 0.4
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: phased coercive air campaign ------------------------------
+#
+# Four phases, each 2-4 ticks (one tick = three days), each emitting
+# CoercionPressure on success. Cumulative pressure crosses the 0.55
+# acceptance threshold around the mid-teens of ticks — the ~11-week
+# campaign. High base success probabilities encode decisive air
+# superiority (a coercive air campaign at this overmatch rarely stalls);
+# the phased structure and the per-phase durations encode the gradual,
+# escalating nature of coercion by airpower.
+
+[kill_chains.air_coercion]
+id = "air_coercion"
+name = "Phased Coercive Air Campaign"
+description = "Aggregate model of a phased air campaign (air-defense suppression, fielded-force and fixed-target strikes, strategic-infrastructure escalation, sustained pressure) compelling the target state to accept withdrawal terms."
+attacker = "air_coalition"
+target = "target_state"
+entry_phase = "suppress_air_defenses"
+
+[kill_chains.air_coercion.phases.suppress_air_defenses]
+id = "suppress_air_defenses"
+name = "Suppress Air Defenses & Establish Control"
+description = "Aggregate model of suppressing the integrated air-defense system and establishing freedom of action over the theatre."
+prerequisites = []
+base_success_probability = 0.93
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.0
+attribution_difficulty = 0.1
+targets_domains = ["PhysicalSecurity"]
+
+[[kill_chains.air_coercion.phases.suppress_air_defenses.outputs]]
+type = "CoercionPressure"
+delta = 0.14
+
+[[kill_chains.air_coercion.phases.suppress_air_defenses.outputs]]
+type = "InfraDamage"
+region = "target_interior"
+factor = 0.3
+
+[[kill_chains.air_coercion.phases.suppress_air_defenses.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "fielded_force_strikes"
+
+[kill_chains.air_coercion.phases.fielded_force_strikes]
+id = "fielded_force_strikes"
+name = "Fielded-Force & Fixed-Target Strikes"
+description = "Aggregate model of sustained strikes against fielded forces and fixed targets in the contested province, attriting the target's military capacity."
+prerequisites = ["suppress_air_defenses"]
+base_success_probability = 0.93
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.1
+targets_domains = ["PhysicalSecurity"]
+
+[[kill_chains.air_coercion.phases.fielded_force_strikes.outputs]]
+type = "CoercionPressure"
+delta = 0.16
+
+[[kill_chains.air_coercion.phases.fielded_force_strikes.outputs]]
+type = "MoraleDelta"
+faction = "target_state"
+delta = -0.1
+
+[[kill_chains.air_coercion.phases.fielded_force_strikes.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "strategic_escalation"
+
+[kill_chains.air_coercion.phases.strategic_escalation]
+id = "strategic_escalation"
+name = "Strategic-Infrastructure Escalation"
+description = "Aggregate model of escalation to strategic infrastructure (power, command, transport) in the interior, raising the political cost of continued resistance."
+prerequisites = ["fielded_force_strikes"]
+base_success_probability = 0.93
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.1
+targets_domains = ["PhysicalSecurity"]
+
+[[kill_chains.air_coercion.phases.strategic_escalation.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.air_coercion.phases.strategic_escalation.outputs]]
+type = "InfraDamage"
+region = "target_interior"
+factor = 0.5
+
+[[kill_chains.air_coercion.phases.strategic_escalation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "compel_acceptance"
+
+[kill_chains.air_coercion.phases.compel_acceptance]
+id = "compel_acceptance"
+name = "Sustained Pressure — Compel Acceptance"
+description = "Terminal phase. Aggregate model of sustained pressure compelling the target state to accept the negotiated withdrawal terms."
+prerequisites = ["strategic_escalation"]
+base_success_probability = 0.93
+min_duration = 2
+max_duration = 4
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.1
+targets_domains = ["ExecutiveProtection"]
+
+[[kill_chains.air_coercion.phases.compel_acceptance.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 30-tick cap (one tick = three days, ~90 days) brackets the documented
+# ~11-week campaign with headroom. The coalition wins by crossing the
+# acceptance (CoercionPressure) threshold; the target wins only by
+# surviving the full horizon with its political resilience intact.
+
+[simulation]
+max_ticks = 30
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 1999
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Days = 3
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Coercer objective: compel acceptance of withdrawal terms (cumulative
+# CoercionPressure crosses the target's political-resilience threshold).
+[victory_conditions.coerced_withdrawal]
+id = "coerced_withdrawal"
+name = "Air Coalition Compels Withdrawal"
+faction = "air_coalition"
+
+[victory_conditions.coerced_withdrawal.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: hold the interior for the full horizon without
+# being coerced into a settlement.
+[victory_conditions.target_resistance]
+id = "target_resistance"
+name = "Target State Resists Coercion"
+faction = "target_state"
+
+[victory_conditions.target_resistance.condition]
+type = "HoldRegions"
+regions = ["target_interior"]
+duration = 30

@@ -1,0 +1,437 @@
+# Historical-analogue scenario
+# =============================
+#
+# Single named-event analogue: the spring 2007 distributed
+# denial-of-service (DDoS) availability campaign against a single small,
+# highly-networked nation's online public services — government portals,
+# banking, news media, and telecommunications-facing services. It is the
+# canonical early public example of a sustained, nation-scale
+# availability campaign, and its outline is well documented in OPEN
+# defensive-community and academic sources, which makes it a clean
+# single-event calibration analogue for a denial-of-service / availability
+# episode (as distinct from a destructive or intrusion event).
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("flood_operator"): a distributed availability-attack
+#   operation that marshaled large volumes of traffic — escalating from
+#   crude, easily-traced floods to coordinated botnet-driven waves — to
+#   saturate the target nation's externally-facing public services over
+#   a multi-week window timed to a political dispute.
+# Defender ("national_services"): a small nation's online public-service
+#   estate (government, banking, media, telecom-facing services) with
+#   limited upstream filtering and scrubbing capacity at the outset, which
+#   degraded under load before mitigation (filtering, traffic scrubbing,
+#   upstream cooperation) eventually restored availability.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# attack tooling detail, no botnet internals, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Campaign shape (initial crude floods → coordinated botnet-driven
+#   waves → sustained saturation of public services → gradual mitigation)
+#   is drawn from public defensive-community incident analyses and
+#   academic case studies of the 2007 events. Only the AGGREGATE phase
+#   structure and public outcome are encoded — no attack-tool or botnet
+#   internals.
+# - Outcome: a successful availability campaign — the target's public
+#   services were intermittently unreachable for a sustained period
+#   before mitigation restored them. Encoded as high phase-success
+#   probabilities and an attacker win on the availability-impact metric.
+# - Duration: the campaign unfolded over roughly three weeks (late April
+#   to mid-May 2007), in escalating waves, per the public timeline.
+#   Modeled at one tick = one day over a multi-week horizon; the duration
+#   band brackets the documented ~three-week window with two-sided
+#   uncertainty.
+#
+# All figures (~three-week multi-wave availability campaign against a
+# single nation's public services, mitigation-led recovery) are from
+# public reporting and contain no classified, CUI, or export-controlled
+# material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Nation-Scale DDoS Availability Campaign (Spring 2007)"
+description = """
+Single-event historical analogue: the spring 2007 distributed
+denial-of-service availability campaign against a single small,
+highly-networked nation's online public services. A distributed
+availability operation escalated from crude floods to coordinated
+botnet-driven waves, saturating government, banking, media, and
+telecom-facing services intermittently over roughly three weeks before
+mitigation restored availability — the canonical early public example of
+a nation-scale availability campaign. The documented attacker-success
+outcome and multi-week duration are encoded as calibration observations
+and back-tested against the Monte Carlo distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public defensive-community incident analyses and
+academic case studies. No attack-tooling detail, botnet internals,
+classified, CUI, or export-controlled material is encoded — only the
+aggregate statistical effects the engine consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "ddos", "availability", "infrastructure"]
+confidence = "Medium"
+
+[meta.historical_analogue]
+name = "Spring 2007 nation-scale DDoS availability campaign"
+description = """
+A multi-week distributed denial-of-service campaign (late April to
+mid-May 2007) that intermittently saturated a small nation's online
+public services — government, banking, media, telecom-facing services —
+escalating from crude floods to coordinated botnet-driven waves before
+mitigation restored availability. The analogue back-tests whether this
+scenario's kill-chain parameters reproduce both the documented victor
+(the attacker, on the availability-impact metric) and the documented
+multi-week duration.
+"""
+period = "2007-04-27 to 2007-05-18"
+sources = [
+    "Public defensive-community incident analyses of the spring 2007 DDoS events",
+    "Academic case-study literature on the 2007 nation-scale availability campaign",
+    "Congressional Research Service reporting on denial-of-service threats to networked services",
+    "Published open analyses of botnet-driven availability attacks",
+]
+confidence = "Medium"
+
+# Documented victor: the availability campaign succeeded in disrupting
+# public services for a sustained period.
+[[meta.historical_analogue.observations]]
+notes = "Public incident analyses: the campaign intermittently rendered the target's public services unreachable for a sustained period before mitigation."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "flood_operator"
+
+# Win-rate band: a sustained multi-wave availability campaign against a
+# small estate with limited initial scrubbing capacity achieves
+# meaningful disruption at a high rate. Band kept wide for single-case
+# uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "A sustained multi-wave availability campaign against limited initial scrubbing capacity achieves meaningful disruption at a high rate; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "flood_operator"
+low = 0.70
+high = 1.0
+
+# Duration: ~three weeks (late April to mid-May 2007) at one tick = one
+# day. Interval [7, 28] brackets the documented multi-week window with
+# two-sided uncertainty.
+[[meta.historical_analogue.observations]]
+notes = "Campaign unfolded over ~three weeks in escalating waves (late April to mid-May 2007); modeled at one tick = one day. Band brackets the window on both sides."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 7
+high = 28
+
+# -- Map (attacker infrastructure → national public-service estate) --------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.botnet_infra]
+id = "botnet_infra"
+name = "Distributed Attack Infrastructure"
+population = 100
+urbanization = 0.9
+initial_control = "flood_operator"
+strategic_value = 0.3
+borders = ["network_edge"]
+
+[map.regions.network_edge]
+id = "network_edge"
+name = "National Network Edge (peering / upstream)"
+population = 5000
+urbanization = 0.9
+initial_control = "national_services"
+strategic_value = 0.7
+borders = ["botnet_infra", "service_estate"]
+
+[map.regions.service_estate]
+id = "service_estate"
+name = "National Public-Service Estate"
+population = 1300000
+urbanization = 0.7
+initial_control = "national_services"
+strategic_value = 1.0
+borders = ["network_edge"]
+
+[map.infrastructure.public_services]
+id = "public_services"
+name = "Government / Banking / Media Services"
+region = "service_estate"
+infra_type = "Internet"
+criticality = 1.0
+initial_status = 1.0
+repairable = 6
+
+[map.infrastructure.telecom_edge]
+id = "telecom_edge"
+name = "Telecom & Peering Edge"
+region = "network_edge"
+infra_type = "Telecommunications"
+criticality = 0.8
+initial_status = 1.0
+repairable = 5
+
+[[map.terrain]]
+region = "botnet_infra"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "network_edge"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "service_estate"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.6
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.flood_operator]
+id = "flood_operator"
+name = "Flood Operator (Threat Actor)"
+description = "Distributed availability-attack operation marshaling escalating traffic volumes to saturate a nation's public services."
+color = "#b45309"
+tech_access = []
+initial_morale = 0.8
+logistics_capacity = 40.0
+initial_resources = 600.0
+resource_rate = 18.0
+command_resilience = 0.7
+intelligence = 0.6
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.flood_operator.faction_type]
+kind = "Foreign"
+is_proxy = true
+
+[factions.flood_operator.forces.flood_cell]
+id = "flood_cell"
+name = "Availability Operations Cell"
+unit_type = "CyberUnit"
+region = "botnet_infra"
+strength = 70.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.national_services]
+id = "national_services"
+name = "National Services (Defender)"
+description = "Small nation's online public-service estate with limited upstream filtering and scrubbing capacity at the outset."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.6
+logistics_capacity = 45.0
+initial_resources = 500.0
+resource_rate = 22.0
+command_resilience = 0.5
+intelligence = 0.5
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.national_services.faction_type]
+kind = "Civilian"
+
+[factions.national_services.forces.cert_team]
+id = "cert_team"
+name = "National CERT / Scrubbing Response"
+unit_type = "LawEnforcement"
+region = "network_edge"
+strength = 55.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.5
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.7
+internet_availability = 0.95
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: escalating availability campaign --------------------------
+#
+# Four phases, each 1-3 ticks (one tick = one day), each emitting
+# CoercionPressure (a generic availability-disruption metric here) on
+# success. Cumulative pressure crosses the 0.55 disruption threshold
+# around the second week — within the documented ~three-week window. High
+# base success probabilities reflect the limited initial scrubbing
+# capacity; the phased structure encodes the escalation from crude floods
+# to coordinated botnet-driven waves and the eventual mitigation-led
+# recovery.
+
+[kill_chains.flood_op]
+id = "flood_op"
+name = "Escalating Nation-Scale Availability Campaign"
+description = "Aggregate model of the multi-wave availability campaign: initial crude floods, coordinated botnet-driven waves, sustained saturation of public services, and the window before mitigation restores availability."
+attacker = "flood_operator"
+target = "national_services"
+entry_phase = "initial_floods"
+
+[kill_chains.flood_op.phases.initial_floods]
+id = "initial_floods"
+name = "Initial Crude Floods"
+description = "Aggregate model of the opening, easily-traced flood waves probing the target's externally-facing services. Effect-level only; no tooling detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 2
+max_duration = 3
+detection_probability_per_tick = 0.01
+attribution_difficulty = 0.4
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.flood_op.phases.initial_floods.outputs]]
+type = "CoercionPressure"
+delta = 0.16
+
+[[kill_chains.flood_op.phases.initial_floods.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "coordinated_waves"
+
+[kill_chains.flood_op.phases.coordinated_waves]
+id = "coordinated_waves"
+name = "Coordinated Botnet-Driven Waves"
+description = "Aggregate model of escalation to coordinated, distributed botnet-driven traffic waves that scale beyond the target's initial filtering capacity."
+prerequisites = ["initial_floods"]
+base_success_probability = 0.94
+min_duration = 2
+max_duration = 3
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.flood_op.phases.coordinated_waves.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.flood_op.phases.coordinated_waves.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "sustained_saturation"
+
+[kill_chains.flood_op.phases.sustained_saturation]
+id = "sustained_saturation"
+name = "Sustained Saturation of Public Services"
+description = "Aggregate model of sustained saturation rendering government, banking, and media services intermittently unreachable across the estate."
+prerequisites = ["coordinated_waves"]
+base_success_probability = 0.93
+min_duration = 2
+max_duration = 3
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.flood_op.phases.sustained_saturation.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.flood_op.phases.sustained_saturation.outputs]]
+type = "InfraDamage"
+region = "service_estate"
+factor = 0.5
+
+[[kill_chains.flood_op.phases.sustained_saturation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "peak_disruption"
+
+[kill_chains.flood_op.phases.peak_disruption]
+id = "peak_disruption"
+name = "Peak Disruption Before Mitigation"
+description = "Terminal phase. Aggregate model of the peak-disruption window before upstream filtering, traffic scrubbing, and cooperation restore availability."
+prerequisites = ["sustained_saturation"]
+base_success_probability = 0.92
+min_duration = 2
+max_duration = 3
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.flood_op.phases.peak_disruption.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 35-day cap brackets the documented ~three-week multi-wave campaign with
+# headroom. One tick = one day. The attacker wins by crossing the
+# availability-disruption (CoercionPressure) threshold; the defender wins
+# only by keeping its public-service estate available for the full
+# horizon.
+
+[simulation]
+max_ticks = 35
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2007
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Days = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: sustained availability disruption (cumulative
+# disruption pressure crosses the estate's resilience threshold).
+[victory_conditions.services_disrupted]
+id = "services_disrupted"
+name = "Flood Operator Achieves Sustained Disruption"
+faction = "flood_operator"
+
+[victory_conditions.services_disrupted.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep public services available for the full
+# horizon.
+[victory_conditions.services_held]
+id = "services_held"
+name = "National Services Maintain Availability"
+faction = "national_services"
+
+[victory_conditions.services_held.condition]
+type = "HoldRegions"
+regions = ["service_estate"]
+duration = 35

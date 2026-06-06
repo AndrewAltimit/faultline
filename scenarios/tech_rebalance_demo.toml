@@ -35,6 +35,19 @@ statistical effect derived from public specifications only.
 author = "AI Agent Bot"
 version = "1.0.0"
 tags = ["demo", "tech-cards", "sigint", "supply-chain", "scada-ics", "gps-denial", "deepfakes"]
+scenario_type = "demo"
+analytical_purpose = "Probe how a balanced set of new capability cards across five previously under-represented categories (SIGINT, supply-chain, SCADA/ICS, GPS/PNT denial, deepfakes) interact with their defensive counters."
+red_team_profile = "Red threat actor equipped with the new offensive capability cards across the five categories."
+blue_team_posture = "Blue defender equipped with the corresponding defensive counter cards."
+osint_sources = [
+    "IISS Military Balance",
+    "CRS / GAO reports",
+    "NIST / standards publications",
+    "Congressional testimony and published defensive-community analyses",
+]
+sensitivity_parameters = [
+    "offensive vs. defensive capability-card effect parameters",
+]
 confidence = "Medium"
 
 # -- Map --------------------------------------------------------------------

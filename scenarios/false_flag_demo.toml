@@ -38,6 +38,14 @@ deception event counts.
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["belief", "deception", "false-flag", "info-ops", "epic-m", "round-one"]
+scenario_type = "demo"
+analytical_purpose = "Demonstrate the persistent belief model with DeceptionOp / IntelligenceShare event effects: how a false-flag operation shapes a target's beliefs."
+red_team_profile = "Faction running false-flag deception operations to misdirect attribution."
+blue_team_posture = "Target faction whose beliefs are perturbed by the deception and intelligence-sharing events."
+sensitivity_parameters = [
+    "deception-operation strength",
+    "belief decay / blending parameters",
+]
 
 [map]
 [map.source]

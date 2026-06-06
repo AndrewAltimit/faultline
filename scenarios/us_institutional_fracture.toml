@@ -20,6 +20,21 @@ description = "Multi-faction institutional crisis with federal, state, militia, 
 author = "faultline-ai"
 version = "0.1.0"
 tags = ["institutional", "multi-faction", "domestic", "365-day"]
+scenario_type = "reference"
+analytical_purpose = "Explore how cascading institutional failures could create competing power centers among federal, state, militia, and foreign-influence actors over a one-year horizon."
+red_team_profile = "Sub-federal and foreign-influence actors (state governments, militia formations, external influence operations) exploiting eroding institutional trust to contest federal authority."
+blue_team_posture = "Federal government attempting to hold cohesion across 8 macro-regions as institutional-trust and polarization indices degrade."
+osint_sources = [
+    "V-Dem Institute: democracy indices and institutional-trust metrics",
+    "Pew Research Center: political-polarization and institutional-trust surveys",
+    "CRS Reports: National Guard deployment authorities and federal structure",
+    "IISS Military Balance: publicly available force-structure summaries",
+    "Acemoglu & Robinson (institutional fragility); Turchin (political stress)",
+]
+sensitivity_parameters = [
+    "institutional-trust / political-stress indices",
+    "foreign-influence actor activity level",
+]
 
 # ============================================================================
 # Map: 8 US macro-regions (simplified political geography)

@@ -159,6 +159,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
             ),
             belief_summaries: belief::compute_belief_summaries(runs, scenario),
             misattribution_summary: misattribution::compute_misattribution_summary(runs),
+            force_projection_summaries: compute_force_projection_summaries(runs),
         };
     }
 
@@ -383,6 +384,12 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // `None` when no run produced a believed-attribution roll.
     let misattribution_summary = misattribution::compute_misattribution_summary(runs);
 
+    // Force-projection rollup. Pure post-processing of per-run
+    // `force_projection_reports`; preserves determinism. Empty when no
+    // unit declares `force_projection` or no strike ever landed — the
+    // report section elides on that signal.
+    let force_projection_summaries = compute_force_projection_summaries(runs);
+
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
         win_rates,
@@ -408,6 +415,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         utility_decompositions,
         belief_summaries,
         misattribution_summary,
+        force_projection_summaries,
     }
 }
 
@@ -482,6 +490,69 @@ fn compute_supply_pressure_summaries(
                 worst_min: acc.worst_min,
                 mean_pressured_ticks: acc.sum_pressured as f64 / n,
                 runs_with_any_pressure: acc.runs_with_any_pressure,
+            },
+        );
+    }
+    out
+}
+
+/// Aggregate per-attacker standoff-strike force-projection analytics
+/// across runs.
+///
+/// Iterates [`RunResult::force_projection_reports`] across the run set
+/// and produces one [`ForceProjectionSummary`] per attacker that landed
+/// at least one strike. Means average over the runs that *included* the
+/// attacker (runs where it landed at least one strike); runs with no
+/// strike for that attacker don't drag the mean down with phantom zeros.
+/// `max_strength_removed` is the deepest per-run total across the batch.
+///
+/// Returns an empty map when no run produced any force-projection report
+/// — the `## Force Projection` report section gates on emptiness, so
+/// legacy scenarios (and scenarios that declare projection but never
+/// connect a strike) elide the whole section.
+fn compute_force_projection_summaries(
+    runs: &[RunResult],
+) -> BTreeMap<FactionId, faultline_types::stats::ForceProjectionSummary> {
+    use faultline_types::stats::ForceProjectionSummary;
+
+    struct Acc {
+        runs_with_strikes: u32,
+        sum_strikes: u64,
+        sum_removed: f64,
+        max_removed: f64,
+    }
+
+    let mut accs: BTreeMap<FactionId, Acc> = BTreeMap::new();
+    for run in runs {
+        for (attacker, report) in &run.force_projection_reports {
+            let acc = accs.entry(attacker.clone()).or_insert(Acc {
+                runs_with_strikes: 0,
+                sum_strikes: 0,
+                sum_removed: 0.0,
+                max_removed: 0.0,
+            });
+            acc.runs_with_strikes += 1;
+            acc.sum_strikes += u64::from(report.strikes);
+            acc.sum_removed += report.total_strength_removed;
+            if report.total_strength_removed > acc.max_removed {
+                acc.max_removed = report.total_strength_removed;
+            }
+        }
+    }
+
+    let mut out = BTreeMap::new();
+    for (attacker, acc) in accs {
+        // `runs_with_strikes >= 1` for any entry: the same `or_insert`
+        // that creates an `Acc` increments it.
+        let n = f64::from(acc.runs_with_strikes);
+        out.insert(
+            attacker.clone(),
+            ForceProjectionSummary {
+                attacker,
+                runs_with_strikes: acc.runs_with_strikes,
+                mean_strikes_per_run: acc.sum_strikes as f64 / n,
+                mean_strength_removed_per_run: acc.sum_removed / n,
+                max_strength_removed: acc.max_removed,
             },
         );
     }
@@ -1206,6 +1277,7 @@ mod tests {
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
             attribution_events: Vec::new(),
+            force_projection_reports: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1277,6 +1349,7 @@ mod tests {
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
                 historical_analogue: None,
+                ..Default::default()
             },
             map: MapConfig {
                 source: MapSource::Grid {
@@ -1415,6 +1488,7 @@ mod tests {
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
             attribution_events: Vec::new(),
+            force_projection_reports: std::collections::BTreeMap::new(),
         }
     }
 

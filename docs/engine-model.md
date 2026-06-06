@@ -19,6 +19,7 @@ The following 17-step sequence is executed once per simulation tick. Every phase
 2. **`decision_phase`** — Each faction's AI selects its top-3 actions via doctrine scoring optionally combined with multi-term utility scoring. Captures `utility_decisions` for post-run reporting.
 3. **`movement_phase`** — Queued `MoveUnit` actions are resolved using the effective-mobility gate (`mobility × terrain_modifier × env_factor`), accumulating into `ForceUnit.move_progress`.
 4. **`combat_phase`** — Lanchester-attrition combat between faction pairs in contested regions. Respects `combat_blocked` (Allied pairs skip) and tech `coverage_limit` counters.
+4b. **`force_projection_phase`** (conditional) — Units declaring `ForceUnit.force_projection` affect regions beyond the one they occupy. Round one wires `StandoffStrike { range, damage }`: a unit removes `damage` strength from a hostile force in any region within `range` graph-hops (along `Region.borders`) of its own, without moving. Respects `combat_blocked` (no strike against a mutual ally). Consumes **zero** RNG and short-circuits in O(forces) when no unit declares `force_projection` — see the "Force projection" section below.
 5. **`attrition_phase`** — Resource income (`resource_rate × supply_pressure`) and outgo (force upkeep, tech `cost_per_tick`) are settled. Supply pressure from owned `kind = "supply"` networks is read here. Tech cards whose `cost_per_tick` exceeds available resources are decommissioned.
 6. **`political_phase`** — Political climate, loyalty, and civilian-segment sympathy are updated via `faultline-politics`. Reads `MediaLandscape` fields (`fragmentation`, `social_media_penetration`, `internet_availability`).
 7. **`information_phase`** — Disinformation and intel-dominance tension deltas are computed. Reads the same `MediaLandscape` fields as the political phase.
@@ -176,6 +177,36 @@ Bundled archetype: `scenarios/coalition_fracture_demo.toml`.
 **Backward-compat** — Scenarios without authored diplomacy default every pair to `Neutral`, which preserves legacy combat semantics.
 
 Coverage: `crates/faultline-engine/tests/diplomacy_behavior.rs`.
+
+---
+
+## Force projection (standoff strike)
+
+Baseline combat (`tick::combat_phase`, step 4) only resolves where opposing forces physically *co-locate*. `ForceUnit.force_projection: Option<ForceProjection>` is the separate "reach" primitive: a unit can affect a region within range of its own without moving into it. The `force_projection_phase` (step 4b, in `crates/faultline-engine/src/force_projection.rs`) runs immediately after combat and wires the **`StandoffStrike { range, damage }`** variant.
+
+### `range` → graph distance
+
+`range` is an aggregate physical reach in kilometres (OSINT-style, e.g. "300 km standoff reach"). It is mapped to an integer adjacency-hop budget against the `Region.borders` graph using a fixed convention of `REGION_HOP_KM = 150.0` kilometres per border crossing: `hops = floor(range / REGION_HOP_KM)`, floored at `1` so any strictly-positive reach can always engage at least an adjacent region (300 km → 2 hops). A breadth-first search from the firing unit's region (excluding the unit's own region) enumerates every region within that hop budget.
+
+### `damage` → attrition
+
+`damage` is the strength removed from the target per strike, applied through the same proportional distribution combat uses (`tick::apply_attrition_to_region`): the loss is spread across the target faction's forces in the struck region in proportion to each force's strength, and destroyed forces are pruned. This mirrors the Lanchester-linear "fixed shot against the defending force" shape — a standoff strike is a one-sided application of damage, so unlike co-located combat there is **no return attrition** on the firing unit. The amount actually removed is clamped to the target's present strength.
+
+### Diplomacy and ordering
+
+A faction is a valid target iff it is not the attacker, is not eliminated, has positive strength in the in-range region, and combat is not diplomatically blocked. The phase reuses `diplomacy::combat_blocked` exactly as the combat phase does, so a unit will **not** strike a faction it is mutually `Allied` with. Iteration is fully `BTreeMap`/`BTreeSet`-deterministic: attackers in faction order, each attacker's forces in `ForceId` order, candidate target regions in `RegionId` order, target factions in faction order. Each strike is applied immediately, so a later strike in the same tick reads post-strike strength — matching the single-pass convention of the other phases.
+
+### Airlift / Naval — reserved
+
+`Airlift { capacity }` and `Naval { range }` are declared, validated, and **reserved** with no per-tick engine consumer this round: the mechanics they imply (embark / disembark for airlift, sea-lane reach for naval transport) need destination state the model does not yet carry. They are *not* silent no-ops at the scenario level — validation rejects malformed shapes at load — they are explicitly reserved variants. When a future round wires them, their parameters already validate identically to `StandoffStrike`.
+
+### Determinism and validation
+
+The whole phase is gated on at least one force declaring `force_projection.is_some()` (`any_projection_declared`). A scenario with no projection-bearing unit returns in O(forces) without consuming any counter or RNG draw, so its output is **bit-identical** to the pre-feature engine. Validation (`validate_force_projection` in `lib.rs`, wired into the per-force scenario-load loop) rejects any `range` / `damage` / `capacity` that is non-finite, negative, or zero — a non-positive reach / capability would silently no-op or poison the BFS hop budget / attrition math.
+
+Per-run output: `RunResult.force_projection_reports` (`BTreeMap<FactionId, ForceProjectionReport>`, per attacker). Cross-run: `MonteCarloSummary.force_projection_summaries`. Report section: `## Force Projection` in `crates/faultline-stats/src/report/force_projection.rs`, gated on non-empty summaries so scenarios without a standoff strike are unchanged.
+
+Bundled archetype: `scenarios/standoff_strike_demo.toml`. Coverage: `crates/faultline-engine/tests/force_projection.rs`.
 
 ---
 

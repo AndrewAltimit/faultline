@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use faultline_types::campaign::{CampaignPhase, KillChain};
 use faultline_types::faction::{Diplomacy, Faction, FactionType, MilitaryBranch};
 use faultline_types::ids::{FactionId, KillChainId, NetworkId, PhaseId};
-use faultline_types::scenario::Scenario;
+use faultline_types::scenario::{Scenario, ScenarioType};
 use faultline_types::stats::ConfidenceLevel;
 use faultline_types::strategy::Doctrine;
 use faultline_types::strategy_space::{Domain, StrategySpace};
@@ -62,6 +62,18 @@ pub struct ExplainMeta {
     pub tags: Vec<String>,
     pub description: String,
     pub confidence: Option<ConfidenceLevel>,
+    /// One-line analytical purpose, if the author declared one.
+    pub analytical_purpose: Option<String>,
+    /// Coarse scenario category, lowercased for display.
+    pub scenario_type: Option<String>,
+    /// Public OSINT sources the parameters are derived from.
+    pub osint_sources: Vec<String>,
+    /// Short prose describing the modeled attacker.
+    pub red_team_profile: Option<String>,
+    /// Short prose describing the modeled defender.
+    pub blue_team_posture: Option<String>,
+    /// Author-flagged most-consequential parameters.
+    pub sensitivity_parameters: Vec<String>,
 }
 
 /// Counts that summarize scenario size at a glance.
@@ -194,7 +206,25 @@ fn build_meta(scenario: &Scenario) -> ExplainMeta {
         tags: scenario.meta.tags.clone(),
         description: scenario.meta.description.clone(),
         confidence: scenario.meta.confidence.clone(),
+        analytical_purpose: scenario.meta.analytical_purpose.clone(),
+        scenario_type: scenario.meta.scenario_type.map(scenario_type_label),
+        osint_sources: scenario.meta.osint_sources.clone(),
+        red_team_profile: scenario.meta.red_team_profile.clone(),
+        blue_team_posture: scenario.meta.blue_team_posture.clone(),
+        sensitivity_parameters: scenario.meta.sensitivity_parameters.clone(),
     }
+}
+
+/// Human-readable label for a [`ScenarioType`] variant.
+fn scenario_type_label(t: ScenarioType) -> String {
+    match t {
+        ScenarioType::Tutorial => "Tutorial",
+        ScenarioType::RedTeam => "Red-team",
+        ScenarioType::Calibration => "Calibration",
+        ScenarioType::Demo => "Demo",
+        ScenarioType::Reference => "Reference",
+    }
+    .to_string()
 }
 
 fn build_scale(scenario: &Scenario) -> ExplainScale {
@@ -592,6 +622,15 @@ fn render_meta(s: &mut String, m: &ExplainMeta) {
             confidence_label(level)
         ));
     }
+    if let Some(kind) = &m.scenario_type {
+        s.push_str(&format!("**Type:** {}\n", collapse_newlines(kind)));
+    }
+    if let Some(purpose) = &m.analytical_purpose {
+        s.push_str(&format!(
+            "**Analytical purpose:** {}\n",
+            collapse_newlines(purpose.trim())
+        ));
+    }
     s.push('\n');
     if !m.description.trim().is_empty() {
         // The description is free-form prose intended for Markdown
@@ -600,6 +639,26 @@ fn render_meta(s: &mut String, m: &ExplainMeta) {
         // paragraph breaks.
         s.push_str(m.description.trim());
         s.push_str("\n\n");
+    }
+    if let Some(red) = &m.red_team_profile {
+        s.push_str(&format!("**Red-team profile:** {}\n\n", red.trim()));
+    }
+    if let Some(blue) = &m.blue_team_posture {
+        s.push_str(&format!("**Blue-team posture:** {}\n\n", blue.trim()));
+    }
+    if !m.sensitivity_parameters.is_empty() {
+        s.push_str("**Key sensitivity parameters:**\n");
+        for p in &m.sensitivity_parameters {
+            s.push_str(&format!("- {}\n", collapse_newlines(p)));
+        }
+        s.push('\n');
+    }
+    if !m.osint_sources.is_empty() {
+        s.push_str("**OSINT sources:**\n");
+        for src in &m.osint_sources {
+            s.push_str(&format!("- {}\n", collapse_newlines(src)));
+        }
+        s.push('\n');
     }
 }
 
@@ -856,6 +915,7 @@ mod tests {
                 confidence: Some(ConfidenceLevel::Medium),
                 schema_version: 1,
                 historical_analogue: None,
+                ..Default::default()
             },
             ..Default::default()
         };

@@ -97,3 +97,44 @@ export function warningsClean(report) {
 export function renderExplain(markdown) {
   return `<pre>${escapeHtml(markdown || '')}</pre>`;
 }
+
+/**
+ * Render a resolved field-documentation entry (the shape returned by
+ * `field-docs.js`'s `lookupFieldDoc` / `docAtOffset`) into the HTML body of
+ * the editor's schema-aware hover tooltip.
+ *
+ * Pure and DOM-free — like the other helpers here — so it can be unit-tested
+ * headlessly. Everything interpolated is escaped; the resolved `key`, `type`,
+ * `default`, `range`, `summary`, and the engine-effect flag are all taken
+ * verbatim from the static catalog, but escaping them keeps the renderer
+ * robust if the catalog ever grows author-supplied text.
+ *
+ * @param {(import('./field-docs.js').FieldDoc & {key: string}) | null} doc
+ * @returns {string} HTML string for the tooltip body, or '' when `doc` is null.
+ */
+export function renderFieldDoc(doc) {
+  if (!doc || !doc.key) return '';
+
+  const metaBits = [`<span class="field-doc-type">${escapeHtml(doc.type || '')}</span>`];
+  if (doc.range) {
+    metaBits.push(`<span class="field-doc-range">${escapeHtml(doc.range)}</span>`);
+  }
+  if (doc.default !== undefined && doc.default !== null && doc.default !== '') {
+    metaBits.push(`<span class="field-doc-default">default ${escapeHtml(doc.default)}</span>`);
+  }
+
+  // Distinguish parameters the engine reads from purely descriptive /
+  // report-only metadata, so an author can tell at a glance whether editing
+  // the field changes simulation behavior.
+  const effectClass = doc.engineEffect ? 'has-effect' : 'no-effect';
+  const effectLabel = doc.engineEffect ? 'engine effect' : 'descriptive only';
+
+  return `<div class="field-doc">
+  <div class="field-doc-head">
+    <span class="field-doc-key">${escapeHtml(doc.key)}</span>
+    <span class="field-doc-effect ${effectClass}">${effectLabel}</span>
+  </div>
+  <div class="field-doc-meta">${metaBits.join('')}</div>
+  <div class="field-doc-summary">${escapeHtml(doc.summary || '')}</div>
+</div>`;
+}

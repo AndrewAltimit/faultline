@@ -21,6 +21,18 @@ covert infrastructure kill chain.
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["europe", "nato", "russia", "ukraine", "kill-chain", "phase-6"]
+scenario_type = "reference"
+analytical_purpose = "Explore regional control, coalition cohesion, and a covert infrastructure kill chain along NATO's eastern flank with Ukraine as the contested pivot."
+red_team_profile = "Russian Federation contesting regional control while running a four-phase covert kill chain against critical infrastructure."
+blue_team_posture = "NATO coalition defending eastern-flank regions, with coalition cohesion as a contested variable."
+osint_sources = [
+    "IISS Military Balance 2025: publicly reported force structures",
+    "Public analyses of the 2022+ conflict trajectory",
+]
+sensitivity_parameters = [
+    "coalition-cohesion level",
+    "covert kill-chain phase success probabilities",
+]
 
 # -- Map --------------------------------------------------------------------
 

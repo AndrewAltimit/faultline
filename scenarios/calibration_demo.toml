@@ -51,6 +51,17 @@ author = "AndrewAltimit"
 version = "0.1.0"
 tags = ["demo", "calibration", "asymmetric", "inter-state"]
 confidence = "Low"
+scenario_type = "calibration"
+analytical_purpose = "Demonstrate the calibration mechanism end-to-end: how per-observation verdicts surface the gap between a declared analogue and what the engine actually produces."
+red_team_profile = "A stronger state with a roughly 3x force ratio, expected to resolve a short asymmetric inter-state conflict in its favor."
+blue_team_posture = "A weaker state defending against the stronger side over a 30-day horizon."
+osint_sources = [
+    "Generic OSINT reference set of short asymmetric inter-state conflicts (stylized aggregate, not a single named event)",
+]
+sensitivity_parameters = [
+    "force ratio between the stronger and weaker state",
+    "max_ticks horizon (drives the duration distribution)",
+]
 
 [meta.historical_analogue]
 name = "Stylized aggregate — short asymmetric inter-state conflicts"

@@ -14,6 +14,7 @@ pub mod combat;
 pub mod diplomacy;
 pub mod engine;
 pub mod error;
+pub mod force_projection;
 pub mod fracture;
 pub mod network;
 pub mod state;
@@ -194,6 +195,19 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
                      and must not be set in scenario TOML.",
                     unit.name, fid, unit.move_progress
                 )));
+            }
+            // Force projection (the standoff-strike / reserved
+            // airlift / naval reach primitive). The
+            // force-projection phase reads these per tick; a
+            // non-finite, negative, or zero parameter would either be a
+            // silent no-op (zero damage / range floors to a one-hop
+            // reach that never bites) or poison the BFS hop budget /
+            // attrition math. Reject loudly at load — same shape as the
+            // mobility / terrain checks above. Gated on
+            // `force_projection.is_some()`, so legacy units (the field
+            // is `None`) are unaffected.
+            if let Some(projection) = &unit.force_projection {
+                validate_force_projection(fid, &unit.name, projection)?;
             }
         }
 
@@ -1229,6 +1243,52 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError> {
     Ok(())
 }
 
+/// Validate a force unit's `force_projection` declaration.
+///
+/// All three variants carry numeric reach / capability parameters that
+/// the engine reads per tick. A non-finite, negative, or zero parameter
+/// is a silent-no-op (or worse, math-poisoning) shape, so it is
+/// rejected at load following the project's fail-loud convention.
+///
+/// `StandoffStrike` is the wired variant — its `range` (kilometre reach,
+/// mapped to an adjacency-hop budget) and `damage` (strength removed per
+/// strike) must both be strictly positive and finite. `Airlift` and
+/// `Naval` are reserved with no per-tick engine consumer this round, but
+/// their parameters are validated identically so an author cannot ship a
+/// malformed reserved declaration that would silently misbehave once the
+/// variant is wired.
+fn validate_force_projection(
+    fid: &faultline_types::ids::FactionId,
+    unit_name: &str,
+    projection: &faultline_types::faction::ForceProjection,
+) -> Result<(), ScenarioError> {
+    use faultline_types::faction::ForceProjection;
+    let check = |label: &str, value: f64| -> Result<(), ScenarioError> {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(ScenarioError::Custom(format!(
+                "force unit `{unit_name}` in faction `{fid}` declares \
+                 force_projection {label} = {value}; it must be a finite, \
+                 strictly-positive value (a non-positive or non-finite reach / \
+                 capability would silently no-op or poison the projection math)."
+            )));
+        }
+        Ok(())
+    };
+    match projection {
+        ForceProjection::StandoffStrike { range, damage } => {
+            check("StandoffStrike.range", *range)?;
+            check("StandoffStrike.damage", *damage)?;
+        },
+        ForceProjection::Naval { range } => {
+            check("Naval.range", *range)?;
+        },
+        ForceProjection::Airlift { capacity } => {
+            check("Airlift.capacity", *capacity)?;
+        },
+    }
+    Ok(())
+}
+
 fn validate_event_effect(
     scenario: &Scenario,
     eid: &faultline_types::ids::EventId,
@@ -2049,6 +2109,7 @@ mod tests {
                 confidence: None,
                 schema_version: faultline_types::migration::CURRENT_SCHEMA_VERSION,
                 historical_analogue: None,
+                ..Default::default()
             },
             map: MapConfig {
                 source: MapSource::Grid {

@@ -1290,6 +1290,7 @@ fn monte_carlo_summary_ci_fields_json_roundtrip() {
         utility_decompositions: ::std::collections::BTreeMap::new(),
         belief_summaries: ::std::collections::BTreeMap::new(),
         misattribution_summary: None,
+        force_projection_summaries: ::std::collections::BTreeMap::new(),
     };
 
     let json = serde_json::to_string(&summary).expect("serialize");

@@ -47,6 +47,21 @@ description = "Research simulation of a long-dwell commodity-component surveilla
 author = "AI Agent Bot"
 version = "0.1.0"
 tags = ["surveillance", "osint", "kill-chain", "phase-6", "defensive-planning", "covert-sensors"]
+scenario_type = "reference"
+analytical_purpose = "Quantify how much intelligence a patient adversary can accumulate inside the defender's detection window when the defender relies on episodic physical inspection rather than continuous RF-environment monitoring."
+red_team_profile = "Patient adversary running a long-dwell, low-signature commodity-component surveillance kill chain (recon -> emplacement -> dwell -> wireless -> exfil -> disclosure)."
+blue_team_posture = "Notional integrated federal protective posture relying primarily on episodic physical inspection; detection window and attribution-on-discovery are the measured outputs."
+osint_sources = [
+    "GAO public reporting on C-UAS and physical-security coordination",
+    "CISA public insights on RF-environment monitoring gaps",
+    "RAND public research on commodity-component surveillance costs",
+    "Published hobbyist / maker literature on solar-powered ESP32-class sensor costs and LTE backhaul economics",
+    "Academic open-source research on rooftop inspection cadence and detection rates",
+]
+sensitivity_parameters = [
+    "attacker_budget cap (binds at the wireless-collection phase)",
+    "defender inspection cadence / detection rate",
+]
 
 # ============================================================================
 # Map — Notional urban protective theater

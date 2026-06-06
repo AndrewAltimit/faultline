@@ -34,6 +34,7 @@ mod defender_capacity;
 mod displacement;
 mod environment_schedule;
 mod feasibility;
+mod force_projection;
 mod header;
 mod leadership_disruption;
 mod low_confidence;
@@ -91,7 +92,7 @@ pub fn render_markdown(summary: &MonteCarloSummary, scenario: &Scenario) -> Stri
 /// order they appear in the rendered report. Adding a new section is
 /// a matter of adding one entry; reordering is a matter of moving one
 /// entry. No part of the composer needs to change.
-fn monte_carlo_sections() -> [&'static dyn ReportSection; 28] {
+fn monte_carlo_sections() -> [&'static dyn ReportSection; 29] {
     [
         &header::Header,
         &win_rates::WinRates,
@@ -138,6 +139,12 @@ fn monte_carlo_sections() -> [&'static dyn ReportSection; 28] {
         // at least one detection produced a roll. Scenarios that don't
         // opt in render byte-identically.
         &attribution_fidelity::AttributionFidelity,
+        // Force Projection sits among the kinetic-effect analytics. Gates
+        // on `summary.force_projection_summaries` non-empty, i.e. a unit
+        // declared a standoff-strike reach and connected at least one
+        // strike. Scenarios with no `force_projection` render
+        // byte-identically.
+        &force_projection::ForceProjection,
         // Calibration sits just before Methodology so the verdict and
         // the methodology appendix are next to each other in the
         // rendered report — the reader sees the calibration claim,
@@ -271,7 +278,7 @@ mod tests {
         // by code review alone. Touching this number means you've
         // added or removed a section and updated `monte_carlo_sections`
         // accordingly.
-        assert_eq!(monte_carlo_sections().len(), 28);
+        assert_eq!(monte_carlo_sections().len(), 29);
     }
 
     /// Pin the section ordering. Reordering changes the rendered
@@ -368,10 +375,10 @@ mod tests {
         // unconditional. Pinned by position so a reordering of the
         // array surfaces here as a test failure rather than silently
         // permitting a different section to emit on empty input.
-        // 0 = Header, 26 = Calibration (index shifted by Epic M
-        // round-two inserting AttributionFidelity before Calibration),
-        // 27 = Methodology (last entry).
-        let unconditional_indices = [0usize, 26, 27];
+        // 0 = Header, 27 = Calibration (index shifted by Force
+        // Projection inserting before Calibration), 28 = Methodology
+        // (last entry).
+        let unconditional_indices = [0usize, 27, 28];
         for (idx, section) in monte_carlo_sections().into_iter().enumerate() {
             let mut out = String::new();
             section.render(&summary, &scenario, &mut out);

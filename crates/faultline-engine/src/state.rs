@@ -191,6 +191,17 @@ pub struct SimulationState {
     /// ground-truth attribution is used, bit-identically.
     #[serde(default)]
     pub attribution_events: Vec<AttributionEvent>,
+    /// Log of every standoff-strike force-projection event in the
+    /// current run, in tick order. One entry is pushed each time a unit
+    /// declaring `ForceProjection::StandoffStrike` removes strength from
+    /// a hostile force in an in-range region. Surfaced post-run on
+    /// [`faultline_types::stats::RunResult::force_projection_reports`]
+    /// (rolled up per attacker faction). Empty when no force declares
+    /// `force_projection` (the force-projection phase short-circuits in
+    /// that case) or no strike ever landed — legacy scenarios stay
+    /// bit-identical.
+    #[serde(default)]
+    pub force_projection_strikes: Vec<crate::force_projection::StrikeEvent>,
 }
 
 /// One believed-attribution roll (Epic M round-two).
