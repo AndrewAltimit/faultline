@@ -1254,7 +1254,10 @@ If you depend on deterministic output, set `seed` explicitly. If `seed` is omitt
 **Calibration analogues (Epic N — single-event historical back-tests):**
 - [`scenarios/calibration_demo.toml`](../scenarios/calibration_demo.toml) — stylized-aggregate analogue; intentionally Fails three observations to demonstrate the verdict ladder's diagnostic value
 - [`scenarios/analogue_short_coercive_war.toml`](../scenarios/analogue_short_coercive_war.toml) — Aug 2008 Russo-Georgian War, modeled as a rapid coercive campaign (CoercionPressure → coerced ceasefire); calibrates to attacker victory in ~days
+- [`scenarios/analogue_coercive_air_campaign_1999.toml`](../scenarios/analogue_coercive_air_campaign_1999.toml) — Spring 1999 coercive air campaign over the Balkans, modeled as phased air pressure (CoercionPressure → coerced withdrawal); calibrates to coercer success in ~weeks, without a ground invasion
 - [`scenarios/analogue_grid_cyberattack_2015.toml`](../scenarios/analogue_grid_cyberattack_2015.toml) — Dec 2015 regional grid cyberattack (SCADA/ICS kill chain → outage); calibrates to attacker success in ~hours
+- [`scenarios/analogue_ddos_availability_2007.toml`](../scenarios/analogue_ddos_availability_2007.toml) — Spring 2007 nation-scale DDoS availability campaign (escalating flood waves → sustained service saturation); calibrates to attacker success over a ~three-week window
+- [`scenarios/analogue_sector_wiper_2012.toml`](../scenarios/analogue_sector_wiper_2012.toml) — Aug 2012 sector-targeted destructive wiper against a single energy company (staged detonation → mass workstation destruction); calibrates to attacker success over a short detonation-plus-degradation window
 - [`scenarios/analogue_supplychain_wiper_2017.toml`](../scenarios/analogue_supplychain_wiper_2017.toml) — Jun 2017 supply-chain destructive wiper; calibrates to attacker success with very short propagation
 
 **Kill-chain wargames:**
