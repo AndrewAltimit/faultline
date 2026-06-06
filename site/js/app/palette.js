@@ -31,6 +31,18 @@ export const QUALITATIVE = [
 ];
 
 /**
+ * Qualitative-ramp slot assignments for the Duration distribution chart's
+ * series. Shared between the canvas renderer and the HTML legend so the two
+ * can never drift: change a slot here and both update together.
+ */
+export const DURATION_SERIES = {
+  band: 0, // p5–p95 credible band + histogram bars
+  kde: 1, // KDE density overlay
+  mean: 2, // mean reference line (dashed)
+  median: 3, // median reference line (solid)
+};
+
+/**
  * Neutral / structural colors that match the dark dashboard theme. Kept
  * here so chart code never hard-codes hex literals.
  */

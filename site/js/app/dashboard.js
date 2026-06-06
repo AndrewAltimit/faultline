@@ -9,6 +9,7 @@ import { buildRegionalHeatmap, buildTornadoRanges } from './heatmap-data.js';
 import { renderComparison } from './comparison.js';
 import {
   NEUTRAL,
+  DURATION_SERIES,
   factionColorMap,
   qualitative,
   withAlpha,
@@ -375,13 +376,13 @@ export class Dashboard {
     // Duration histogram + KDE overlay + p5–p95 band.
     html += '<div class="chart-title">Duration Distribution</div>';
     html += '<div class="chart-container"><canvas id="chart-duration" height="160"></canvas></div>';
-    // Swatch colors are derived from the same palette slots the canvas chart
-    // uses (band=qualitative(0), KDE=1, mean=2, median=3) so a palette change
-    // can never silently desync the legend from the rendered series.
-    const cBand = qualitative(0);
-    const cKde = qualitative(1);
-    const cMean = qualitative(2);
-    const cMedian = qualitative(3);
+    // Swatch colors are derived from the same DURATION_SERIES palette slots
+    // the canvas chart uses, so a palette change or a slot reassignment can
+    // never silently desync the legend from the rendered series.
+    const cBand = qualitative(DURATION_SERIES.band);
+    const cKde = qualitative(DURATION_SERIES.kde);
+    const cMean = qualitative(DURATION_SERIES.mean);
+    const cMedian = qualitative(DURATION_SERIES.median);
     html +=
       '<div class="chart-legend">' +
       `<span class="legend-item"><span class="legend-swatch legend-band" style="background:${withAlpha(cBand, 0.18)};border-color:${withAlpha(cBand, 0.45)}"></span>p5–p95</span>` +
@@ -738,7 +739,7 @@ export class Dashboard {
     if (Number.isFinite(stats.p5) && Number.isFinite(stats.p95) && stats.p95 > stats.p5) {
       const bandX0 = xScale(stats.p5);
       const bandX1 = xScale(stats.p95);
-      ctx.fillStyle = withAlpha(qualitative(0), 0.12);
+      ctx.fillStyle = withAlpha(qualitative(DURATION_SERIES.band), 0.12);
       ctx.fillRect(bandX0, plotTop, bandX1 - bandX0, chartH);
     }
 
@@ -748,7 +749,7 @@ export class Dashboard {
       const bx = padding.left + (i * chartW) / numBins + barGap / 2;
       const bw = chartW / numBins - barGap;
       const by = yScale(bins[i]);
-      ctx.fillStyle = withAlpha(qualitative(0), 0.42);
+      ctx.fillStyle = withAlpha(qualitative(DURATION_SERIES.band), 0.42);
       ctx.fillRect(bx, by, Math.max(1, bw), plotBottom - by);
     }
 
@@ -776,7 +777,7 @@ export class Dashboard {
             ctx.lineTo(px, py);
           }
         }
-        ctx.strokeStyle = qualitative(1);
+        ctx.strokeStyle = qualitative(DURATION_SERIES.kde);
         ctx.lineWidth = 1.75;
         ctx.lineJoin = 'round';
         ctx.stroke();
@@ -790,9 +791,9 @@ export class Dashboard {
         px: xScale(stats.p50),
         top: plotTop,
         bottom: plotBottom,
-        color: qualitative(3),
+        color: qualitative(DURATION_SERIES.median),
         label: `p50 ${Math.round(stats.p50)}`,
-        labelColor: qualitative(3),
+        labelColor: qualitative(DURATION_SERIES.median),
       });
     }
     if (Number.isFinite(stats.mean)) {
@@ -800,7 +801,7 @@ export class Dashboard {
         px: xScale(stats.mean),
         top: plotTop,
         bottom: plotBottom,
-        color: qualitative(2),
+        color: qualitative(DURATION_SERIES.mean),
         dash: [3, 3],
       });
     }

@@ -34,7 +34,7 @@ export function percentile(values, p) {
  * @param {number} p
  * @returns {number}
  */
-function percentileSorted(sorted, p) {
+export function percentileSorted(sorted, p) {
   if (sorted.length === 0) return NaN;
   if (sorted.length === 1) return sorted[0];
   const rank = (clamp(p, 0, 100) / 100) * (sorted.length - 1);
@@ -99,7 +99,9 @@ export function silvermanBandwidth(values) {
   let varSum = 0;
   for (const v of xs) varSum += (v - mean) * (v - mean);
   const std = Math.sqrt(varSum / (n - 1));
-  const iqr = percentile(xs, 75) - percentile(xs, 25);
+  // Sort once for both quartiles instead of re-sorting inside percentile() twice.
+  const sorted = xs.slice().sort((a, b) => a - b);
+  const iqr = percentileSorted(sorted, 75) - percentileSorted(sorted, 25);
   // Silverman: 0.9 * min(std, IQR/1.34) * n^(-1/5)
   let spread = std;
   if (iqr > 0) spread = Math.min(std, iqr / 1.34);
