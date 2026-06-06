@@ -2690,6 +2690,242 @@ export const TECH_LIBRARY = {
     rationale: "Legal framework establishing deterrence through accountability; requires international coordination; foundational for attribution strategy."
   },
 
+// ====================================================================
+// CRITICAL INFRASTRUCTURE — healthcare / utility / emergency-services
+// exposure surfaces and the defensive controls that counter them.
+// Aggregate statistical effects only; OSINT-grounded (CISA/HHS HC3,
+// GAO/CRS, FDA medical-device guidance, published downtime studies).
+// ====================================================================
+
+  iomt_exposure_surface: {
+    domain: 'critical_infra',
+    id: 'iomt_exposure_surface',
+    name: 'IoMT Device Exposure Surface',
+    description:
+      'Connected-medical-device attack surface: published surveys report a majority of infusion pumps, imaging systems, and patient monitors run unpatched or end-of-life software, a fraction carrying known-exploited vulnerabilities.',
+    is_offensive: true,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.05,
+    deployment_cost: 6.0,
+    coverage_limit: 6,
+    effects: [
+      { type: 'IntelGain', probability: 0.4 },
+      { type: 'DetectionModifier', factor: 0.5 }
+    ],
+    countered_by: ['clinical_network_segmentation', 'medical_device_asset_inventory'],
+    trl: '9 (2026)',
+    profiles: ['T1', 'T2', 'T3'],
+    source_ref: 'CISA / HHS HC3 public advisories on IoMT exposure',
+    rationale:
+      'Published "majority unpatched / end-of-life" device surveys map to a low-detection intelligence-and-foothold surface against a healthcare defender.',
+  },
+
+  hospital_ransomware_impact: {
+    domain: 'critical_infra',
+    id: 'hospital_ransomware_impact',
+    name: 'Hospital-Network Ransomware Impact',
+    description:
+      'Hospital-network ransomware outage. Public incident reporting puts major outages on the order of 2-4 weeks of degraded operations with significant clinical-system availability loss.',
+    is_offensive: true,
+    category: 'Cyber',
+    cost_per_tick: 0.15,
+    deployment_cost: 22.0,
+    coverage_limit: 2,
+    effects: [
+      { type: 'InfraProtection', factor: 1.8 },
+      { type: 'CivilianSentiment', delta: -0.18 },
+      { type: 'MoraleEffect', target: 'Enemy', delta: -0.12 }
+    ],
+    countered_by: ['clinical_network_segmentation', 'offline_ehr_continuity'],
+    trl: '9 (2026)',
+    profiles: ['T1', 'T2', 'T3'],
+    source_ref: 'Open incident reporting; published 2-4 week hospital-outage durations',
+    rationale:
+      'Published multi-week clinical-availability outages map to a strong infrastructure-availability and civilian-sentiment effect.',
+  },
+
+  ehr_availability_disruption: {
+    domain: 'critical_infra',
+    id: 'ehr_availability_disruption',
+    name: 'EHR Availability Disruption',
+    description:
+      'Electronic-health-record availability loss forcing clinicians onto paper workflows. Published downtime studies report sharp throughput and decision-support degradation.',
+    is_offensive: true,
+    category: 'Cyber',
+    cost_per_tick: 0.1,
+    deployment_cost: 14.0,
+    coverage_limit: 3,
+    effects: [
+      { type: 'CommsDisruption', factor: 0.5 },
+      { type: 'CivilianSentiment', delta: -0.1 }
+    ],
+    countered_by: ['offline_ehr_continuity'],
+    trl: '9 (2026)',
+    profiles: ['T1', 'T2', 'T3'],
+    source_ref: 'Published EHR-downtime throughput studies',
+    rationale:
+      'EHR downtime loses coordination and decision support; mapped to a coordination-disruption and sentiment effect.',
+  },
+
+  scada_ot_exposure: {
+    domain: 'critical_infra',
+    id: 'scada_ot_exposure',
+    name: 'Water/Grid SCADA Exposure',
+    description:
+      'Water-treatment and grid SCADA/OT exposure: public ICS advisories and GAO/CRS reporting describe internet-reachable human-machine interfaces and weak access controls at a non-trivial fraction of utilities.',
+    is_offensive: true,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.12,
+    deployment_cost: 18.0,
+    coverage_limit: 3,
+    effects: [
+      { type: 'SupplyInterdiction', factor: 0.45 },
+      { type: 'AreaDenial', strength: 0.3 },
+      { type: 'IntelGain', probability: 0.3 }
+    ],
+    countered_by: ['ot_anomaly_monitoring'],
+    trl: '9 (2026)',
+    profiles: ['T1', 'T2', 'T3'],
+    source_ref: 'GAO / CRS reporting and public ICS advisories on SCADA/OT exposure',
+    rationale:
+      'Exposed utility OT maps to a supply-interdiction and area-denial surface against the utility service function.',
+  },
+
+  emergency_services_degradation: {
+    domain: 'critical_infra',
+    id: 'emergency_services_degradation',
+    name: 'Emergency-Services (911/EMS) Degradation',
+    description:
+      'Public-safety answering point and EMS disruption. Public reporting documents 911 outages and ambulance diversion during ransomware and telephony-denial incidents.',
+    is_offensive: true,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.08,
+    deployment_cost: 12.0,
+    coverage_limit: 4,
+    effects: [
+      { type: 'AreaDenial', strength: 0.4 },
+      { type: 'CivilianSentiment', delta: -0.2 },
+      { type: 'MoraleEffect', target: 'Civilian', delta: -0.15 }
+    ],
+    countered_by: ['emergency_services_continuity'],
+    trl: '9 (2026)',
+    profiles: ['T1', 'T2', 'T3'],
+    source_ref: 'Open incident reporting on 911 / EMS disruption',
+    rationale:
+      'Documented 911 outages and ambulance diversion map to an area-denial and civilian-sentiment effect.',
+  },
+
+  clinical_network_segmentation: {
+    domain: 'critical_infra',
+    id: 'clinical_network_segmentation',
+    name: 'Clinical Network Segmentation',
+    description:
+      'Segmentation of clinical VLANs and isolation of connected medical devices from the enterprise network — the most-cited control for limiting ransomware blast radius and medical-device exploitation.',
+    is_offensive: false,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.07,
+    deployment_cost: 16.0,
+    effects: [
+      { type: 'CounterTech', target: 'iomt_exposure_surface', reduction: 0.5 },
+      { type: 'CounterTech', target: 'hospital_ransomware_impact', reduction: 0.4 },
+      { type: 'InfraProtection', factor: 0.7 }
+    ],
+    countered_by: [],
+    trl: '9 (2026)',
+    profiles: ['defender'],
+    source_ref: 'CISA / HHS HC3 healthcare segmentation guidance',
+    rationale:
+      'The headline healthcare-segmentation control; reduces both the IoMT surface and the ransomware blast radius.',
+  },
+
+  medical_device_asset_inventory: {
+    domain: 'critical_infra',
+    id: 'medical_device_asset_inventory',
+    name: 'Medical-Device Asset Inventory',
+    description:
+      'Maintained connected-medical-device inventory with patch and lifecycle tracking, as emphasized in published FDA and HHS guidance. Raises detection of anomalous device behavior.',
+    is_offensive: false,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.05,
+    deployment_cost: 10.0,
+    effects: [
+      { type: 'CounterTech', target: 'iomt_exposure_surface', reduction: 0.45 },
+      { type: 'DetectionModifier', factor: 1.4 }
+    ],
+    countered_by: [],
+    trl: '9 (2026)',
+    profiles: ['defender'],
+    source_ref: 'Published FDA / HHS medical-device cybersecurity guidance',
+    rationale:
+      'Inventory + lifecycle tracking is the prerequisite control; shrinks the exploitable IoMT surface and raises detection.',
+  },
+
+  offline_ehr_continuity: {
+    domain: 'critical_infra',
+    id: 'offline_ehr_continuity',
+    name: 'Offline EHR Continuity Procedures',
+    description:
+      'Tested clinical-downtime procedures and read-only EHR replicas that preserve continuity of care during an outage. Blunts electronic-health-record availability loss.',
+    is_offensive: false,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.04,
+    deployment_cost: 7.0,
+    effects: [
+      { type: 'CounterTech', target: 'ehr_availability_disruption', reduction: 0.55 },
+      { type: 'CounterTech', target: 'hospital_ransomware_impact', reduction: 0.3 }
+    ],
+    countered_by: [],
+    trl: '9 (2026)',
+    profiles: ['defender'],
+    source_ref: 'Published clinical continuity-of-operations literature',
+    rationale:
+      'Tested downtime procedures preserve care during an outage; mapped to a counter on the EHR-disruption and ransomware effects.',
+  },
+
+  ot_anomaly_monitoring: {
+    domain: 'critical_infra',
+    id: 'ot_anomaly_monitoring',
+    name: 'OT/SCADA Anomaly Monitoring',
+    description:
+      'Passive operational-technology network monitoring with protocol-aware anomaly detection — the headline control in published ICS-security guidance.',
+    is_offensive: false,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.09,
+    deployment_cost: 20.0,
+    effects: [
+      { type: 'CounterTech', target: 'scada_ot_exposure', reduction: 0.5 },
+      { type: 'DetectionModifier', factor: 1.5 }
+    ],
+    countered_by: [],
+    trl: '9 (2026)',
+    profiles: ['defender'],
+    source_ref: 'Published ICS-security guidance (CISA)',
+    rationale:
+      'Passive protocol-aware OT monitoring raises detection and reduces the SCADA-exposure interdiction effect.',
+  },
+
+  emergency_services_continuity: {
+    domain: 'critical_infra',
+    id: 'emergency_services_continuity',
+    name: 'Emergency-Services Continuity & Mutual Aid',
+    description:
+      'Backup public-safety answering point routing, regional mutual-aid agreements, and analog fallbacks that restore emergency-services capacity during a disruption.',
+    is_offensive: false,
+    category: { Custom: 'CriticalInfrastructure' },
+    cost_per_tick: 0.05,
+    deployment_cost: 9.0,
+    effects: [
+      { type: 'CounterTech', target: 'emergency_services_degradation', reduction: 0.5 },
+      { type: 'CivilianSentiment', delta: 0.08 }
+    ],
+    countered_by: [],
+    trl: '9 (2026)',
+    profiles: ['defender'],
+    source_ref: 'Public-safety mutual-aid and continuity-of-operations guidance',
+    rationale:
+      'Backup routing and mutual aid restore emergency-services capacity; mapped to a counter on the degradation effect.',
+  },
+
 };
 
 // ---------------------------------------------------------------------------
@@ -2736,6 +2972,12 @@ export const DOMAINS = [
     label: 'IC Erosion',
     description: 'AI agents & institutional erosion.',
     order: 5,
+  },
+  {
+    id: 'critical_infra',
+    label: 'Critical Infra',
+    description: 'Healthcare / utility / emergency-services exposure & defense.',
+    order: 6,
   },
 ];
 

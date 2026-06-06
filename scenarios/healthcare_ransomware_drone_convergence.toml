@@ -1,0 +1,742 @@
+# Healthcare Ransomware + Drone Convergence — Flagship Scenario
+# =============================================================
+#
+# A regional health-system crisis in which a financially-motivated
+# intrusion set converges two attack vectors against a metropolitan
+# hospital network and its supporting critical infrastructure:
+#
+#   1. A hospital-network RANSOMWARE campaign (clinical-system
+#      availability loss, EHR downtime, emergency-services diversion).
+#   2. A DRONE-delivered wireless-relay footprint that bridges an
+#      air-gapped clinical/OT boundary, accelerating and re-enabling the
+#      cyber campaign even after the defender begins network isolation.
+#
+# Analytical purpose: quantify how the convergence of a physical
+# (drone-relay) vector with a cyber (ransomware) vector compresses the
+# defender's available response window relative to either vector alone,
+# and how far accumulated disruption pressure climbs before the
+# health-system's continuity-of-care posture fails.
+#
+# Modeling approach: the decisive outcome is driven by a multi-phase
+# KILL CHAIN whose terminal phases accumulate CoercionPressure (the
+# engine's generic non-kinetic disruption metric) past a
+# NonKineticThreshold victory condition — the reliable path to a
+# decisive verdict in this engine. The new healthcare /
+# critical-infrastructure capability cards are referenced via faction
+# tech_access so the attack/defense pairing is visible in the report.
+#
+# OSINT provenance (aggregate statistical effects only — no payload,
+# exploit, or implementation detail):
+#   - CISA / HHS HC3 public advisories on hospital ransomware and IoMT
+#     exposure; published 2-4 week hospital-outage durations.
+#   - GAO / CRS reporting on healthcare and critical-infrastructure
+#     cybersecurity.
+#   - RAND / IISS open analyses of small-UAS adversary capability and
+#     wireless-relay risk.
+#   - Open incident reporting on 911 / EMS disruption during ransomware
+#     events.
+# No classified, CUI, or export-controlled material is used.
+
+# Budget caps — top-level fields before the first section header.
+attacker_budget = 400_000.0
+defender_budget = 80_000_000.0
+
+[meta]
+schema_version = 1
+name = "Healthcare Ransomware + Drone Convergence"
+description = """
+Regional health-system crisis: a financially-motivated intrusion set
+converges a hospital-network ransomware campaign with a drone-delivered
+wireless-relay footprint that bridges the clinical/OT boundary. Models
+how the convergence of a physical and a cyber vector compresses the
+defender's response window and drives accumulated disruption pressure
+past the health-system's continuity-of-care resilience threshold.
+
+Parameters are aggregate statistical effects drawn from public CISA /
+HHS, GAO / CRS, and RAND / IISS analyses. No payload, exploit, or
+implementation detail is encoded.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["healthcare", "critical-infrastructure", "ransomware", "drone", "kill-chain", "convergence"]
+scenario_type = "red_team"
+analytical_purpose = "Quantify how converging a drone-delivered wireless-relay vector with a hospital-network ransomware campaign compresses the defender's response window and drives accumulated disruption pressure past a regional health-system's continuity-of-care resilience threshold."
+red_team_profile = "Financially-motivated intrusion set running a two-vector convergence: hospital-network ransomware (clinical-system availability loss, EHR downtime, emergency-services diversion) plus a drone-delivered wireless relay that re-bridges the clinical/OT boundary after the defender begins isolation."
+blue_team_posture = "Metropolitan health system with a security operations capability, clinical-downtime procedures, and counter-UAS gaps typical of a civilian medical campus; isolation and continuity controls are the contested variables."
+osint_sources = [
+    "CISA / HHS HC3 public advisories on hospital ransomware and IoMT exposure",
+    "Published 2-4 week hospital-outage durations from open incident reporting",
+    "GAO / CRS reporting on healthcare and critical-infrastructure cybersecurity",
+    "RAND / IISS open analyses of small-UAS adversary capability and wireless-relay risk",
+    "Open incident reporting on 911 / EMS disruption during ransomware events",
+]
+sensitivity_parameters = [
+    "drone-relay re-bridging phase success probability",
+    "ransomware-propagation detection probability per tick",
+    "defender continuity-control coverage",
+]
+
+# ============================================================================
+# Map — metropolitan health system and supporting infrastructure
+# ============================================================================
+
+[map]
+[map.source]
+type = "Grid"
+width = 3
+height = 2
+
+[map.regions.hospital_campus]
+id = "hospital_campus"
+name = "Central Hospital Campus"
+population = 9_000
+urbanization = 0.98
+initial_control = "health_system"
+strategic_value = 10.0
+borders = ["clinical_network", "metro_core"]
+
+[map.regions.clinical_network]
+id = "clinical_network"
+name = "Clinical Network / OT Boundary"
+population = 0
+urbanization = 1.0
+initial_control = "health_system"
+strategic_value = 9.0
+borders = ["hospital_campus", "data_center"]
+
+[map.regions.data_center]
+id = "data_center"
+name = "EHR Data Center"
+population = 0
+urbanization = 1.0
+initial_control = "health_system"
+strategic_value = 8.5
+borders = ["clinical_network"]
+
+[map.regions.metro_core]
+id = "metro_core"
+name = "Metro Core (EMS / 911)"
+population = 1_400_000
+urbanization = 0.9
+initial_control = "health_system"
+strategic_value = 7.0
+borders = ["hospital_campus", "outer_metro"]
+
+[map.regions.outer_metro]
+id = "outer_metro"
+name = "Outer Metro"
+population = 2_600_000
+urbanization = 0.6
+initial_control = "health_system"
+strategic_value = 3.0
+borders = ["metro_core", "staging_area"]
+
+[map.regions.staging_area]
+id = "staging_area"
+name = "Adversary Staging Area"
+population = 5_000
+urbanization = 0.4
+initial_control = "intrusion_set"
+strategic_value = 1.0
+borders = ["outer_metro"]
+
+[map.infrastructure.ehr_systems]
+id = "ehr_systems"
+name = "Electronic Health Record Systems"
+region = "data_center"
+infra_type = "Hospital"
+criticality = 1.0
+initial_status = 1.0
+repairable = 14
+
+[map.infrastructure.clinical_devices]
+id = "clinical_devices"
+name = "Connected Clinical Devices (IoMT)"
+region = "hospital_campus"
+infra_type = "Hospital"
+criticality = 0.9
+initial_status = 1.0
+repairable = 10
+
+[map.infrastructure.ems_dispatch]
+id = "ems_dispatch"
+name = "EMS / 911 Dispatch"
+region = "metro_core"
+infra_type = "Telecommunications"
+criticality = 0.95
+initial_status = 1.0
+repairable = 7
+
+[[map.terrain]]
+region = "hospital_campus"
+terrain_type = "Urban"
+movement_modifier = 0.6
+defense_modifier = 1.4
+visibility = 0.8
+
+[[map.terrain]]
+region = "clinical_network"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.2
+visibility = 0.5
+
+[[map.terrain]]
+region = "data_center"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.3
+visibility = 0.4
+
+[[map.terrain]]
+region = "metro_core"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.1
+visibility = 0.7
+
+[[map.terrain]]
+region = "outer_metro"
+terrain_type = "Suburban"
+movement_modifier = 1.2
+defense_modifier = 0.7
+visibility = 0.4
+
+[[map.terrain]]
+region = "staging_area"
+terrain_type = "Rural"
+movement_modifier = 1.3
+defense_modifier = 0.5
+visibility = 0.2
+
+# ============================================================================
+# Factions
+# ============================================================================
+
+[factions.health_system]
+id = "health_system"
+name = "Metropolitan Health System"
+description = "Regional health system defending clinical operations, EHR availability, and emergency-services continuity. High absolute capability but a civilian-campus counter-UAS posture and an OT boundary that depends on isolation discipline."
+color = "#1d4ed8"
+tech_access = ["clinical_network_segmentation", "medical_device_asset_inventory", "offline_ehr_continuity", "ot_anomaly_monitoring", "emergency_services_continuity"]
+initial_morale = 0.74
+logistics_capacity = 300.0
+initial_resources = 6000.0
+resource_rate = 60.0
+command_resilience = 0.7
+intelligence = 0.6
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.health_system.faction_type]
+kind = "Civilian"
+
+[factions.health_system.forces.soc_team]
+id = "soc_team"
+name = "Security Operations Center"
+unit_type = "CyberUnit"
+region = "data_center"
+strength = 90.0
+mobility = 0.2
+upkeep = 8.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.health_system.forces.facilities_security]
+id = "facilities_security"
+name = "Campus Facilities Security"
+unit_type = "LawEnforcement"
+region = "hospital_campus"
+strength = 60.0
+mobility = 0.6
+upkeep = 4.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.intrusion_set]
+id = "intrusion_set"
+name = "Financially-Motivated Intrusion Set"
+description = "Notional red-team adversary converging a ransomware campaign with a drone-delivered wireless-relay vector. A forcing function to quantify defender gaps; not a representation of any real group."
+color = "#b91c1c"
+tech_access = ["hospital_ransomware_impact", "ehr_availability_disruption", "iomt_exposure_surface", "emergency_services_degradation"]
+initial_morale = 0.88
+logistics_capacity = 60.0
+initial_resources = 400.0
+resource_rate = 6.0
+command_resilience = 0.5
+intelligence = 0.7
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.intrusion_set.faction_type]
+kind = "Foreign"
+is_proxy = true
+
+[factions.intrusion_set.forces.cyber_cell]
+id = "cyber_cell"
+name = "Ransomware Operations Cell"
+unit_type = "CyberUnit"
+region = "staging_area"
+strength = 40.0
+mobility = 0.4
+upkeep = 1.0
+morale_modifier = 0.1
+capabilities = []
+
+[factions.intrusion_set.forces.drone_element]
+id = "drone_element"
+name = "Wireless-Relay Drone Element"
+unit_type = "DroneSwarm"
+region = "staging_area"
+strength = 20.0
+mobility = 2.0
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+# ============================================================================
+# Technology — healthcare / critical-infrastructure capability cards
+# ============================================================================
+
+[technology]
+
+[technology.hospital_ransomware_impact]
+id = "hospital_ransomware_impact"
+name = "Hospital-Network Ransomware Impact"
+description = "Aggregate model of a hospital-network ransomware outage (2-4 weeks of degraded operations per public incident reporting). Effect-level only."
+category = "Cyber"
+cost_per_tick = 0.15
+deployment_cost = 22.0
+coverage_limit = 2
+countered_by = ["clinical_network_segmentation", "offline_ehr_continuity"]
+terrain_modifiers = []
+
+[[technology.hospital_ransomware_impact.effects]]
+type = "InfraProtection"
+factor = 1.8
+
+[[technology.hospital_ransomware_impact.effects]]
+type = "CivilianSentiment"
+delta = -0.18
+
+[[technology.hospital_ransomware_impact.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.12
+
+[technology.ehr_availability_disruption]
+id = "ehr_availability_disruption"
+name = "EHR Availability Disruption"
+description = "Aggregate model of electronic-health-record availability loss forcing clinicians onto paper workflows."
+category = "Cyber"
+cost_per_tick = 0.1
+deployment_cost = 14.0
+coverage_limit = 3
+countered_by = ["offline_ehr_continuity"]
+terrain_modifiers = []
+
+[[technology.ehr_availability_disruption.effects]]
+type = "CommsDisruption"
+factor = 0.5
+
+[[technology.ehr_availability_disruption.effects]]
+type = "CivilianSentiment"
+delta = -0.1
+
+[technology.iomt_exposure_surface]
+id = "iomt_exposure_surface"
+name = "IoMT Device Exposure Surface"
+description = "Aggregate model of the connected-medical-device attack surface (majority unpatched / end-of-life per published surveys)."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.05
+deployment_cost = 6.0
+coverage_limit = 6
+countered_by = ["clinical_network_segmentation", "medical_device_asset_inventory"]
+terrain_modifiers = []
+
+[[technology.iomt_exposure_surface.effects]]
+type = "IntelGain"
+probability = 0.4
+
+[[technology.iomt_exposure_surface.effects]]
+type = "DetectionModifier"
+factor = 0.5
+
+[technology.emergency_services_degradation]
+id = "emergency_services_degradation"
+name = "Emergency-Services (911/EMS) Degradation"
+description = "Aggregate model of public-safety answering point and EMS disruption (911 outages, ambulance diversion)."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.08
+deployment_cost = 12.0
+coverage_limit = 4
+countered_by = ["emergency_services_continuity"]
+terrain_modifiers = []
+
+[[technology.emergency_services_degradation.effects]]
+type = "AreaDenial"
+strength = 0.4
+
+[[technology.emergency_services_degradation.effects]]
+type = "CivilianSentiment"
+delta = -0.2
+
+[[technology.emergency_services_degradation.effects]]
+type = "MoraleEffect"
+target = "Civilian"
+delta = -0.15
+
+[technology.clinical_network_segmentation]
+id = "clinical_network_segmentation"
+name = "Clinical Network Segmentation"
+description = "Defensive control: segmentation of clinical VLANs and isolation of connected medical devices from the enterprise network."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.07
+deployment_cost = 16.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.clinical_network_segmentation.effects]]
+type = "CounterTech"
+target = "iomt_exposure_surface"
+reduction = 0.5
+
+[[technology.clinical_network_segmentation.effects]]
+type = "CounterTech"
+target = "hospital_ransomware_impact"
+reduction = 0.4
+
+[[technology.clinical_network_segmentation.effects]]
+type = "InfraProtection"
+factor = 0.7
+
+[technology.medical_device_asset_inventory]
+id = "medical_device_asset_inventory"
+name = "Medical-Device Asset Inventory"
+description = "Defensive control: maintained connected-medical-device inventory with patch and lifecycle tracking."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.05
+deployment_cost = 10.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.medical_device_asset_inventory.effects]]
+type = "CounterTech"
+target = "iomt_exposure_surface"
+reduction = 0.45
+
+[[technology.medical_device_asset_inventory.effects]]
+type = "DetectionModifier"
+factor = 1.4
+
+[technology.offline_ehr_continuity]
+id = "offline_ehr_continuity"
+name = "Offline EHR Continuity Procedures"
+description = "Defensive control: tested clinical-downtime procedures and read-only EHR replicas that preserve continuity of care during an outage."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.04
+deployment_cost = 7.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.offline_ehr_continuity.effects]]
+type = "CounterTech"
+target = "ehr_availability_disruption"
+reduction = 0.55
+
+[[technology.offline_ehr_continuity.effects]]
+type = "CounterTech"
+target = "hospital_ransomware_impact"
+reduction = 0.3
+
+[technology.ot_anomaly_monitoring]
+id = "ot_anomaly_monitoring"
+name = "OT/SCADA Anomaly Monitoring"
+description = "Defensive control: passive operational-technology network monitoring with protocol-aware anomaly detection."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.09
+deployment_cost = 20.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.ot_anomaly_monitoring.effects]]
+type = "DetectionModifier"
+factor = 1.5
+
+[technology.emergency_services_continuity]
+id = "emergency_services_continuity"
+name = "Emergency-Services Continuity & Mutual Aid"
+description = "Defensive control: backup public-safety answering point routing, regional mutual-aid agreements, and analog fallbacks."
+category = { Custom = "CriticalInfrastructure" }
+cost_per_tick = 0.05
+deployment_cost = 9.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.emergency_services_continuity.effects]]
+type = "CounterTech"
+target = "emergency_services_degradation"
+reduction = 0.5
+
+[[technology.emergency_services_continuity.effects]]
+type = "CivilianSentiment"
+delta = 0.08
+
+# ============================================================================
+# Political Climate
+# ============================================================================
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.55
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.7
+disinformation_susceptibility = 0.5
+state_control = 0.1
+social_media_penetration = 0.9
+internet_availability = 0.96
+
+# ============================================================================
+# Events
+# ============================================================================
+
+[events]
+
+# ============================================================================
+# Kill Chain — ransomware + drone convergence
+# ============================================================================
+#
+# Seven phases. The cyber vector (initial access -> propagation ->
+# encryption) drives most of the disruption pressure; the drone-relay
+# phases provide a re-bridging path that re-enables propagation after the
+# defender begins isolation. Terminal phases accumulate CoercionPressure
+# past the health-system's continuity-of-care threshold.
+
+[kill_chains.convergence]
+id = "convergence"
+name = "Ransomware + Drone Convergence"
+description = "Aggregate model of a two-vector convergence: hospital-network ransomware paired with a drone-delivered wireless relay that re-bridges the clinical/OT boundary."
+attacker = "intrusion_set"
+target = "health_system"
+entry_phase = "initial_access"
+
+[kill_chains.convergence.phases.initial_access]
+id = "initial_access"
+name = "Initial Access via Exposed IoMT Surface"
+description = "Aggregate model of footholding through the exposed connected-medical-device surface. Effect-level only; no exploit detail."
+base_success_probability = 0.85
+min_duration = 3
+max_duration = 8
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.85
+targets_domains = ["NetworkSecurity"]
+
+[kill_chains.convergence.phases.initial_access.cost]
+attacker_dollars = 4_000.0
+defender_dollars = 3_000_000.0
+attacker_resources = 3.0
+
+[[kill_chains.convergence.phases.initial_access.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.convergence.phases.initial_access.outputs]]
+type = "CoercionPressure"
+delta = 0.08
+
+[[kill_chains.convergence.phases.initial_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "lateral_propagation"
+
+[[kill_chains.convergence.phases.initial_access.branches]]
+condition = { type = "OnDetection" }
+next_phase = "drone_relay_bridge"
+
+[kill_chains.convergence.phases.lateral_propagation]
+id = "lateral_propagation"
+name = "Lateral Propagation to EHR Core"
+description = "Aggregate model of lateral movement toward the EHR data center across a flat clinical network."
+prerequisites = ["initial_access"]
+base_success_probability = 0.85
+min_duration = 4
+max_duration = 9
+detection_probability_per_tick = 0.015
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.8
+targets_domains = ["NetworkSecurity"]
+
+[kill_chains.convergence.phases.lateral_propagation.cost]
+attacker_dollars = 8_000.0
+defender_dollars = 12_000_000.0
+attacker_resources = 6.0
+
+[[kill_chains.convergence.phases.lateral_propagation.outputs]]
+type = "IntelligenceGain"
+amount = 0.25
+
+[[kill_chains.convergence.phases.lateral_propagation.outputs]]
+type = "CoercionPressure"
+delta = 0.12
+
+[[kill_chains.convergence.phases.lateral_propagation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ehr_encryption"
+
+[[kill_chains.convergence.phases.lateral_propagation.branches]]
+condition = { type = "OnDetection" }
+next_phase = "drone_relay_bridge"
+
+# -- Drone re-bridging path: re-enables propagation after isolation --------
+
+[kill_chains.convergence.phases.drone_relay_bridge]
+id = "drone_relay_bridge"
+name = "Drone-Delivered Wireless Relay Bridge"
+description = "Aggregate model of a drone-delivered wireless-relay footprint near the clinical/OT boundary that re-bridges connectivity after the defender begins network isolation. Technique category drawn from published security research; no emplacement detail."
+prerequisites = []
+base_success_probability = 0.6
+min_duration = 2
+max_duration = 6
+detection_probability_per_tick = 0.05
+prerequisite_success_boost = 0.0
+attribution_difficulty = 0.75
+targets_domains = ["CounterUAS", "PhysicalSecurity", "NetworkSecurity"]
+
+[kill_chains.convergence.phases.drone_relay_bridge.cost]
+attacker_dollars = 15_000.0
+defender_dollars = 18_000_000.0
+attacker_resources = 8.0
+
+[[kill_chains.convergence.phases.drone_relay_bridge.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.convergence.phases.drone_relay_bridge.outputs]]
+type = "CoercionPressure"
+delta = 0.12
+
+[[kill_chains.convergence.phases.drone_relay_bridge.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ehr_encryption"
+
+[[kill_chains.convergence.phases.drone_relay_bridge.branches]]
+condition = { type = "OnDetection" }
+next_phase = "ems_diversion"
+
+[kill_chains.convergence.phases.ehr_encryption]
+id = "ehr_encryption"
+name = "EHR Encryption / Availability Loss"
+description = "Aggregate model of the encryption event taking the EHR data center offline and forcing paper workflows across the campus."
+prerequisites = ["lateral_propagation"]
+base_success_probability = 0.9
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.1
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.7
+targets_domains = ["NetworkSecurity", "CivilianEmergency"]
+
+[kill_chains.convergence.phases.ehr_encryption.cost]
+attacker_dollars = 5_000.0
+defender_dollars = 40_000_000.0
+attacker_resources = 4.0
+
+[[kill_chains.convergence.phases.ehr_encryption.outputs]]
+type = "InfraDamage"
+region = "data_center"
+factor = 0.6
+
+[[kill_chains.convergence.phases.ehr_encryption.outputs]]
+type = "CoercionPressure"
+delta = 0.25
+
+[[kill_chains.convergence.phases.ehr_encryption.outputs]]
+type = "TensionDelta"
+delta = 0.15
+
+[[kill_chains.convergence.phases.ehr_encryption.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "ems_diversion"
+
+[kill_chains.convergence.phases.ems_diversion]
+id = "ems_diversion"
+name = "Emergency-Services Diversion"
+description = "Terminal pressure phase. Aggregate model of EMS / 911 diversion and degraded acute-care throughput as the outage propagates into the metro core."
+prerequisites = []
+base_success_probability = 0.85
+min_duration = 1
+max_duration = 3
+detection_probability_per_tick = 0.15
+prerequisite_success_boost = 0.1
+attribution_difficulty = 0.65
+targets_domains = ["CivilianEmergency"]
+
+[kill_chains.convergence.phases.ems_diversion.cost]
+attacker_dollars = 2_000.0
+defender_dollars = 25_000_000.0
+attacker_resources = 2.0
+
+[[kill_chains.convergence.phases.ems_diversion.outputs]]
+type = "InfraDamage"
+region = "metro_core"
+factor = 0.3
+
+[[kill_chains.convergence.phases.ems_diversion.outputs]]
+type = "CoercionPressure"
+delta = 0.3
+
+[[kill_chains.convergence.phases.ems_diversion.outputs]]
+type = "MoraleDelta"
+faction = "health_system"
+delta = -0.2
+
+[[kill_chains.convergence.phases.ems_diversion.outputs]]
+type = "TensionDelta"
+delta = 0.2
+
+# ============================================================================
+# Simulation
+# ============================================================================
+
+[simulation]
+max_ticks = 60
+monte_carlo_runs = 400
+fog_of_war = true
+snapshot_interval = 5
+seed = 20260606
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.15 }
+
+# ============================================================================
+# Victory Conditions
+# ============================================================================
+
+# Attacker objective: accumulated disruption pressure crosses the
+# health-system's continuity-of-care resilience threshold.
+[victory_conditions.continuity_failure]
+id = "continuity_failure"
+name = "Continuity-of-Care Posture Fails"
+faction = "intrusion_set"
+
+[victory_conditions.continuity_failure.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.6
+
+# Defender objective: hold clinical operations and EHR availability for
+# the full horizon.
+[victory_conditions.operations_held]
+id = "operations_held"
+name = "Clinical Operations Maintained"
+faction = "health_system"
+
+[victory_conditions.operations_held.condition]
+type = "HoldRegions"
+regions = ["hospital_campus", "data_center"]
+duration = 60
