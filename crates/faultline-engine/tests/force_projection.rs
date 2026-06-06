@@ -368,28 +368,34 @@ fn validation_accepts_well_formed_projection() {
 #[test]
 fn validation_rejects_zero_damage() {
     let mut scenario = build_scenario(1, 3, 300.0, true, false);
-    if let Some(red) = scenario.factions.get_mut(&FactionId::from("red"))
-        && let Some(battery) = red.forces.get_mut(&ForceId::from("battery"))
-    {
-        battery.force_projection = Some(ForceProjection::StandoffStrike {
-            range: 300.0,
-            damage: 0.0,
-        });
-    }
+    let battery = scenario
+        .factions
+        .get_mut(&FactionId::from("red"))
+        .expect("red faction present")
+        .forces
+        .get_mut(&ForceId::from("battery"))
+        .expect("red battery force present");
+    battery.force_projection = Some(ForceProjection::StandoffStrike {
+        range: 300.0,
+        damage: 0.0,
+    });
     validate_scenario(&scenario).expect_err("zero damage must reject");
 }
 
 #[test]
 fn validation_rejects_negative_range() {
     let mut scenario = build_scenario(1, 3, 300.0, true, false);
-    if let Some(red) = scenario.factions.get_mut(&FactionId::from("red"))
-        && let Some(battery) = red.forces.get_mut(&ForceId::from("battery"))
-    {
-        battery.force_projection = Some(ForceProjection::StandoffStrike {
-            range: -1.0,
-            damage: 100.0,
-        });
-    }
+    let battery = scenario
+        .factions
+        .get_mut(&FactionId::from("red"))
+        .expect("red faction present")
+        .forces
+        .get_mut(&ForceId::from("battery"))
+        .expect("red battery force present");
+    battery.force_projection = Some(ForceProjection::StandoffStrike {
+        range: -1.0,
+        damage: 100.0,
+    });
     validate_scenario(&scenario).expect_err("negative range must reject");
 }
 
@@ -398,22 +404,28 @@ fn validation_rejects_nan_naval_range() {
     // Reserved variant, but still validated so a malformed reserved
     // declaration can't silently ship.
     let mut scenario = build_scenario(1, 3, 300.0, true, false);
-    if let Some(red) = scenario.factions.get_mut(&FactionId::from("red"))
-        && let Some(battery) = red.forces.get_mut(&ForceId::from("battery"))
-    {
-        battery.force_projection = Some(ForceProjection::Naval { range: f64::NAN });
-    }
+    let battery = scenario
+        .factions
+        .get_mut(&FactionId::from("red"))
+        .expect("red faction present")
+        .forces
+        .get_mut(&ForceId::from("battery"))
+        .expect("red battery force present");
+    battery.force_projection = Some(ForceProjection::Naval { range: f64::NAN });
     validate_scenario(&scenario).expect_err("NaN naval range must reject");
 }
 
 #[test]
 fn validation_accepts_reserved_airlift() {
     let mut scenario = build_scenario(1, 3, 300.0, true, false);
-    if let Some(red) = scenario.factions.get_mut(&FactionId::from("red"))
-        && let Some(battery) = red.forces.get_mut(&ForceId::from("battery"))
-    {
-        battery.force_projection = Some(ForceProjection::Airlift { capacity: 250.0 });
-    }
+    let battery = scenario
+        .factions
+        .get_mut(&FactionId::from("red"))
+        .expect("red faction present")
+        .forces
+        .get_mut(&ForceId::from("battery"))
+        .expect("red battery force present");
+    battery.force_projection = Some(ForceProjection::Airlift { capacity: 250.0 });
     assert!(
         validate_scenario(&scenario).is_ok(),
         "well-formed reserved airlift must validate"

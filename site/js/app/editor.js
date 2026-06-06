@@ -91,15 +91,17 @@ export class Editor {
   // -------------------------------------------------------------------
 
   /**
-   * Wire the hover-documentation tooltip on the TOML editor textarea.
+   * Wire the field-documentation tooltip on the TOML editor textarea.
    *
-   * Triggering is dual-mode so it works for both mouse and keyboard users:
-   *   - `mousemove` over the textarea resolves the character offset under
-   *     the pointer (via the standard caret-from-point APIs) and shows the
-   *     doc for the field key there.
-   *   - `keyup` / `click` resolves the key at the current caret position, so
-   *     arrowing onto a key (no mouse) still surfaces its docs.
-   * `mouseleave`, scroll, blur, and Escape dismiss the tooltip.
+   * Triggering is caret-driven via `keyup` / `click`, which resolves the
+   * field key at the current caret position. This works for both mouse users
+   * (clicking into a field sets `selectionStart`) and keyboard users (arrowing
+   * onto a key). We deliberately do *not* use a `mousemove` + caret-from-point
+   * path: `caretPositionFromPoint` / `caretRangeFromPoint` treat a `<textarea>`
+   * as an opaque native widget and return a position anchored to the element
+   * (offset 0), not a character index into `textarea.value`, so pointer hover
+   * could not resolve the field under the cursor.
+   * Scroll, blur, input, and Escape dismiss the tooltip.
    *
    * The tooltip element is created lazily and appended to <body> so it can
    * escape the sidebar's overflow clipping; it is positioned in viewport
@@ -113,9 +115,6 @@ export class Editor {
     // same word don't thrash the DOM.
     this._fieldDocKey = null;
 
-    const onMove = (e) => this._handleFieldDocHover(e.clientX, e.clientY);
-    this.textarea.addEventListener('mousemove', onMove);
-    this.textarea.addEventListener('mouseleave', () => this._hideFieldDoc());
     // Caret-driven (keyboard / click) lookup.
     this.textarea.addEventListener('keyup', () => this._showFieldDocAtCaret());
     this.textarea.addEventListener('click', () => this._showFieldDocAtCaret());
@@ -127,25 +126,6 @@ export class Editor {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this._hideFieldDoc();
     });
-  }
-
-  /**
-   * Resolve and show the doc for the field key under a viewport point.
-   * @param {number} clientX
-   * @param {number} clientY
-   */
-  _handleFieldDocHover(clientX, clientY) {
-    const offset = this._offsetFromPoint(clientX, clientY);
-    if (offset == null) {
-      this._hideFieldDoc();
-      return;
-    }
-    const doc = docAtOffset(this.textarea.value, offset);
-    if (!doc) {
-      this._hideFieldDoc();
-      return;
-    }
-    this._showFieldDoc(doc, clientX, clientY);
   }
 
   /** Resolve and show the doc for the field key at the current caret. */
@@ -162,28 +142,6 @@ export class Editor {
     // per-caret geometry). Good enough to surface the doc on keyboard nav.
     const rect = this.textarea.getBoundingClientRect();
     this._showFieldDoc(doc, rect.left + 16, rect.top + 16);
-  }
-
-  /**
-   * Map a viewport point to a character offset in the textarea, or null if
-   * the point isn't over editable text. Uses the standard
-   * `caretPositionFromPoint` (Firefox) / `caretRangeFromPoint` (WebKit/
-   * Blink) APIs, which both work for <textarea> content.
-   * @param {number} clientX
-   * @param {number} clientY
-   * @returns {number | null}
-   */
-  _offsetFromPoint(clientX, clientY) {
-    const doc = document;
-    if (typeof doc.caretPositionFromPoint === 'function') {
-      const pos = doc.caretPositionFromPoint(clientX, clientY);
-      if (pos && pos.offsetNode) return pos.offset;
-    }
-    if (typeof doc.caretRangeFromPoint === 'function') {
-      const range = doc.caretRangeFromPoint(clientX, clientY);
-      if (range) return range.startOffset;
-    }
-    return null;
   }
 
   /**

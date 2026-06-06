@@ -249,6 +249,10 @@ pub fn collect_strike_reports(
 ) -> BTreeMap<FactionId, faultline_types::stats::ForceProjectionReport> {
     let mut out: BTreeMap<FactionId, faultline_types::stats::ForceProjectionReport> =
         BTreeMap::new();
+    // Accumulate distinct regions per attacker in a `BTreeSet` to keep
+    // deduplication O(n log n) rather than O(n²) on a `Vec::contains` probe;
+    // the set's sorted iteration also gives the stable rendering order for free.
+    let mut regions: BTreeMap<FactionId, BTreeSet<RegionId>> = BTreeMap::new();
     for ev in &state.force_projection_strikes {
         let entry = out.entry(ev.attacker.clone()).or_insert_with(|| {
             faultline_types::stats::ForceProjectionReport {
@@ -260,13 +264,16 @@ pub fn collect_strike_reports(
         });
         entry.strikes += 1;
         entry.total_strength_removed += ev.strength_removed;
-        if !entry.regions_struck.contains(&ev.region) {
-            entry.regions_struck.push(ev.region.clone());
-        }
+        regions
+            .entry(ev.attacker.clone())
+            .or_default()
+            .insert(ev.region.clone());
     }
-    // Normalize region lists to sorted order for stable rendering.
-    for report in out.values_mut() {
-        report.regions_struck.sort();
+    // Drain the per-attacker region sets into the reports' sorted `Vec`s.
+    for (attacker, struck) in regions {
+        if let Some(report) = out.get_mut(&attacker) {
+            report.regions_struck = struck.into_iter().collect();
+        }
     }
     out
 }
