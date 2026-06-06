@@ -132,6 +132,19 @@ impl Engine {
         // Phase 4: Combat.
         let combats_resolved = tick::combat_phase(&mut self.state, &self.scenario, &mut self.rng);
 
+        // Phase 4b: Force projection. Units declaring
+        // `ForceProjection::StandoffStrike` apply damage to hostile
+        // forces in regions within range of their own — the "reach"
+        // primitive that lets a unit affect a region it does not
+        // occupy. Runs immediately after co-located combat so standoff
+        // attrition settles before resource accounting and region-
+        // control recomputation, and reuses the same alliance coupling
+        // (`diplomacy::combat_blocked`) and proportional attrition
+        // distribution as combat. Consumes **zero** RNG and short-
+        // circuits in O(forces) when no unit declares `force_projection`,
+        // so legacy scenarios are bit-identical.
+        crate::force_projection::force_projection_phase(&mut self.state, &self.scenario, &self.map);
+
         // Phase 5: Attrition (resources, recruitment, repairs).
         tick::attrition_phase(&mut self.state, &self.scenario);
 
@@ -273,6 +286,9 @@ impl Engine {
                     belief_accuracy: collect_belief_accuracy(&self.state),
                     belief_snapshots: self.state.belief_snapshots.clone(),
                     attribution_events: collect_attribution_events(&self.state),
+                    force_projection_reports: crate::force_projection::collect_strike_reports(
+                        &self.state,
+                    ),
                 });
             }
 
@@ -306,6 +322,9 @@ impl Engine {
                     belief_accuracy: collect_belief_accuracy(&self.state),
                     belief_snapshots: self.state.belief_snapshots.clone(),
                     attribution_events: collect_attribution_events(&self.state),
+                    force_projection_reports: crate::force_projection::collect_strike_reports(
+                        &self.state,
+                    ),
                 });
             }
         }
@@ -498,6 +517,7 @@ fn initialize_state(scenario: &Scenario) -> Result<SimulationState, EngineError>
         belief_counters: BTreeMap::new(),
         belief_snapshots: BTreeMap::new(),
         attribution_events: Vec::new(),
+        force_projection_strikes: Vec::new(),
     })
 }
 

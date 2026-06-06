@@ -867,7 +867,12 @@ fn find_contested_regions(state: &SimulationState) -> BTreeMap<RegionId, BTreeMa
 }
 
 /// Distribute attrition across a faction's forces in a region.
-fn apply_attrition_to_region(
+///
+/// Shared by the combat phase and the force-projection phase: both
+/// remove a total strength quantity from a faction in a single region,
+/// spreading it proportionally across that faction's forces present and
+/// pruning any force that drops below the destruction floor.
+pub fn apply_attrition_to_region(
     state: &mut SimulationState,
     region: &RegionId,
     faction_id: &FactionId,

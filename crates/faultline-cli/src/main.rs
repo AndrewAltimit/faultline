@@ -2264,6 +2264,7 @@ fn write_markdown_report(
         && result.summary.displacement_summaries.is_empty()
         && result.summary.utility_decompositions.is_empty()
         && result.summary.belief_summaries.is_empty()
+        && result.summary.force_projection_summaries.is_empty()
         && scenario.meta.historical_analogue.is_none()
     {
         return Ok(());

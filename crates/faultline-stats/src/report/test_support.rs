@@ -37,6 +37,7 @@ pub(crate) fn empty_summary() -> MonteCarloSummary {
         utility_decompositions: BTreeMap::new(),
         belief_summaries: ::std::collections::BTreeMap::new(),
         misattribution_summary: None,
+        force_projection_summaries: std::collections::BTreeMap::new(),
     }
 }
 

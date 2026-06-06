@@ -177,6 +177,7 @@ mod tests {
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
             attribution_events: Vec::new(),
+            force_projection_reports: std::collections::BTreeMap::new(),
         }
     }
 
