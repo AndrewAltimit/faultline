@@ -1088,6 +1088,10 @@ export class Dashboard {
     const rect = canvas.parentElement.getBoundingClientRect();
     const h = 300;
     const w = rect.width;
+    // Skip when the radar container is hidden (e.g. redrawCharts() on a theme
+    // change while the table view is active): a 0-width canvas would draw
+    // nothing useful and waste the full grid/polygon pass.
+    if (w <= 0) return;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.height = `${h}px`;

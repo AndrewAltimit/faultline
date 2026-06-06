@@ -9,13 +9,28 @@ import { US_REGIONS, isUSScenario } from './us-regions-geo.js';
 import { MAP_LIBRARY, detectMap, getMapRegions } from './map-library.js';
 
 /**
+ * Cached `:root` computed-style handle. `getComputedStyle` is comparatively
+ * expensive and `neutralColor()` is called per-region and per-unit during a
+ * render, so we resolve the handle once per paint (see {@link resetThemeCache})
+ * instead of on every lookup. Reset each render so a freshly-applied theme is
+ * picked up on the next paint.
+ */
+let _rootStyle = null;
+
+/** Drop the cached root style handle; called at the top of each render. */
+function resetThemeCache() {
+  _rootStyle = null;
+}
+
+/**
  * Read a CSS custom property off `:root`, trimmed, with a fallback. Lets the
  * map's structural colors (neutral region fill, label text) track the active
  * light/dark theme instead of being pinned to the dark palette.
  */
 function themeVar(name, fallback) {
   if (typeof document === 'undefined' || !document.documentElement) return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (!_rootStyle) _rootStyle = getComputedStyle(document.documentElement);
+  const v = _rootStyle.getPropertyValue(name).trim();
   return v || fallback;
 }
 
@@ -92,6 +107,8 @@ export class MapRenderer {
 
   render(snapshot) {
     this.snapshot = snapshot;
+    // Resolve theme variables once for this paint rather than per region/unit.
+    resetThemeCache();
     const ctx = this.ctx;
     const dpr = window.devicePixelRatio || 1;
     const w = this.canvas.width / dpr;

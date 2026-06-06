@@ -181,16 +181,25 @@ export function exportFilename(scenarioName, ext) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Delay before revoking a download object URL. The anchor `click()` is
+ * synchronous but the browser's download pipeline is not — revoking on the
+ * next tick (`0ms`) can tear the URL down before Safari/Firefox have
+ * initiated the file-system write, yielding 0-byte downloads. A generous
+ * delay covers that window; the URL is also reclaimed on page unload.
+ */
+const REVOKE_DELAY_MS = 60_000;
+
+/**
  * Trigger a download of `text` as a file named `filename` with the given
- * MIME type. Uses an object URL revoked on the next tick. No-op outside a
- * browser.
+ * MIME type. Uses an object URL revoked after a delay (see
+ * {@link REVOKE_DELAY_MS}). No-op outside a browser.
  */
 export function downloadText(text, filename, mime = 'application/octet-stream') {
   if (typeof document === 'undefined') return;
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   triggerDownload(url, filename);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
 }
 
 /**
@@ -210,7 +219,7 @@ export function downloadCanvasPng(canvas, filename) {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       triggerDownload(url, filename);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
     }, 'image/png');
   } else {
     triggerDownload(canvas.toDataURL('image/png'), filename);
