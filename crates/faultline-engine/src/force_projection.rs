@@ -143,7 +143,11 @@ pub struct StrikeEvent {
 /// so a later strike in the same tick reads the post-strike strength —
 /// matching the single-pass, deterministic convention of the other
 /// per-tick phases.
-pub fn force_projection_phase(state: &mut SimulationState, scenario: &Scenario, map: &GameMap) {
+pub(crate) fn force_projection_phase(
+    state: &mut SimulationState,
+    scenario: &Scenario,
+    map: &GameMap,
+) {
     if !any_projection_declared(scenario) {
         return;
     }
@@ -244,7 +248,7 @@ fn any_projection_declared(scenario: &Scenario) -> bool {
 /// engine's [`StrikeEvent`] log. Returns an empty map when no strike
 /// landed (so the `RunResult` field elides and legacy output is
 /// unchanged). Keyed by attacker faction for deterministic rendering.
-pub fn collect_strike_reports(
+pub(crate) fn collect_strike_reports(
     state: &SimulationState,
 ) -> BTreeMap<FactionId, faultline_types::stats::ForceProjectionReport> {
     let mut out: BTreeMap<FactionId, faultline_types::stats::ForceProjectionReport> =
