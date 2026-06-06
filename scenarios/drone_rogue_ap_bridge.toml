@@ -691,6 +691,13 @@ prerequisites = ["ot_enumeration"]
 base_success_probability = 0.55
 min_duration = 1
 max_duration = 3
+# Intentionally NOT `gated_by_defender`. Unlike the preceding quiet recon phases
+# (`segmentation_bridge`, `ot_enumeration`), whose low-and-slow activity only
+# surfaces through the IT-side tier-1 SOC queue the enumeration phase flooded,
+# actively manipulating an OT process or pulling a bulk exfiltration trips
+# OT-specific alarms that route to the OT / Controls Engineering team directly.
+# That alerting path does not depend on the saturated tier-1 IT triage queue, so
+# detection here is modeled with a flat (un-gated) per-tick probability of 0.25.
 detection_probability_per_tick = 0.25
 prerequisite_success_boost = 0.15
 attribution_difficulty = 0.6
