@@ -6,7 +6,8 @@ import { PRESETS } from './presets.js';
 import { mapsToObjects } from './wasm-util.js';
 import { buildShareUrl } from './sharing.js';
 import { renderDiff } from './diff.js';
-import { renderWarnings, warningsClean, renderExplain } from './explain-panel.js';
+import { renderWarnings, warningsClean, renderExplain, renderFieldDoc } from './explain-panel.js';
+import { docAtOffset } from './field-docs.js';
 /** @typedef {import('./pinned.js').PinnedStore} PinnedStore */
 
 export class Editor {
@@ -69,6 +70,11 @@ export class Editor {
     if (this.btnShare) this.btnShare.addEventListener('click', () => this._share());
     this.fileInput.addEventListener('change', (e) => this._import(e));
 
+    // Schema-aware hover documentation: hovering (or moving the caret to) a
+    // field key pops a tooltip explaining what the field means, its type,
+    // default, and whether it has an engine effect.
+    this._initFieldDocs();
+
     // Other modules can request the editor load arbitrary TOML
     // (e.g. dashboard "Load TOML" on a pinned result).
     this.bus.on('editor:load-toml', ({ toml, source }) => {
@@ -78,6 +84,155 @@ export class Editor {
       this._loadedBaselineLabel = source || 'loaded';
       this._showSuccess(`Loaded TOML from ${source || 'pin'}`);
     });
+  }
+
+  // -------------------------------------------------------------------
+  // Schema-aware hover documentation
+  // -------------------------------------------------------------------
+
+  /**
+   * Wire the hover-documentation tooltip on the TOML editor textarea.
+   *
+   * Triggering is dual-mode so it works for both mouse and keyboard users:
+   *   - `mousemove` over the textarea resolves the character offset under
+   *     the pointer (via the standard caret-from-point APIs) and shows the
+   *     doc for the field key there.
+   *   - `keyup` / `click` resolves the key at the current caret position, so
+   *     arrowing onto a key (no mouse) still surfaces its docs.
+   * `mouseleave`, scroll, blur, and Escape dismiss the tooltip.
+   *
+   * The tooltip element is created lazily and appended to <body> so it can
+   * escape the sidebar's overflow clipping; it is positioned in viewport
+   * coordinates near the trigger point. Everything is vanilla DOM — no new
+   * dependencies — consistent with the rest of site/js.
+   */
+  _initFieldDocs() {
+    if (!this.textarea) return;
+
+    // The most recently shown key, so repeated mousemove events over the
+    // same word don't thrash the DOM.
+    this._fieldDocKey = null;
+
+    const onMove = (e) => this._handleFieldDocHover(e.clientX, e.clientY);
+    this.textarea.addEventListener('mousemove', onMove);
+    this.textarea.addEventListener('mouseleave', () => this._hideFieldDoc());
+    // Caret-driven (keyboard / click) lookup.
+    this.textarea.addEventListener('keyup', () => this._showFieldDocAtCaret());
+    this.textarea.addEventListener('click', () => this._showFieldDocAtCaret());
+    // Dismiss on anything that would move the textarea content out from
+    // under a positioned tooltip, or on editing.
+    this.textarea.addEventListener('scroll', () => this._hideFieldDoc());
+    this.textarea.addEventListener('blur', () => this._hideFieldDoc());
+    this.textarea.addEventListener('input', () => this._hideFieldDoc());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this._hideFieldDoc();
+    });
+  }
+
+  /**
+   * Resolve and show the doc for the field key under a viewport point.
+   * @param {number} clientX
+   * @param {number} clientY
+   */
+  _handleFieldDocHover(clientX, clientY) {
+    const offset = this._offsetFromPoint(clientX, clientY);
+    if (offset == null) {
+      this._hideFieldDoc();
+      return;
+    }
+    const doc = docAtOffset(this.textarea.value, offset);
+    if (!doc) {
+      this._hideFieldDoc();
+      return;
+    }
+    this._showFieldDoc(doc, clientX, clientY);
+  }
+
+  /** Resolve and show the doc for the field key at the current caret. */
+  _showFieldDocAtCaret() {
+    const offset = this.textarea.selectionStart;
+    if (typeof offset !== 'number') return;
+    const doc = docAtOffset(this.textarea.value, offset);
+    if (!doc) {
+      this._hideFieldDoc();
+      return;
+    }
+    // Anchor the caret-driven tooltip near the textarea's top-left rather
+    // than chasing an invisible caret rectangle (textareas don't expose
+    // per-caret geometry). Good enough to surface the doc on keyboard nav.
+    const rect = this.textarea.getBoundingClientRect();
+    this._showFieldDoc(doc, rect.left + 16, rect.top + 16);
+  }
+
+  /**
+   * Map a viewport point to a character offset in the textarea, or null if
+   * the point isn't over editable text. Uses the standard
+   * `caretPositionFromPoint` (Firefox) / `caretRangeFromPoint` (WebKit/
+   * Blink) APIs, which both work for <textarea> content.
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {number | null}
+   */
+  _offsetFromPoint(clientX, clientY) {
+    const doc = document;
+    if (typeof doc.caretPositionFromPoint === 'function') {
+      const pos = doc.caretPositionFromPoint(clientX, clientY);
+      if (pos && pos.offsetNode) return pos.offset;
+    }
+    if (typeof doc.caretRangeFromPoint === 'function') {
+      const range = doc.caretRangeFromPoint(clientX, clientY);
+      if (range) return range.startOffset;
+    }
+    return null;
+  }
+
+  /**
+   * Render and position the field-doc tooltip.
+   * @param {{key: string}} doc
+   * @param {number} clientX
+   * @param {number} clientY
+   */
+  _showFieldDoc(doc, clientX, clientY) {
+    // Skip re-render if the same key is already shown — keeps mousemove cheap.
+    if (this._fieldDocKey === doc.key && this._fieldDocEl && !this._fieldDocEl.hidden) {
+      return;
+    }
+    this._fieldDocKey = doc.key;
+
+    if (!this._fieldDocEl) {
+      const el = document.createElement('div');
+      el.className = 'field-doc-tooltip';
+      el.setAttribute('role', 'tooltip');
+      el.hidden = true;
+      document.body.appendChild(el);
+      this._fieldDocEl = el;
+    }
+
+    this._fieldDocEl.innerHTML = renderFieldDoc(doc);
+    this._fieldDocEl.hidden = false;
+
+    // Position just below-right of the trigger point, then nudge back inside
+    // the viewport so the tooltip never clips off-screen.
+    const margin = 12;
+    const rect = this._fieldDocEl.getBoundingClientRect();
+    let left = clientX + 14;
+    let top = clientY + 16;
+    if (left + rect.width + margin > window.innerWidth) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (top + rect.height + margin > window.innerHeight) {
+      top = Math.max(margin, clientY - rect.height - 12);
+    }
+    this._fieldDocEl.style.left = `${left}px`;
+    this._fieldDocEl.style.top = `${top}px`;
+  }
+
+  /** Hide the field-doc tooltip. */
+  _hideFieldDoc() {
+    this._fieldDocKey = null;
+    if (this._fieldDocEl) {
+      this._fieldDocEl.hidden = true;
+    }
   }
 
   async _share() {
