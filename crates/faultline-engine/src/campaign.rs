@@ -490,8 +490,9 @@ const DECEPTION_ATTRIBUTION_WEIGHT: f64 = 3.0;
 /// Consumes exactly one RNG value (the categorical draw). Deterministic
 /// given the belief state and RNG position. When there are no
 /// candidates other than the defender (degenerate single-faction
-/// scenario), falls back to the true attacker with no RNG draw — but
-/// this branch can only be reached when at least one kill chain exists,
+/// scenario), falls back to the true attacker after consuming one RNG
+/// draw to keep the stream aligned with the nominal path — but this
+/// branch can only be reached when at least one kill chain exists,
 /// which validation already pairs with ≥ 2 factions, so it is defensive.
 fn draw_believed_attribution(
     state: &SimulationState,
