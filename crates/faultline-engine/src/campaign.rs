@@ -90,6 +90,17 @@ pub struct CampaignState {
     /// Accumulated attribution confidence `[0, 1]` that the defender
     /// has developed about the attacker.
     pub attribution_confidence: f64,
+    /// The faction the defender *believes* is responsible for this
+    /// chain (Epic M round-two — believed-attribution rolls). `None`
+    /// until a phase is detected and the believed-attribution path is
+    /// active; when the believed-attribution sub-flag is off this stays
+    /// `None` and every attribution consumer falls back to the chain's
+    /// true `attacker`, so legacy scenarios are bit-identical. When the
+    /// sub-flag is on, this is drawn from the defender's belief-weighted
+    /// distribution at detection time and may differ from the true
+    /// attacker (a misattribution).
+    #[serde(default)]
+    pub attributed_faction: Option<FactionId>,
     /// Non-kinetic metric accumulators.
     pub information_dominance: f64,
     pub institutional_erosion: f64,
@@ -113,6 +124,7 @@ impl CampaignState {
             attacker_spend: 0.0,
             defender_spend: 0.0,
             attribution_confidence: 0.0,
+            attributed_faction: None,
             information_dominance: 0.0,
             institutional_erosion: 0.0,
             coercion_pressure: 0.0,
@@ -319,8 +331,38 @@ pub fn campaign_phase(
                         .phase_status
                         .insert(pid.clone(), PhaseStatus::Detected { tick: state.tick });
                     campaign.defender_alerted = true;
-                    campaign.attribution_confidence =
-                        (1.0 - phase.attribution_difficulty).clamp(0.0, 1.0);
+                    let confidence = (1.0 - phase.attribution_difficulty).clamp(0.0, 1.0);
+                    campaign.attribution_confidence = confidence;
+                    // Believed-attribution roll (Epic M round-two). Gated
+                    // entirely behind `believed_attribution`: when the
+                    // sub-flag is off this whole block is skipped, no RNG
+                    // is consumed, and `attributed_faction` stays `None`,
+                    // so legacy scenarios are bit-identical. When on, the
+                    // defender (the chain's `target`) draws a believed
+                    // attacker from its belief-weighted distribution and
+                    // commits to acting on it.
+                    if crate::belief::believed_attribution_enabled(scenario) {
+                        let believed = draw_believed_attribution(
+                            state,
+                            scenario,
+                            &chain.target,
+                            &chain.attacker,
+                            rng,
+                        );
+                        campaign.attributed_faction = Some(believed.faction.clone());
+                        state
+                            .attribution_events
+                            .push(crate::state::AttributionEvent {
+                                tick: state.tick,
+                                defender: chain.target.clone(),
+                                chain: chain_id.clone(),
+                                true_attacker: chain.attacker.clone(),
+                                believed_attacker: believed.faction,
+                                confidence,
+                                misattributed: believed.misattributed,
+                                deception_driven: believed.deception_driven,
+                            });
+                    }
                     apply_detection_penalty(state, phase);
                     resolve_branches(
                         campaign,
@@ -398,6 +440,190 @@ pub fn campaign_phase(
     // Done after service so the depth-sample reflects post-service
     // residual rather than the briefly-elevated post-enqueue peak.
     sample_queue_stats(state);
+}
+
+/// Outcome of a believed-attribution draw (Epic M round-two).
+struct BelievedAttribution {
+    /// The faction the defender attributes the attack to.
+    faction: FactionId,
+    /// Whether that differs from the true attacker.
+    misattributed: bool,
+    /// Whether a planted `Deceived` belief implicated the chosen
+    /// faction (a false flag was in play, regardless of whether it
+    /// changed the outcome).
+    deception_driven: bool,
+}
+
+/// Strong relative weight applied to a candidate faction that the
+/// defender holds a planted [`BeliefSource::Deceived`] belief about.
+///
+/// Chosen so that a single false-flag belief dominates the residual
+/// confusion mass of a low-intelligence defender (pushing it into
+/// majority-misattribution) without entirely overriding a
+/// high-intelligence defender's correct read — high intelligence keeps
+/// the true-attacker weight near `0.98`, so a `3.0` deception weight on
+/// one other candidate gives the false flag a meaningful but not
+/// certain pull. Tuning constant, deliberately conservative.
+const DECEPTION_ATTRIBUTION_WEIGHT: f64 = 3.0;
+
+/// Draw the faction a `defender` believes is responsible for an attack,
+/// at detection time, from a belief-weighted distribution (Epic M
+/// round-two — believed-attribution rolls).
+///
+/// Weighting (over every faction except the defender itself, in
+/// `BTreeMap` order):
+/// - The **true attacker** carries
+///   [`attribution_true_weight`](faultline_types::belief::attribution_true_weight)`(defender.intelligence)`
+///   — a high-intelligence defender almost always fingers the right
+///   faction; a low-intelligence one is only slightly better than a
+///   coin flip *before* deception.
+/// - Every **other candidate** carries a flat residual "confusion"
+///   weight that sums to `1 - true_weight`, modelling the defender's
+///   baseline tendency to misattribute under uncertainty.
+/// - Any candidate the defender holds a planted
+///   [`BeliefSource::Deceived`] belief about — a false-flag
+///   region-control belief naming it as a controller, or a deceived
+///   force belief owned by it — gets an *additional*
+///   [`DECEPTION_ATTRIBUTION_WEIGHT`] mass. This is how a false flag
+///   bends attribution toward an innocent third party.
+///
+/// Consumes exactly one RNG value (the categorical draw). Deterministic
+/// given the belief state and RNG position. When there are no
+/// candidates other than the defender (degenerate single-faction
+/// scenario), falls back to the true attacker after consuming one RNG
+/// draw to keep the stream aligned with the nominal path — but this
+/// branch can only be reached when at least one kill chain exists,
+/// which validation already pairs with ≥ 2 factions, so it is defensive.
+fn draw_believed_attribution(
+    state: &SimulationState,
+    scenario: &Scenario,
+    defender: &FactionId,
+    true_attacker: &FactionId,
+    rng: &mut impl Rng,
+) -> BelievedAttribution {
+    use faultline_types::belief::attribution_true_weight;
+
+    // Candidate factions: everyone except the defender, deterministic
+    // order. The defender does not attribute the attack to itself.
+    let candidates: Vec<FactionId> = scenario
+        .factions
+        .keys()
+        .filter(|fid| *fid != defender)
+        .cloned()
+        .collect();
+
+    // Which candidates does the defender hold a planted deception about?
+    let deceived: std::collections::BTreeSet<FactionId> = state
+        .belief_states
+        .get(defender)
+        .map(collect_deceived_implications)
+        .unwrap_or_default();
+
+    // Degenerate guard: no one to attribute to but the defender. Consume
+    // one draw before returning so this path advances the RNG stream by
+    // exactly one, identical to both the `if total > 0.0` and `else`
+    // branches below — otherwise hitting this guard would shift every
+    // subsequent draw in the run by one position and break reproducibility.
+    let Some(first) = candidates.first().cloned() else {
+        let _: f64 = rng.r#gen();
+        return BelievedAttribution {
+            faction: true_attacker.clone(),
+            misattributed: false,
+            deception_driven: false,
+        };
+    };
+
+    let defender_intel = scenario
+        .factions
+        .get(defender)
+        .map_or(0.5, |f| f.intelligence);
+    let true_weight = attribution_true_weight(defender_intel);
+    // Residual confusion mass split flat across the non-attacker
+    // candidates. When the true attacker is (defensively) absent from
+    // the candidate list, the residual is spread across everyone.
+    let n_others = candidates.iter().filter(|c| *c != true_attacker).count();
+    let confusion_each = if n_others > 0 {
+        (1.0 - true_weight) / n_others as f64
+    } else {
+        0.0
+    };
+
+    // Build the weighted distribution in candidate order.
+    let mut weights: Vec<(FactionId, f64)> = Vec::with_capacity(candidates.len());
+    let mut total = 0.0f64;
+    for cand in &candidates {
+        let mut w = if cand == true_attacker {
+            true_weight
+        } else {
+            confusion_each
+        };
+        if deceived.contains(cand) {
+            w += DECEPTION_ATTRIBUTION_WEIGHT;
+        }
+        total += w;
+        weights.push((cand.clone(), w));
+    }
+
+    // Single categorical draw. `total` is strictly positive whenever
+    // any candidate exists (true_weight ≥ 0.5), so the fallback to
+    // `first` is purely defensive against a pathological all-zero set.
+    let chosen = if total > 0.0 {
+        let mut roll = rng.r#gen::<f64>() * total;
+        // Default to the final bucket: if floating-point accumulation in
+        // `total` lets `roll` reach the sum of all weights, the subtractive
+        // walk exhausts without a strict `roll < w` hit, and the residual
+        // mass logically belongs to the last candidate, not the first.
+        let mut pick = weights
+            .last()
+            .map_or_else(|| first.clone(), |(fid, _)| fid.clone());
+        for (fid, w) in &weights {
+            if roll < *w {
+                pick = fid.clone();
+                break;
+            }
+            roll -= *w;
+        }
+        pick
+    } else {
+        // Defensive: consume no extra RNG beyond the categorical draw
+        // we already conceptually owe. Draw once to keep the RNG
+        // position identical to the live path, then ignore it.
+        let _: f64 = rng.r#gen();
+        first
+    };
+
+    let misattributed = &chosen != true_attacker;
+    let deception_driven = deceived.contains(&chosen);
+    BelievedAttribution {
+        faction: chosen,
+        misattributed,
+        deception_driven,
+    }
+}
+
+/// Collect the set of factions a defender's belief state implicates via
+/// planted [`BeliefSource::Deceived`] entries — false-flag region
+/// control beliefs (the named controller) and deceived force beliefs
+/// (the named owner). Used to bias the believed-attribution draw toward
+/// the faction a false flag points at.
+fn collect_deceived_implications(
+    belief: &faultline_types::belief::FactionBelief,
+) -> std::collections::BTreeSet<FactionId> {
+    use faultline_types::belief::BeliefSource;
+    let mut out = std::collections::BTreeSet::new();
+    for region in belief.regions.values() {
+        if region.source == BeliefSource::Deceived
+            && let Some(controller) = &region.controller
+        {
+            out.insert(controller.clone());
+        }
+    }
+    for force in belief.forces.values() {
+        if force.source == BeliefSource::Deceived {
+            out.insert(force.owner.clone());
+        }
+    }
+    out
 }
 
 fn activate_ready_phases(

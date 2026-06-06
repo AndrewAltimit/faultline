@@ -606,6 +606,43 @@ terrain_modifiers = [
 ]
 ```
 
+### Bundled capability-card categories (Epic F — tech rebalance)
+
+The `category` field accepts the built-in `TechCategory` enum variants
+listed above, plus a `Custom = "..."` escape hatch for categories the
+enum does not name. The bundled tech library was historically weighted
+toward drone / counter-drone (`OffensiveDrone`, `CounterDrone`) and
+institutional-erosion content. Epic F's round-two rebalance added a
+balanced offensive/defensive set across five previously
+under-represented categories. The cards live in
+[`scenarios/tech_rebalance_demo.toml`](../scenarios/tech_rebalance_demo.toml)
+(a sandbox that wires all of them onto a red actor and a blue defender);
+copy individual cards into your own scenarios as needed. As with every
+Faultline card, each is a named bundle of **aggregate statistical
+effects derived from public specifications** — effect-level only, never
+implementation detail.
+
+| Category (`category` value) | Offensive cards | Defensive counter | OSINT basis |
+|---|---|---|---|
+| SIGINT (`Custom = "SIGINT"`) | `passive_sigint_collection`, `comms_metadata_geolocation` | `sigint_emcon_discipline` | Open SIGINT / traffic-analysis literature; published RF-propagation fundamentals; OPSEC / EMCON doctrine |
+| Supply-chain weaponization (`Custom = "SupplyChain"`) | `supplychain_implant` | `sbom_supplychain_assurance` | CRS/GAO supply-chain-security reporting; NIST SSDF / SBOM guidance; public incident analyses |
+| SCADA / ICS (`Custom = "ScadaIcs"`) | `scada_ics_manipulation` | `ot_network_segmentation` | Public ICS-CERT advisories; NIST SP 800-82 ICS-security guidance; defensive-community incident analyses |
+| GPS / PNT denial (`ElectronicWarfare`) | `gnss_denial_jamming`, `gnss_spoofing` | `resilient_pnt_holdover` | Open PNT-resilience literature; published GPS vulnerability assessments; DOT PNT resilience reports |
+| Deepfakes / synthetic media (`InformationWarfare`) | `synthetic_media_influence` | `synthetic_media_provenance` | Open disinformation / influence-ops literature; content-authenticity standards (C2PA); congressional testimony on synthetic media |
+
+GPS/PNT-denial cards reuse the built-in `ElectronicWarfare` category and
+deepfake cards reuse `InformationWarfare` (the closest-fitting built-in
+variants); the SIGINT, supply-chain, and SCADA/ICS cards use the
+`Custom = "..."` form because no built-in variant names them. The
+`Custom` discriminator is free-text and surfaced verbatim in the report,
+so pick a stable, descriptive label.
+
+These cards are also exercised in the bundled single-event calibration
+analogues: `scenarios/analogue_grid_cyberattack_2015.toml`
+(SCADA/ICS) and `scenarios/analogue_supplychain_wiper_2017.toml`
+(supply-chain) model the same effect categories as kill chains rather
+than deployed tech cards.
+
 ---
 
 ## `[political_climate]`
@@ -771,7 +808,7 @@ Tagged enum (`effect = "..."`):
 
 ---
 
-## `[simulation.belief_model]` (Epic M round-one; round-two adds `intelligence_weighting`)
+## `[simulation.belief_model]` (Epic M round-one; round-two adds `intelligence_weighting` and `believed_attribution`)
 
 Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When `enabled = false` (or the block is omitted entirely), the engine takes the legacy fast path: belief phase short-circuits in O(1), `RunResult.belief_accuracy` / `belief_snapshots` stay empty, and the AI consumes ground truth (or `simulation.fog_of_war`-filtered ground truth, if set). When `enabled = true`, the engine carries a per-faction `BeliefState` updated each tick from current observations, applies decay to unrefreshed entries, and consumes the belief-derived world view in the AI's decision phase. `EventEffect::DeceptionOp`, `IntelligenceShare`, and `AmbientIntel` are no-ops when belief mode is off.
 
@@ -783,7 +820,8 @@ Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When 
 | `scalar_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.03`. Per-tick confidence decay for scalar beliefs (faction morale, faction resources). |
 | `prune_threshold` | `f64 ∈ [0, 1]` | Default `0.05`. Belief entries with confidence strictly below this are dropped from the persistent state. Set to `0.0` to never prune. |
 | `snapshot_interval` | `u32` | Default `0` (no snapshot stream). When `> 0`, the engine appends one belief-shape snapshot per faction every `N` ticks plus one terminal snapshot. |
-| `intelligence_weighting` | `bool` | Default `false` (round-one fidelity — perfect direct observation). When `true`, foreign observations are capped at an intelligence-derived confidence ceiling and Bayesian-blended with the prior (tagged `Inferred`); own-faction facts stay perfect. Also enables the AI's confidence-weighted threat reads. See [engine-model.md](engine-model.md). |
+| `intelligence_weighting` | `bool` | Default `false` (round-one fidelity — perfect direct observation). When `true`, foreign observations are capped at an intelligence-derived confidence ceiling and Bayesian-blended with the prior (tagged `Inferred`); own-faction facts stay perfect. Also enables the AI's confidence-weighted threat reads. Requires `enabled = true`. See [engine-model.md](engine-model.md). |
+| `believed_attribution` | `bool` | Default `false` (legacy ground-truth attribution). When `true`, a defender that detects a kill-chain phase draws a *believed attacker* from a distribution weighted by its `intelligence` and biased by any planted false-flag (`Deceived`) belief — so a low-intelligence or deceived defender misattributes the attack and the alliance-fracture accounting (`AttributionThreshold`) fires against the *believed* faction. Requires `enabled = true` and at least one kill chain (rejected at load otherwise). Surfaces the `## Attribution Fidelity` report section. See [engine-model.md](engine-model.md). |
 
 ```toml
 [simulation.belief_model]
@@ -794,6 +832,7 @@ scalar_decay_per_tick = 0.03
 prune_threshold = 0.05
 snapshot_interval = 0
 intelligence_weighting = false  # round-two: set true for fog-of-war fidelity
+believed_attribution = false    # round-two: set true to route attribution through belief
 ```
 
 Validation rejects: non-finite or out-of-`[0, 1]` decay rates / prune threshold, including when `enabled = false` (a typo in a disabled-but-authored block surfaces at load time).
@@ -1210,6 +1249,13 @@ If you depend on deterministic output, set `seed` explicitly. If `seed` is omitt
 - [`scenarios/europe_eastern_flank.toml`](../scenarios/europe_eastern_flank.toml) — NATO / Russia / Ukraine on the bundled Europe map; drone-swarm tech cards
 - [`scenarios/drone_swarm_destabilization.toml`](../scenarios/drone_swarm_destabilization.toml) — multi-phase autonomous drone swarm campaign exercising sensor emplacement through coercion
 - [`scenarios/capabilities_demo.toml`](../scenarios/capabilities_demo.toml) — sandbox exercising every tech card in the bundled Drone Threat Library
+- [`scenarios/tech_rebalance_demo.toml`](../scenarios/tech_rebalance_demo.toml) — sandbox exercising the Epic F rebalance cards (SIGINT, supply-chain, SCADA/ICS, GPS/PNT denial, deepfakes) and their counters
+
+**Calibration analogues (Epic N — single-event historical back-tests):**
+- [`scenarios/calibration_demo.toml`](../scenarios/calibration_demo.toml) — stylized-aggregate analogue; intentionally Fails three observations to demonstrate the verdict ladder's diagnostic value
+- [`scenarios/analogue_short_coercive_war.toml`](../scenarios/analogue_short_coercive_war.toml) — Aug 2008 Russo-Georgian War, modeled as a rapid coercive campaign (CoercionPressure → coerced ceasefire); calibrates to attacker victory in ~days
+- [`scenarios/analogue_grid_cyberattack_2015.toml`](../scenarios/analogue_grid_cyberattack_2015.toml) — Dec 2015 regional grid cyberattack (SCADA/ICS kill chain → outage); calibrates to attacker success in ~hours
+- [`scenarios/analogue_supplychain_wiper_2017.toml`](../scenarios/analogue_supplychain_wiper_2017.toml) — Jun 2017 supply-chain destructive wiper; calibrates to attacker success with very short propagation
 
 **Kill-chain wargames:**
 - [`scenarios/compound_kill_chains.toml`](../scenarios/compound_kill_chains.toml) — three concurrent archetypal red-team campaigns (intelligence-led pressure, non-lethal capability demonstration, cyber-physical convergence) against a notional integrated defender

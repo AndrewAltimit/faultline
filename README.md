@@ -71,7 +71,7 @@ faultline-types          (shared data structures — no logic, no deps)
 | `faultline-events` | Conditional event triggers, effect application, event chains |
 | `faultline-engine` | Deterministic tick loop: events, AI, movement, combat, politics |
 | `faultline-stats` | Monte Carlo runner, win probabilities, distribution stats |
-| `faultline-backend-wasm` | WASM API (load, validate, run scenarios from browser) |
+| `faultline-backend-wasm` | WASM API (load, validate, explain, run scenarios from browser) |
 | `faultline-cli` | Headless CLI with rayon parallelism for batch runs |
 
 ## Documentation

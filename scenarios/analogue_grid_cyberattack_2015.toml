@@ -1,0 +1,451 @@
+# Historical-analogue scenario (Epic N round-two)
+# =================================================
+#
+# Single named-event analogue: the December 2015 attack on a regional
+# electricity distribution operator that caused a multi-hour outage
+# affecting on the order of 225,000 customers. This is the first
+# publicly-confirmed cyberattack to cause a power outage, and its
+# kill chain is unusually well documented in OPEN sources, which makes
+# it an ideal single-event calibration analogue for an
+# infrastructure / SCADA-ICS incident.
+#
+# ---------------------------------------------------------------------
+# Threat-actor framing
+# ---------------------------------------------------------------------
+# Attacker ("grid_intruder"): a capable, well-resourced intrusion set
+#   that ran a multi-stage operation — spearphishing for initial
+#   access, credential theft and lateral movement into the operational
+#   network, manipulation of operator HMIs to open breakers, and
+#   destructive / availability actions (firmware corruption of serial
+#   converters; telephone-system flooding) to slow recovery.
+# Defender ("grid_operator"): a regional distribution utility whose
+#   operational network was reachable from the corporate network and
+#   whose operators were displaced from their own HMIs during the event.
+#
+# ---------------------------------------------------------------------
+# OSINT-sourced parameters (aggregate statistical effects only — no
+# exploit detail, no malware internals, no implementation specifics)
+# ---------------------------------------------------------------------
+# - Kill-chain shape (phish → credential theft / lateral movement →
+#   SCADA/HMI manipulation → breaker operation → recovery obstruction)
+#   is drawn from the public defensive-community incident analysis
+#   (E-ISAC / SANS public report) and the U.S. ICS-CERT public alert
+#   (IR-ALERT-H-16-056-01). Only the AGGREGATE phase structure and
+#   public outcome are encoded — no exploit or malware internals.
+# - Outcome: a successful attacker. Roughly 225,000 customers lost
+#   power; the outage lasted several hours; manual operation restored
+#   service. Encoded as high phase-success probabilities and an
+#   attacker win.
+# - Duration: the disruptive event unfolded over hours, here modeled at
+#   one tick = one hour over a short horizon.
+#
+# All figures (~225k customers, multi-hour outage, kill-chain stages)
+# are from public reporting and contain no classified, CUI, or
+# export-controlled material.
+
+[meta]
+schema_version = 1
+name = "Analogue — Regional Grid Cyberattack (Dec 2015)"
+description = """
+Single-event historical analogue: the December 2015 cyberattack on a
+regional electricity distribution operator — the first publicly
+confirmed cyber-induced power outage. A capable intrusion set ran a
+multi-stage operation (spearphishing → credential theft / lateral
+movement → SCADA/HMI manipulation → breaker operation → recovery
+obstruction) that cut power to on the order of 225,000 customers for
+several hours. The documented attacker-success outcome and short
+(hours) duration are encoded as calibration observations and
+back-tested against the Monte Carlo distribution.
+
+Parameters are aggregate kill-chain phase success / duration / pressure
+values drawn from public defensive-community analysis (E-ISAC / SANS
+public incident report) and the U.S. ICS-CERT public alert. No exploit
+detail, malware internals, classified, CUI, or export-controlled
+material is encoded — only the aggregate statistical effects the engine
+consumes.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["analogue", "calibration", "cyber", "scada-ics", "infrastructure", "grid"]
+confidence = "High"
+
+[meta.historical_analogue]
+name = "December 2015 regional grid cyberattack"
+description = """
+The first publicly confirmed cyberattack to cause a power outage. A
+multi-stage intrusion manipulated distribution-operator control systems
+to open breakers, cutting power to ~225,000 customers for several hours
+before manual restoration. The analogue back-tests whether this
+scenario's kill-chain parameters reproduce both the documented victor
+(the attacker) and the documented short (hours) duration.
+"""
+period = "2015-12-23"
+sources = [
+    "E-ISAC / SANS public incident analysis of the December 2015 grid attack",
+    "U.S. ICS-CERT public alert IR-ALERT-H-16-056-01 (cyber-attack against critical infrastructure)",
+    "Congressional Research Service reporting on grid cybersecurity",
+    "Published academic / defensive-community analyses of ICS/SCADA intrusion campaigns",
+]
+confidence = "High"
+
+# Documented victor: the attacker achieved a power outage.
+[[meta.historical_analogue.observations]]
+notes = "Public incident analysis: the intrusion succeeded in opening breakers and causing an outage affecting ~225,000 customers."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "winner"
+faction = "grid_intruder"
+
+# Win-rate band: the operation succeeded; against the 2015 defensive
+# posture (flat-ish network reachability, limited ICS segmentation) a
+# campaign of this maturity has a high success rate. Band kept wide.
+[[meta.historical_analogue.observations]]
+notes = "A campaign of this maturity against the documented 2015 defensive posture has a high success rate; band kept wide for single-case uncertainty."
+confidence = "Medium"
+[meta.historical_analogue.observations.metric]
+kind = "win_rate"
+faction = "grid_intruder"
+low = 0.70
+high = 1.0
+
+# Duration: the disruptive event unfolded over hours. One tick = one
+# hour; interval [2, 10] brackets the several-hour event.
+[[meta.historical_analogue.observations]]
+notes = "The disruptive phase unfolded over several hours before manual restoration; modeled at one tick = one hour."
+confidence = "High"
+[meta.historical_analogue.observations.metric]
+kind = "duration_ticks"
+low = 2
+high = 10
+
+# -- Map (utility IT + OT + service territory) -----------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 1
+height = 3
+
+[map.regions.corporate_it]
+id = "corporate_it"
+name = "Utility Corporate IT"
+population = 2000
+urbanization = 0.9
+initial_control = "grid_operator"
+strategic_value = 0.3
+borders = ["control_center"]
+
+[map.regions.control_center]
+id = "control_center"
+name = "Distribution Control Center (OT)"
+population = 500
+urbanization = 0.9
+initial_control = "grid_operator"
+strategic_value = 0.8
+borders = ["corporate_it", "service_territory"]
+
+[map.regions.service_territory]
+id = "service_territory"
+name = "Service Territory (225k customers)"
+population = 600000
+urbanization = 0.6
+initial_control = "grid_operator"
+strategic_value = 1.0
+borders = ["control_center"]
+
+[map.infrastructure.distribution_grid]
+id = "distribution_grid"
+name = "Regional Distribution Grid"
+region = "service_territory"
+infra_type = "PowerGrid"
+criticality = 1.0
+initial_status = 1.0
+repairable = 6
+
+[map.infrastructure.scada_hmi]
+id = "scada_hmi"
+name = "SCADA / Operator HMI"
+region = "control_center"
+infra_type = "SupplyChain"
+criticality = 0.9
+initial_status = 1.0
+repairable = 8
+
+[[map.terrain]]
+region = "corporate_it"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.8
+
+[[map.terrain]]
+region = "control_center"
+terrain_type = "Urban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.7
+
+[[map.terrain]]
+region = "service_territory"
+terrain_type = "Suburban"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.6
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.grid_intruder]
+id = "grid_intruder"
+name = "Grid Intruder (Threat Actor)"
+description = "Capable, well-resourced intrusion set running a multi-stage ICS-targeting operation."
+color = "#b91c1c"
+tech_access = []
+initial_morale = 0.85
+logistics_capacity = 30.0
+initial_resources = 600.0
+resource_rate = 15.0
+command_resilience = 0.8
+intelligence = 0.8
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.grid_intruder.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.grid_intruder.forces.intruder_cell]
+id = "intruder_cell"
+name = "Intrusion Operations Cell"
+unit_type = "CyberUnit"
+region = "corporate_it"
+strength = 60.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.grid_operator]
+id = "grid_operator"
+name = "Grid Operator (Defender)"
+description = "Regional electricity distribution utility with a 2015-era defensive posture (limited ICS segmentation)."
+color = "#1d4ed8"
+tech_access = []
+initial_morale = 0.65
+logistics_capacity = 40.0
+initial_resources = 500.0
+resource_rate = 20.0
+command_resilience = 0.6
+intelligence = 0.45
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.grid_operator.faction_type]
+kind = "Civilian"
+
+[factions.grid_operator.forces.soc_watch]
+id = "soc_watch"
+name = "Utility Operations Watch"
+unit_type = "LawEnforcement"
+region = "control_center"
+strength = 50.0
+mobility = 0.5
+upkeep = 1.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology (none required for calibration) ----------------------------
+
+[technology]
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.4
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.5
+disinformation_susceptibility = 0.4
+state_control = 0.3
+social_media_penetration = 0.8
+internet_availability = 0.95
+
+# -- Events (none) ----------------------------------------------------------
+
+[events]
+
+# -- Kill chain: ICS intrusion to outage -----------------------------------
+#
+# Five short phases mirroring the public incident analysis. Each
+# successful phase emits CoercionPressure (a generic disruption metric
+# here) and the terminal phases damage the grid infrastructure.
+# Cumulative pressure crosses the 0.55 outage threshold around tick 4-7
+# — the several-hour event. High base success probabilities reflect the
+# documented 2015 defensive posture.
+
+[kill_chains.grid_op]
+id = "grid_op"
+name = "ICS Intrusion to Grid Outage"
+description = "Aggregate model of the multi-stage 2015 grid intrusion: initial access, lateral movement into the operational network, SCADA/HMI manipulation, breaker operation, and recovery obstruction."
+attacker = "grid_intruder"
+target = "grid_operator"
+entry_phase = "initial_access"
+
+[kill_chains.grid_op.phases.initial_access]
+id = "initial_access"
+name = "Spearphishing — Initial Access"
+description = "Aggregate model of spearphishing-led initial access to the corporate IT environment. Effect-level only; no payload or technique detail."
+prerequisites = []
+base_success_probability = 0.95
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+attribution_difficulty = 0.7
+targets_domains = ["NetworkSecurity"]
+
+[[kill_chains.grid_op.phases.initial_access.outputs]]
+type = "CoercionPressure"
+delta = 0.15
+
+[[kill_chains.grid_op.phases.initial_access.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "lateral_movement"
+
+[kill_chains.grid_op.phases.lateral_movement]
+id = "lateral_movement"
+name = "Credential Theft & Lateral Movement to OT"
+description = "Aggregate model of credential theft and pivot from the corporate network into the operational (control-center) network."
+prerequisites = ["initial_access"]
+base_success_probability = 0.92
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.02
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.7
+targets_domains = ["NetworkSecurity", "SupplyChainSecurity"]
+
+[[kill_chains.grid_op.phases.lateral_movement.outputs]]
+type = "CoercionPressure"
+delta = 0.17
+
+[[kill_chains.grid_op.phases.lateral_movement.outputs]]
+type = "IntelligenceGain"
+amount = 0.2
+
+[[kill_chains.grid_op.phases.lateral_movement.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "scada_manipulation"
+
+[kill_chains.grid_op.phases.scada_manipulation]
+id = "scada_manipulation"
+name = "SCADA / HMI Manipulation"
+description = "Aggregate model of seizing operator HMIs in the control center to gain command authority over distribution breakers."
+prerequisites = ["lateral_movement"]
+base_success_probability = 0.92
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.01
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.6
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.grid_op.phases.scada_manipulation.outputs]]
+type = "CoercionPressure"
+delta = 0.18
+
+[[kill_chains.grid_op.phases.scada_manipulation.outputs]]
+type = "InfraDamage"
+region = "control_center"
+factor = 0.5
+
+[[kill_chains.grid_op.phases.scada_manipulation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "breaker_operation"
+
+[kill_chains.grid_op.phases.breaker_operation]
+id = "breaker_operation"
+name = "Open Distribution Breakers"
+description = "Aggregate model of opening distribution breakers from the seized HMIs, cutting power to the service territory."
+prerequisites = ["scada_manipulation"]
+base_success_probability = 0.9
+min_duration = 1
+max_duration = 1
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["SupplyChainSecurity"]
+
+[[kill_chains.grid_op.phases.breaker_operation.outputs]]
+type = "CoercionPressure"
+delta = 0.2
+
+[[kill_chains.grid_op.phases.breaker_operation.outputs]]
+type = "InfraDamage"
+region = "service_territory"
+factor = 0.9
+
+[[kill_chains.grid_op.phases.breaker_operation.branches]]
+condition = { type = "OnSuccess" }
+next_phase = "recovery_obstruction"
+
+[kill_chains.grid_op.phases.recovery_obstruction]
+id = "recovery_obstruction"
+name = "Obstruct Recovery"
+description = "Terminal phase. Aggregate model of recovery obstruction (serial-converter firmware corruption, telephone-system flooding) that lengthened the outage before manual restoration."
+prerequisites = ["breaker_operation"]
+base_success_probability = 0.85
+min_duration = 1
+max_duration = 2
+detection_probability_per_tick = 0.0
+prerequisite_success_boost = 0.05
+attribution_difficulty = 0.5
+targets_domains = ["CivilianEmergency"]
+
+[[kill_chains.grid_op.phases.recovery_obstruction.outputs]]
+type = "CoercionPressure"
+delta = 0.1
+
+# -- Simulation Config ------------------------------------------------------
+#
+# 16-hour cap brackets the documented several-hour event with headroom.
+# One tick = one hour. The attacker wins by crossing the outage
+# (CoercionPressure) threshold; the defender wins only by holding its
+# service territory intact for the full horizon.
+
+[simulation]
+max_ticks = 16
+monte_carlo_runs = 300
+fog_of_war = false
+snapshot_interval = 1
+seed = 2015
+attrition_model = "LanchesterLinear"
+
+[simulation.tick_duration]
+Hours = 1
+
+# -- Victory Conditions -----------------------------------------------------
+
+# Attacker objective: cause the outage (cumulative disruption pressure
+# crosses the operator's resilience threshold).
+[victory_conditions.outage_caused]
+id = "outage_caused"
+name = "Grid Intruder Causes Outage"
+faction = "grid_intruder"
+
+[victory_conditions.outage_caused.condition]
+type = "NonKineticThreshold"
+metric = "CoercionPressure"
+threshold = 0.55
+
+# Defender objective: keep the lights on for the full horizon.
+[victory_conditions.grid_held]
+id = "grid_held"
+name = "Grid Operator Maintains Service"
+faction = "grid_operator"
+
+[victory_conditions.grid_held.condition]
+type = "HoldRegions"
+regions = ["service_territory"]
+duration = 16

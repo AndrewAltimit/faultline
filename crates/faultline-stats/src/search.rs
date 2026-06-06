@@ -1049,6 +1049,7 @@ mod tests {
                 displacement_summaries: ::std::collections::BTreeMap::new(),
                 utility_decompositions: BTreeMap::new(),
                 belief_summaries: ::std::collections::BTreeMap::new(),
+                misattribution_summary: None,
             },
         };
         // Trial 0 dominates trial 1 (better win, equal detection).
@@ -1106,6 +1107,7 @@ mod tests {
                 displacement_summaries: ::std::collections::BTreeMap::new(),
                 utility_decompositions: BTreeMap::new(),
                 belief_summaries: ::std::collections::BTreeMap::new(),
+                misattribution_summary: None,
             },
         };
         let trials = vec![mk(0, 0.8, 0.4), mk(1, 0.6, 0.1), mk(2, 0.9, 0.5)];
@@ -1160,6 +1162,7 @@ mod tests {
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
             belief_summaries: ::std::collections::BTreeMap::new(),
+            misattribution_summary: None,
         }
     }
 
@@ -1502,6 +1505,7 @@ mod tests {
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
             belief_summaries: ::std::collections::BTreeMap::new(),
+            misattribution_summary: None,
         };
 
         // Cost-style objectives sum across chains.

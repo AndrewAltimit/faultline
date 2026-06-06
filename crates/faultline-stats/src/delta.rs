@@ -47,6 +47,7 @@ pub fn encode_run(run: &RunResult) -> DeltaEncodedRun {
         utility_decisions: run.utility_decisions.clone(),
         belief_accuracy: run.belief_accuracy.clone(),
         belief_snapshots: run.belief_snapshots.clone(),
+        attribution_events: run.attribution_events.clone(),
     }
 }
 
@@ -86,6 +87,7 @@ pub fn decode_run(encoded: &DeltaEncodedRun) -> RunResult {
         utility_decisions: encoded.utility_decisions.clone(),
         belief_accuracy: encoded.belief_accuracy.clone(),
         belief_snapshots: encoded.belief_snapshots.clone(),
+        attribution_events: encoded.attribution_events.clone(),
     }
 }
 
@@ -291,6 +293,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -361,6 +364,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -427,6 +431,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
         let decoded = decode_run(&encode_run(&run));
         assert_eq!(decoded.snapshots[1].region_control, snap2.region_control);
@@ -464,6 +469,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));
@@ -519,6 +525,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let encoded = encode_run(&run);
@@ -615,6 +622,7 @@ mod tests {
             utility_decisions: std::collections::BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         };
 
         let decoded = decode_run(&encode_run(&run));

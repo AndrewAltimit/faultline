@@ -1311,6 +1311,7 @@ mod tests {
             displacement_summaries: ::std::collections::BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
             belief_summaries: ::std::collections::BTreeMap::new(),
+            misattribution_summary: None,
         }
     }
 

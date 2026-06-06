@@ -1,0 +1,534 @@
+# Tech Library Rebalance Demo (Epic F — tech capability-card rebalance)
+# =====================================================================
+#
+# The bundled tech library has historically been weighted toward drone /
+# counter-drone and institutional-erosion cards, with very few cards in
+# five high-relevance categories: SIGINT, supply-chain weaponization,
+# SCADA/ICS, GPS/PNT denial, and deepfakes / synthetic media. This
+# scenario introduces a balanced set of NEW capability cards across
+# exactly those categories and gives a red threat actor and a blue
+# defender access to them so the cards' interactions can be exercised.
+#
+# As with every tech card in Faultline, each card is a named bundle of
+# AGGREGATE STATISTICAL EFFECTS derived from PUBLIC specifications
+# (effect-level: "detection range vs. RCS"-style figures), NOT
+# implementation detail. All parameters are sourceable from public OSINT
+# (IISS Military Balance, CRS/GAO reports, NIST / standards publications,
+# congressional testimony, and published defensive-community analyses).
+# No classified, CUI, or export-controlled information is encoded.
+#
+# Card vocabulary additions are documented in
+# `docs/scenario_schema.md` (the "Bundled capability-card categories"
+# subsection under `[technology.<tech_id>]`).
+
+[meta]
+schema_version = 1
+name = "Tech Library Rebalance Demo"
+description = """
+Two-faction sandbox wired with a balanced set of new capability cards
+spanning the five previously under-represented categories: SIGINT,
+supply-chain weaponization, SCADA/ICS, GPS/PNT denial, and deepfakes /
+synthetic media. Use it to probe how these offensive capabilities
+interact with their defensive counters. Every card is an aggregate
+statistical effect derived from public specifications only.
+"""
+author = "AI Agent Bot"
+version = "1.0.0"
+tags = ["demo", "tech-cards", "sigint", "supply-chain", "scada-ics", "gps-denial", "deepfakes"]
+confidence = "Medium"
+
+# -- Map --------------------------------------------------------------------
+
+[map]
+[map.source]
+type = "Grid"
+width = 2
+height = 2
+
+[map.regions.red_base]
+id = "red_base"
+name = "Red Forward Operating Area"
+population = 40000
+urbanization = 0.4
+initial_control = "red_actor"
+strategic_value = 0.3
+borders = ["contested_zone"]
+
+[map.regions.contested_zone]
+id = "contested_zone"
+name = "Contested Zone"
+population = 350000
+urbanization = 0.8
+strategic_value = 1.0
+borders = ["red_base", "blue_capital"]
+
+[map.regions.blue_capital]
+id = "blue_capital"
+name = "Blue Capital"
+population = 900000
+urbanization = 0.95
+initial_control = "blue_state"
+strategic_value = 1.0
+borders = ["contested_zone", "blue_periphery"]
+
+[map.regions.blue_periphery]
+id = "blue_periphery"
+name = "Blue Periphery"
+population = 220000
+urbanization = 0.6
+initial_control = "blue_state"
+strategic_value = 0.4
+borders = ["blue_capital"]
+
+[map.infrastructure.capital_grid]
+id = "capital_grid"
+name = "Capital Power Grid (SCADA-controlled)"
+region = "blue_capital"
+infra_type = "PowerGrid"
+criticality = 0.95
+initial_status = 1.0
+repairable = 8
+
+[map.infrastructure.capital_comms]
+id = "capital_comms"
+name = "Capital Communications Hub"
+region = "blue_capital"
+infra_type = "Telecommunications"
+criticality = 0.9
+initial_status = 1.0
+repairable = 6
+
+[[map.terrain]]
+region = "red_base"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 1.0
+visibility = 0.5
+
+[[map.terrain]]
+region = "contested_zone"
+terrain_type = "Urban"
+movement_modifier = 0.8
+defense_modifier = 1.1
+visibility = 0.8
+
+[[map.terrain]]
+region = "blue_capital"
+terrain_type = "Urban"
+movement_modifier = 0.7
+defense_modifier = 1.3
+visibility = 0.9
+
+[[map.terrain]]
+region = "blue_periphery"
+terrain_type = "Rural"
+movement_modifier = 1.0
+defense_modifier = 0.9
+visibility = 0.7
+
+# -- Factions ---------------------------------------------------------------
+
+[factions.red_actor]
+id = "red_actor"
+name = "Red Actor (Threat Actor)"
+description = "Capable adversary with access to the new offensive capability cards."
+color = "#b91c1c"
+tech_access = [
+  "passive_sigint_collection",
+  "comms_metadata_geolocation",
+  "supplychain_implant",
+  "scada_ics_manipulation",
+  "gnss_denial_jamming",
+  "gnss_spoofing",
+  "synthetic_media_influence",
+]
+initial_morale = 0.8
+logistics_capacity = 40.0
+initial_resources = 1200.0
+resource_rate = 18.0
+command_resilience = 0.8
+intelligence = 0.8
+diplomacy = []
+doctrine = "Disruption"
+
+[factions.red_actor.faction_type]
+kind = "Foreign"
+is_proxy = false
+
+[factions.red_actor.forces.red_cyber]
+id = "red_cyber"
+name = "Red Cyber / EW Cell"
+unit_type = "CyberUnit"
+region = "red_base"
+strength = 200.0
+mobility = 0.6
+upkeep = 2.0
+morale_modifier = 0.0
+capabilities = []
+
+[factions.blue_state]
+id = "blue_state"
+name = "Blue State (Defender)"
+description = "Federal defender with access to the new defensive counter cards."
+color = "#1d4ed8"
+tech_access = [
+  "sigint_emcon_discipline",
+  "sbom_supplychain_assurance",
+  "ot_network_segmentation",
+  "resilient_pnt_holdover",
+  "synthetic_media_provenance",
+]
+initial_morale = 0.8
+logistics_capacity = 120.0
+initial_resources = 3000.0
+resource_rate = 24.0
+command_resilience = 0.9
+intelligence = 0.7
+diplomacy = []
+doctrine = "Defensive"
+
+[factions.blue_state.faction_type]
+kind = "Military"
+branch = "Combined"
+
+[factions.blue_state.forces.blue_detail]
+id = "blue_detail"
+name = "Blue Protective / Resilience Detail"
+unit_type = "SpecialOperations"
+region = "blue_capital"
+strength = 420.0
+mobility = 0.3
+upkeep = 4.0
+morale_modifier = 0.0
+capabilities = []
+
+# -- Technology -------------------------------------------------------------
+# All effects are aggregate statistical effects derived from PUBLIC
+# specifications. Each card cites the category of OSINT it is sourced
+# from. No implementation detail is encoded.
+
+[technology]
+
+# --- SIGINT (signals intelligence) ----------------------------------------
+
+[technology.passive_sigint_collection]
+id = "passive_sigint_collection"
+name = "Passive SIGINT Collection Array"
+description = "Wide-band passive RF collection against emitters of interest. Effect-level model of a passive intercept posture (detection range scales with emitter power and antenna aperture per published RF-propagation fundamentals). Sourced from open SIGINT literature and published sensor specs; no waveform or processing detail."
+category = { Custom = "SIGINT" }
+cost_per_tick = 0.2
+deployment_cost = 40.0
+coverage_limit = 2
+countered_by = ["sigint_emcon_discipline"]
+terrain_modifiers = [
+  { terrain = "Urban", effectiveness = 0.7 },
+  { terrain = "Mountain", effectiveness = 0.5 },
+]
+
+[[technology.passive_sigint_collection.effects]]
+type = "IntelGain"
+probability = 0.45
+
+[[technology.passive_sigint_collection.effects]]
+type = "DetectionModifier"
+factor = 0.1
+
+[technology.comms_metadata_geolocation]
+id = "comms_metadata_geolocation"
+name = "Comms Metadata Geolocation"
+description = "Traffic-analysis and emitter-geolocation against communications metadata. Effect-level model of a metadata-exploitation cell building target patterns-of-life from collection. Sourced from open traffic-analysis literature; no collection-platform or algorithm detail."
+category = { Custom = "SIGINT" }
+cost_per_tick = 0.15
+deployment_cost = 25.0
+coverage_limit = 2
+countered_by = ["sigint_emcon_discipline"]
+terrain_modifiers = []
+
+[[technology.comms_metadata_geolocation.effects]]
+type = "IntelGain"
+probability = 0.4
+
+[[technology.comms_metadata_geolocation.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.03
+
+[technology.sigint_emcon_discipline]
+id = "sigint_emcon_discipline"
+name = "Emissions-Control (EMCON) Discipline"
+description = "Defensive emissions-control posture: disciplined RF silence, low-probability-of-intercept procedures, and metadata minimization. Effect-level counter to passive collection. Sourced from open OPSEC / EMCON doctrine literature."
+category = { Custom = "SIGINT" }
+cost_per_tick = 0.08
+deployment_cost = 12.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.sigint_emcon_discipline.effects]]
+type = "CounterTech"
+target = "passive_sigint_collection"
+reduction = 0.55
+
+[[technology.sigint_emcon_discipline.effects]]
+type = "CounterTech"
+target = "comms_metadata_geolocation"
+reduction = 0.5
+
+# --- Supply-chain weaponization -------------------------------------------
+
+[technology.supplychain_implant]
+id = "supplychain_implant"
+name = "Software Supply-Chain Implant"
+description = "Weaponization of a trusted software-update or dependency channel to seed a payload across the target's estate. Effect-level model only — describes the aggregate compromise effect, not any implant, exploit, or build-system technique. Sourced from public supply-chain-security reporting (CRS/GAO, NIST SSDF/SBOM guidance, public incident analyses)."
+category = { Custom = "SupplyChain" }
+cost_per_tick = 0.1
+deployment_cost = 60.0
+coverage_limit = 1
+countered_by = ["sbom_supplychain_assurance"]
+terrain_modifiers = []
+
+[[technology.supplychain_implant.effects]]
+type = "IntelGain"
+probability = 0.4
+
+[[technology.supplychain_implant.effects]]
+type = "SupplyInterdiction"
+factor = 0.5
+
+[[technology.supplychain_implant.effects]]
+type = "DetectionModifier"
+factor = 0.25
+
+[technology.sbom_supplychain_assurance]
+id = "sbom_supplychain_assurance"
+name = "SBOM + Supply-Chain Assurance"
+description = "Defensive software-bill-of-materials, dependency provenance, signed-update verification, and build-integrity attestation. Effect-level counter to supply-chain implants. Sourced from public NIST SSDF / SBOM guidance and CISA supply-chain advisories."
+category = { Custom = "SupplyChain" }
+cost_per_tick = 0.12
+deployment_cost = 50.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.sbom_supplychain_assurance.effects]]
+type = "CounterTech"
+target = "supplychain_implant"
+reduction = 0.6
+
+[[technology.sbom_supplychain_assurance.effects]]
+type = "InfraProtection"
+factor = 0.5
+
+# --- SCADA / ICS ----------------------------------------------------------
+
+[technology.scada_ics_manipulation]
+id = "scada_ics_manipulation"
+name = "SCADA / ICS Manipulation"
+description = "Manipulation of industrial control systems (operator HMIs, breaker / actuator command authority) to disrupt a physical process. Effect-level model of the aggregate disruption — describes the outcome (process disruption / infrastructure damage), not any protocol, exploit, or controller-logic detail. Sourced from public ICS-CERT advisories and defensive-community incident analyses."
+category = { Custom = "ScadaIcs" }
+cost_per_tick = 0.15
+deployment_cost = 70.0
+coverage_limit = 1
+countered_by = ["ot_network_segmentation"]
+terrain_modifiers = [
+  { terrain = "Urban", effectiveness = 1.0 },
+  { terrain = "Rural", effectiveness = 0.8 },
+]
+
+[[technology.scada_ics_manipulation.effects]]
+type = "InfraProtection"
+factor = -0.6
+
+[[technology.scada_ics_manipulation.effects]]
+type = "CommsDisruption"
+factor = 0.4
+
+[[technology.scada_ics_manipulation.effects]]
+type = "CivilianSentiment"
+delta = -0.1
+
+[technology.ot_network_segmentation]
+id = "ot_network_segmentation"
+name = "OT Network Segmentation & Monitoring"
+description = "Defensive operational-technology segmentation (IT/OT boundary enforcement, unidirectional gateways, ICS-aware monitoring). Effect-level counter to ICS manipulation. Sourced from public NIST SP 800-82 ICS-security guidance and CISA OT advisories."
+category = { Custom = "ScadaIcs" }
+cost_per_tick = 0.18
+deployment_cost = 90.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.ot_network_segmentation.effects]]
+type = "CounterTech"
+target = "scada_ics_manipulation"
+reduction = 0.6
+
+[[technology.ot_network_segmentation.effects]]
+type = "InfraProtection"
+factor = 0.6
+
+# --- GPS / PNT denial ------------------------------------------------------
+
+[technology.gnss_denial_jamming]
+id = "gnss_denial_jamming"
+name = "GNSS Denial (PNT Jamming)"
+description = "Broad-area denial of satellite positioning/navigation/timing by jamming the (weak, ~ -125 dBm received) GNSS signal. Effect-level model of an area-denial PNT-jamming posture; jamming radius scales with transmit power per published link-budget fundamentals. Sourced from open PNT-resilience literature (e.g. published GPS vulnerability assessments); no jammer or waveform detail."
+category = "ElectronicWarfare"
+cost_per_tick = 0.2
+deployment_cost = 30.0
+coverage_limit = 2
+countered_by = ["resilient_pnt_holdover"]
+terrain_modifiers = [
+  { terrain = "Urban", effectiveness = 0.7 },
+  { terrain = "Rural", effectiveness = 1.0 },
+]
+
+[[technology.gnss_denial_jamming.effects]]
+type = "AreaDenial"
+strength = 0.5
+
+[[technology.gnss_denial_jamming.effects]]
+type = "CombatModifier"
+factor = 1.15
+
+[[technology.gnss_denial_jamming.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.05
+
+[technology.gnss_spoofing]
+id = "gnss_spoofing"
+name = "GNSS Spoofing (PNT Deception)"
+description = "Deceptive PNT: counterfeit positioning/timing signals that induce false position or time at the receiver. Effect-level model of a spoofing posture; describes the deception effect, not signal-generation or receiver-exploitation detail. Sourced from open published PNT-spoofing research and resilience studies."
+category = "ElectronicWarfare"
+cost_per_tick = 0.15
+deployment_cost = 35.0
+coverage_limit = 1
+countered_by = ["resilient_pnt_holdover"]
+terrain_modifiers = []
+
+[[technology.gnss_spoofing.effects]]
+type = "DetectionModifier"
+factor = 0.5
+
+[[technology.gnss_spoofing.effects]]
+type = "IntelGain"
+probability = 0.2
+
+[[technology.gnss_spoofing.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.04
+
+[technology.resilient_pnt_holdover]
+id = "resilient_pnt_holdover"
+name = "Resilient PNT (Multi-Source Holdover)"
+description = "Defensive PNT resilience: multi-constellation receivers, anti-jam antennas (CRPA), inertial holdover, and alternative timing sources. Effect-level counter to GNSS denial and spoofing. Sourced from open PNT-resilience guidance (e.g. published EO 13905 implementation profiles and DOT PNT resilience reports)."
+category = "ElectronicWarfare"
+cost_per_tick = 0.1
+deployment_cost = 45.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.resilient_pnt_holdover.effects]]
+type = "CounterTech"
+target = "gnss_denial_jamming"
+reduction = 0.55
+
+[[technology.resilient_pnt_holdover.effects]]
+type = "CounterTech"
+target = "gnss_spoofing"
+reduction = 0.6
+
+# --- Deepfakes / synthetic media -------------------------------------------
+
+[technology.synthetic_media_influence]
+id = "synthetic_media_influence"
+name = "Synthetic-Media Influence Campaign"
+description = "Generative synthetic media (fabricated audio/video/imagery) injected into an information environment to shift sentiment and degrade trust. Effect-level model of an influence campaign's aggregate effect on civilian sentiment and morale; describes the outcome, not any generation model or distribution technique. Sourced from open disinformation / influence-operations literature and congressional testimony on synthetic media."
+category = "InformationWarfare"
+cost_per_tick = 0.08
+deployment_cost = 15.0
+coverage_limit = 3
+countered_by = ["synthetic_media_provenance"]
+terrain_modifiers = []
+
+[[technology.synthetic_media_influence.effects]]
+type = "CivilianSentiment"
+delta = -0.18
+
+[[technology.synthetic_media_influence.effects]]
+type = "MoraleEffect"
+target = "Enemy"
+delta = -0.08
+
+[technology.synthetic_media_provenance]
+id = "synthetic_media_provenance"
+name = "Media Provenance & Authentication"
+description = "Defensive synthetic-media authentication: content-provenance signing (e.g. C2PA), detection classifiers, and rapid public attribution. Effect-level counter to synthetic-media influence. Sourced from open content-authenticity standards (C2PA) and published synthetic-media-detection research."
+category = "InformationWarfare"
+cost_per_tick = 0.06
+deployment_cost = 10.0
+countered_by = []
+terrain_modifiers = []
+
+[[technology.synthetic_media_provenance.effects]]
+type = "CounterTech"
+target = "synthetic_media_influence"
+reduction = 0.5
+
+[[technology.synthetic_media_provenance.effects]]
+type = "CivilianSentiment"
+delta = 0.08
+
+# -- Political Climate ------------------------------------------------------
+
+[political_climate]
+tension = 0.5
+institutional_trust = 0.6
+population_segments = []
+global_modifiers = []
+
+[political_climate.media_landscape]
+fragmentation = 0.7
+disinformation_susceptibility = 0.55
+state_control = 0.25
+social_media_penetration = 0.9
+internet_availability = 0.95
+
+# -- Events (empty) ---------------------------------------------------------
+
+[events]
+
+# -- Simulation Config ------------------------------------------------------
+
+[simulation]
+max_ticks = 120
+monte_carlo_runs = 200
+fog_of_war = true
+snapshot_interval = 15
+seed = 7
+
+[simulation.tick_duration]
+Days = 1
+
+[simulation.attrition_model]
+Stochastic = { noise = 0.12 }
+
+# -- Victory Conditions -----------------------------------------------------
+
+[victory_conditions.blue_holds]
+id = "blue_holds"
+name = "Blue holds capital"
+faction = "blue_state"
+
+[victory_conditions.blue_holds.condition]
+type = "HoldRegions"
+regions = ["blue_capital"]
+duration = 120
+
+[victory_conditions.red_control]
+id = "red_control"
+name = "Red achieves strategic control"
+faction = "red_actor"
+
+[victory_conditions.red_control.condition]
+type = "StrategicControl"
+threshold = 0.5

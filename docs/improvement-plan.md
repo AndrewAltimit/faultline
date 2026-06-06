@@ -11,8 +11,17 @@ of `CLAUDE.md` in the May 2026 docs reorganization).
 
 The plan was originally derived from a three-angle audit (engine
 analytics, frontend/UX, scenario content — ~190 findings). It has
-since been refreshed five times as epics closed and external reviews
-landed. **Last refresh: 2026-05-23** — incorporating the paired
+since been refreshed six times as epics closed and external reviews
+landed. **Last refresh: 2026-06-06** — a three-stream parallel landing:
+Epic M *fully closed* (believed-attribution rolls — misattributed
+kill-chain attribution now drives alliance fracture, gated behind
+`belief_model.believed_attribution`); Epic N round-two item 1 advanced
+with three single-event historical analogues (2008 Russo-Georgian War,
+2015 grid cyberattack, 2017 supply-chain wiper), 3 of the 5–10 target;
+Epic P's browser Explain button + inline validation panel shipped; and
+Epic F's tech-card library rebalanced (12 new SIGINT / supply-chain /
+SCADA-ICS / GPS-denial / deepfake cards). Report sections: 28. Prior
+refresh: **2026-05-23** — incorporating the paired
 Epic J round-two + Epic M round-two landing (intelligence-weighted
 belief fidelity via `belief_model.intelligence_weighting`, the
 Kalman belief blend producing `BeliefSource::Inferred`, the
@@ -190,7 +199,7 @@ work.
 
 ## Status snapshot
 
-**Closed (32):** A (uncertainty), B (counterfactual), C (time +
+**Closed (36):** A (uncertainty), B (counterfactual), C (time +
 attribution dynamics), D round-one (engine depth: `OrAny`,
 environment schedule, leadership decapitation), D round-two
 (coalition fracture), D round-three item 1 (diplomacy behavioral
@@ -234,8 +243,29 @@ section, one bundled archetype `false_flag_demo.toml`), M round-two
 `BeliefSource::Inferred`; network-driven `EventEffect::AmbientIntel`;
 round-two belief-fidelity report sub-section + `force_confidence_sum`
 / `ambient_intel_received` / `inferred_beliefs_terminal` counters;
-bundled archetype `recon_fidelity_demo.toml`; only believed-attribution
-rolls remain open),
+bundled archetype `recon_fidelity_demo.toml`), M round-three
+(believed-attribution rolls — opt-in
+`belief_model.believed_attribution` sub-flag draws a believed attacker
+from an intelligence-weighted categorical distribution with a `+3.0`
+boost on `BeliefSource::Deceived` candidates, so `fracture` credits
+attribution to whoever the defender *thinks* did it; exactly one
+`ChaCha8Rng` draw per detection, fully gated so legacy scenarios stay
+bit-identical; new `## Attribution Fidelity` report section + cross-run
+`misattribution_summary`; bundled archetype `misattribution_demo.toml`
+at ~40% misattribution rate; **closes Epic M entirely**),
+N round-two item 1 partial (three single-event historical analogues —
+`analogue_short_coercive_war.toml` (2008 Russo-Georgian War),
+`analogue_grid_cyberattack_2015.toml` (2015 regional grid cyberattack),
+`analogue_supplychain_wiper_2017.toml` (2017 supply-chain wiper) — each
+declaring `[meta.historical_analogue]` constrained by published OSINT
+and calibrating Pass on winner / win-rate / duration; 3 of the 5–10
+target),
+F partial (tech-card rebalance — 12 new SIGINT / supply-chain / SCADA-ICS
+/ GPS-PNT-denial / deepfake capability cards via the existing
+`TechCategory::Custom` escape hatch, bundled `tech_rebalance_demo.toml`),
+P browser sub-items (editor "Explain" button via `explain_scenario_wasm`
++ inline advisory-warnings panel via `scenario_warnings_wasm` /
+`faultline_stats::warnings`),
 N round-one (calibration scaffold — `[meta.historical_analogue]`
 schema, per-observation Pass / Marginal / Fail verdict computation,
 `## Calibration` report section gating on synthetic-vs-calibrated,
@@ -267,18 +297,20 @@ R3-5 (property tests — `proptest` coverage of engine / search /
 uncertainty / network_metrics invariants).
 
 **Deferred / open epics:** E (UI polish), F (scenario library +
-tech rebalance), J (adaptive AI — round-one *and* round-two shipped
-May 2026; round-two added belief-driven utility scoring against
-intelligence-weighted beliefs + confidence-discounted threat reads;
-**Epic J is now effectively closed**), M (belief asymmetry —
-round-one shipped; round-two shipped May 2026 — intelligence-weighted
-observation fidelity + Kalman belief blending + the network-driven
-`AmbientIntel` event; one item still open: believed-attribution
-rolls, a separable kill-chain subsystem; fabricated-narrative
-integration also remains future work), N (reference scenario set —
-round-two item 1; framework round-one and methodology-tag round-two
-item 2 shipped), P (authoring depth). Epic D is now fully closed with
-the round-three item 4 landing in May 2026.
+tech rebalance — tech-card rebalance partially shipped Jun 2026; the
+`[meta]` self-describing fields + remaining tech work stay open),
+J (adaptive AI — round-one *and* round-two shipped May 2026; round-two
+added belief-driven utility scoring against intelligence-weighted
+beliefs + confidence-discounted threat reads; **Epic J is now
+effectively closed**), N (reference scenario set — round-two item 1
+*advanced* Jun 2026 with three single-event analogues, 3 of the 5–10
+target; framework round-one and methodology-tag round-two item 2
+shipped; the fabricated-narrative integration remains future work),
+P (authoring depth — explain CLI subset, browser Explain button, and
+inline validation panel shipped; Monaco / CodeMirror autocomplete +
+hover docs still deferred). Epic D is fully closed (round-three item 4,
+May 2026); **Epic M is now fully closed** (believed-attribution rolls
+landed Jun 2026).
 
 **Open R3 follow-ups:** R3-1 (test-boilerplate sweep — partial; ~30
 existing struct-literal call sites still on the explicit form;
@@ -395,7 +427,26 @@ browser editor.
 
 `historical_precedent` here overlaps `historical_analogue` in Epic
 N — same field, different motivations. If N moves first, F
-inherits the field for free. Status: deferred.
+inherits the field for free. Status: partially shipped.
+
+**Tech-library rebalance — shipped (round one).** The under-represented
+categories called out above are now covered by a balanced
+offensive/defensive set of new capability cards bundled in
+`scenarios/tech_rebalance_demo.toml`: SIGINT (`passive_sigint_collection`,
+`comms_metadata_geolocation` vs. `sigint_emcon_discipline`),
+supply-chain weaponization (`supplychain_implant` vs.
+`sbom_supplychain_assurance`), SCADA/ICS (`scada_ics_manipulation` vs.
+`ot_network_segmentation`), GPS/PNT denial (`gnss_denial_jamming`,
+`gnss_spoofing` vs. `resilient_pnt_holdover`), and deepfakes / synthetic
+media (`synthetic_media_influence` vs. `synthetic_media_provenance`).
+Each card is an aggregate-statistical-effect bundle sourced from public
+specifications only (effect-level, no implementation detail); the card
+vocabulary is documented in the "Bundled capability-card categories"
+subsection of `docs/scenario_schema.md`. No engine/type changes were
+needed — novel categories use the existing `TechCategory::Custom(String)`
+escape hatch. Remaining Epic F items (the `[meta]` self-description
+fields, scenario backfill, healthcare cards, browser metadata form)
+stay deferred.
 
 ### Epic J — Adaptive faction AI
 
@@ -482,11 +533,32 @@ misperception, OPSEC as decision-affecting rather than narrative.
       seen by the AI, region-control beliefs → AI's known regions.
       The integration is direct (no Bayesian smoothing yet —
       round-two work).
-- [ ] **Attribution rolls use the *believed* attribution
-      distribution.** Round-two work; pairs with Epic J round-two.
-      Currently kill-chain attribution rolls read ground truth.
-      Round-two would route them through belief, so a defender that
-      misattributes an attack acts on the misattribution.
+- [x] **Attribution rolls use the *believed* attribution
+      distribution.** Shipped June 2026 as round-two. The opt-in
+      `simulation.belief_model.believed_attribution` sub-flag (requires
+      `enabled = true`) routes kill-chain attribution through the
+      defender's belief instead of ground truth. At detection time the
+      defender (the chain's `target`) draws a believed attacker from a
+      distribution weighted by `attribution_true_weight(intelligence)`
+      on the true attacker, a flat residual confusion mass on the other
+      candidates, and a strong boost on any faction it holds a planted
+      `BeliefSource::Deceived` belief about (false flag). A
+      low-intelligence or deceived defender misattributes and then *acts
+      on it*: `fracture::mean_attribution` credits the confidence to the
+      believed (`CampaignState::attributed_faction`), not true, attacker,
+      so the alliance-fracture rule fires against whoever the defender
+      *thinks* did it. The draw consumes exactly one engine-RNG value per
+      detection, gated entirely behind the sub-flag, so legacy scenarios
+      (and belief scenarios that leave it off) consume RNG in the exact
+      legacy order and are bit-identical. New `RunResult.attribution_events`
+      log + cross-run `MonteCarloSummary.misattribution_summary` +
+      `## Attribution Fidelity` report section (gated on data presence).
+      Validation rejects the silent-no-op shapes (sub-flag without
+      `enabled`, sub-flag without any kill chain) and accepts an
+      `AttributionThreshold` rule naming a non-attacker faction only when
+      believed-attribution is on. Bundled archetype:
+      `scenarios/misattribution_demo.toml` (~40% misattribution rate;
+      a low-intel deceived defender fractures against an innocent ally).
 - [x] **Bayesian belief updating from indirect signals.** Shipped
       May 2026 as round-two. The opt-in
       `simulation.belief_model.intelligence_weighting` flag caps
@@ -505,10 +577,11 @@ misperception, OPSEC as decision-affecting rather than narrative.
       every faction with a force in *or* adjacent to it, with
       confidence varying by `Faction.intelligence`.
 
-Status: round-two shipped except believed-attribution (the first
-item above — kill-chain attribution in `campaign.rs` and the
-fracture accounting that reads it remain a separable subsystem).
-Bundled round-two archetype: `scenarios/recon_fidelity_demo.toml`.
+Status: round-two fully shipped, including believed-attribution
+rolls (June 2026 — the last open Epic M item). Fabricated-narrative
+integration remains future work. Bundled round-two archetypes:
+`scenarios/recon_fidelity_demo.toml` (intelligence-weighted fidelity)
+and `scenarios/misattribution_demo.toml` (believed attribution).
 Critical for the game-middleware pivot (deception, fog of war = good
 gameplay).
 
@@ -537,13 +610,28 @@ not claim prediction; disciplines the parameter library.
       without an analogue render a "purely synthetic" notice in the
       `## Calibration` section explaining what the absence means for
       result interpretation.
-- [ ] **Reference scenario set: 5–10 well-documented historical
+- [~] **Reference scenario set: 5–10 well-documented historical
       analogues where parameters are constrained by published
-      estimates.** Round-two work. Round-one shipped one bundled
-      archetype (`scenarios/calibration_demo.toml`) using a stylized
-      aggregate analogue rather than a single named event. Each
-      single-event addition is per-scenario research work, not a
-      framework change.
+      estimates.** Round-two work, in progress. Round-one shipped one
+      bundled archetype (`scenarios/calibration_demo.toml`) using a
+      stylized aggregate analogue. Round-two added **three cleanly-sourced
+      single-event analogues**, all producing **Overall calibration: Pass**:
+      `analogue_short_coercive_war.toml` (Aug 2008 Russo-Georgian War —
+      coercion campaign → coerced ceasefire; attacker win ~85%, duration
+      band [2,9]), `analogue_grid_cyberattack_2015.toml` (Dec 2015 regional
+      grid cyberattack — SCADA/ICS kill chain → outage; attacker win ~80%,
+      band [2,10]), and `analogue_supplychain_wiper_2017.toml` (Jun 2017
+      supply-chain destructive wiper; attacker win ~92%, band [1,7]).
+      **Modeling note for future authors:** the engine's combat model
+      resolves attrition only where opposing forces co-locate and its AI
+      will not assault a defended region, so a clean kinetic
+      "Winner-by-conquest" verdict is not reliably reachable at realistic
+      force ratios in a short horizon. The reliable path to a calibratable
+      `Winner` + `DurationTicks` outcome is a **kill chain driving a
+      non-kinetic accumulator** (`CoercionPressure`) past a
+      `NonKineticThreshold` victory condition — all three new analogues
+      use this pattern. Remaining: 2–7 more single-event analogues to
+      reach the 5–10 target.
 - [x] **Per-scenario "calibration confidence" surfaced alongside the
       methodology appendix.** Shipped May 2026 as round-two item 2.
       The methodology section now emits a `Calibration confidence:
@@ -593,19 +681,30 @@ model?" explainer.
       JSON for tooling.
 - [ ] Monaco / CodeMirror editor with TOML grammar + JSON-schema-driven
       autocomplete (schema generated from the Rust types)
-- [ ] Inline validation panel: surfaces engine-side warnings (unreached
+- [x] **Inline validation panel: surfaces engine-side warnings (unreached
       regions, factions with no objectives, kill chains with
-      unreachable phases) without running a sim
+      unreachable phases) without running a sim.** Shipped Jun 2026.
+      A new additive `faultline_stats::warnings::collect_warnings`
+      (pure function, no RNG/engine/I-O, kept out of the deterministic
+      Markdown report so no bundled `output_hash` shifts) produces three
+      advisory checks — `FactionNoObjective`, `UnreferencedRegion`,
+      `UnreachablePhase`. Exposed to the browser via the
+      `scenario_warnings_wasm` WASM export and rendered as a panel in
+      the `site/` editor.
 - [ ] Hover documentation: field docstrings from the Rust types
       surface as hover tooltips
-- [ ] Editor "Explain" button that renders the same Markdown in-app
+- [x] **Editor "Explain" button that renders the same Markdown in-app**
       (the `ExplainReport` struct is the substrate — both producer and
       renderer live in `faultline-stats` so the WASM frontend can call
-      them directly without forking)
+      them directly without forking). Shipped Jun 2026 as the
+      `explain_scenario_wasm` export (returns rendered Markdown + the
+      structured `ExplainReport`) wired to an "Explain" button in the
+      `site/` editor.
 
-Status: explain subset shipped; remaining editor work (Monaco,
-hover docs, inline validation, browser-side Explain button) still
-deferred. Enables Epic F to move faster once the editor work lands.
+Status: explain subset (CLI) + the browser Explain button + inline
+validation panel shipped; remaining editor work (Monaco / CodeMirror
+autocomplete, hover docs) still deferred. Enables Epic F to move
+faster once the editor work lands.
 
 ---
 

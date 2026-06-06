@@ -85,12 +85,15 @@
                     placeholder="Paste or edit TOML scenario here..."></textarea>
           <div class="editor-actions">
             <button class="btn-label" id="btn-validate">Validate</button>
+            <button class="btn-label" id="btn-explain" title="Summarize what this scenario actually models, and surface advisory warnings, without running a simulation">Explain</button>
             <button class="btn-label" id="btn-diff" title="Diff current TOML against the last loaded preset or a pinned scenario">Diff</button>
             <button class="btn-label" id="btn-load" style="background: var(--gradient); border-color: transparent; color: #fff;">
               Load &amp; Run
             </button>
           </div>
           <div id="validation-msg"></div>
+          <div id="warnings-panel" class="warnings-panel" hidden></div>
+          <div id="explain-panel" class="explain-panel" hidden></div>
         </div>
       </div>
 

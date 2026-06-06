@@ -211,6 +211,7 @@ mod tests {
             utility_decisions: BTreeMap::new(),
             belief_accuracy: BTreeMap::new(),
             belief_snapshots: BTreeMap::new(),
+            attribution_events: Vec::new(),
         }
     }
 
@@ -364,6 +365,7 @@ mod tests {
             displacement_summaries: BTreeMap::new(),
             utility_decompositions: BTreeMap::new(),
             belief_summaries: compute_belief_summaries(&[], &s),
+            misattribution_summary: None,
         };
         let json = serde_json::to_string(&summary).expect("serialize");
         assert!(json.contains("belief_summaries"));

@@ -17,6 +17,7 @@ pub mod displacement;
 pub mod explain;
 pub mod manifest;
 pub(crate) mod markdown;
+pub mod misattribution;
 pub mod morris;
 pub mod narrative_dynamics;
 pub mod network_metrics;
@@ -27,6 +28,7 @@ pub mod sensitivity;
 pub mod time_dynamics;
 pub mod uncertainty;
 pub mod utility_decomposition;
+pub mod warnings;
 
 use std::collections::BTreeMap;
 
@@ -156,6 +158,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
                 runs, scenario,
             ),
             belief_summaries: belief::compute_belief_summaries(runs, scenario),
+            misattribution_summary: misattribution::compute_misattribution_summary(runs),
         };
     }
 
@@ -376,6 +379,9 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
     // Pre-seeds entries for every faction that has the belief model
     // active; empty when the scenario opts out.
     let belief_summaries = belief::compute_belief_summaries(runs, scenario);
+    // Cross-run believed-attribution analytics (Epic M round-two).
+    // `None` when no run produced a believed-attribution roll.
+    let misattribution_summary = misattribution::compute_misattribution_summary(runs);
 
     MonteCarloSummary {
         total_runs: u32::try_from(runs.len()).expect("MC run count exceeds u32::MAX"),
@@ -401,6 +407,7 @@ pub fn compute_summary(runs: &[RunResult], scenario: &Scenario) -> MonteCarloSum
         displacement_summaries,
         utility_decompositions,
         belief_summaries,
+        misattribution_summary,
     }
 }
 
@@ -1198,6 +1205,7 @@ mod tests {
             utility_decisions: BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         }
     }
 
@@ -1406,6 +1414,7 @@ mod tests {
             utility_decisions: BTreeMap::new(),
             belief_accuracy: ::std::collections::BTreeMap::new(),
             belief_snapshots: ::std::collections::BTreeMap::new(),
+            attribution_events: Vec::new(),
         }
     }
 

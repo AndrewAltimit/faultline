@@ -14,7 +14,7 @@ For command invocations see `docs/cli.md`. For scenario schema see
 ## Monte Carlo report sections
 
 Every `cargo run -p faultline-cli -- <scenario> -n <N>` run produces a
-`report.md` in the output directory. The report contains exactly 27
+`report.md` in the output directory. The report contains exactly 28
 sections rendered in this fixed order:
 
 1. **Header** — scenario name, author, version, schema version, tags,
@@ -99,11 +99,20 @@ sections rendered in this fixed order:
     ambient-intel pickups, terminal `Inferred` belief counts) appears
     only when there is round-two activity (any `AmbientIntel` pickup or
     `Inferred` belief), keeping round-one scenarios' output unchanged.
-26. **Calibration** — back-testing verdict against a declared
+26. **Attribution Fidelity** — believed-attribution analytics (Epic M
+    round-two): the cross-run misattribution rate (fraction of
+    detection-time attribution rolls where the defender fingered the
+    wrong faction), the deception-driven rate (how much a planted
+    false flag drove it), the fracture-misattribution count
+    (misattributions that broke an alliance against an innocent ally),
+    and the `true → believed` confusion-pair table. Elides unless the
+    scenario opts into `belief_model.believed_attribution` and at least
+    one detection fired a roll, so non-opted-in scenarios are unchanged.
+27. **Calibration** — back-testing verdict against a declared
     `[meta.historical_analogue]` (Pass/Marginal/Fail per observation
     plus a roll-up), or a "purely synthetic" disclaimer when no
     analogue is declared. **Always emits.**
-27. **Methodology & Confidence** — explanation of statistical methods
+28. **Methodology & Confidence** — explanation of statistical methods
     (Wilson score intervals, bootstrap CIs) and a per-scenario
     calibration-confidence tag (`[H] Pass`, `[M] Marginal`, `[L]
     Fail`) when an analogue is declared and runs are available.
@@ -136,7 +145,7 @@ pub trait ReportSection {
 
 Each section struct implements the trait and owns its own elision
 logic. The composer (`render_markdown`) simply iterates
-`monte_carlo_sections()` — a `[&'static dyn ReportSection; 27]` array
+`monte_carlo_sections()` — a `[&'static dyn ReportSection; 28]` array
 — and calls `render` on each entry. The composer never grows
 conditional chains.
 
@@ -529,8 +538,41 @@ pub fn explain(scenario: &Scenario) -> ExplainReport
 pub fn render_markdown(report: &ExplainReport) -> String
 ```
 
-Both are reusable by tooling beyond the CLI (browser, future
-"Explain" button) without dragging in the simulation engine.
+Both are reusable by tooling beyond the CLI without dragging in the
+simulation engine. The browser editor's **Explain** button (Epic P)
+calls them directly through the WASM export `explain_scenario_wasm`,
+which returns `{ markdown, report }` so the in-app panel renders the
+same Markdown the CLI emits.
 
 Output format is Markdown by default; pass `--explain-format json` for
 the structured `ExplainReport` serialization.
+
+## Advisory warnings
+
+Source: `crates/faultline-stats/src/warnings.rs`
+
+`collect_warnings(&Scenario) -> WarningReport` runs a set of *non-fatal*
+advisory checks, distinct from `faultline_engine::validate_scenario`
+(which returns hard, load-blocking errors). A scenario that trips an
+advisory check still loads and runs — the finding flags a likely
+modelling mistake the author may want to fix. Pure function over
+`Scenario`: no RNG, no engine, no I/O, and deliberately **not** injected
+into the deterministic Markdown report (so it never affects a bundled
+scenario's `output_hash`).
+
+Checks (each a `WarningKind`):
+
+1. `FactionNoObjective` — a faction named by no victory condition has no
+   modelled path to win.
+2. `UnreferencedRegion` — a region declared on the map that no force,
+   victory condition, infrastructure node, terrain modifier, kill-chain
+   output, or neighbour `borders` list references.
+3. `UnreachablePhase` — a kill-chain phase unreachable from the chain's
+   `entry_phase` via the branch graph (a dangling `entry_phase` is left
+   to the hard validator and does not flag every phase).
+
+The browser editor surfaces these in an inline advisory panel (Epic P)
+via the WASM export `scenario_warnings_wasm`, which serializes the
+`WarningReport` (`{ warnings: [ { kind, subject, message } ] }`). The
+check logic lives in `faultline-stats` so it is testable in Rust and
+reusable by the CLI.
