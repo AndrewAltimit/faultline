@@ -355,6 +355,24 @@ The scenario declares a `[meta.historical_analogue]` block with three observatio
 cargo run -p faultline-cli -- scenarios/calibration_demo.toml -n 100
 ```
 
+### Reference Historical Analogues (Epic N round-two)
+
+Three single-event analogues whose `[meta.historical_analogue]` observations are constrained by published OSINT (IISS Military Balance, RAND post-conflict assessments, the 2009 EU fact-finding mission report, E-ISAC/SANS and ICS-CERT incident reporting, CRS/GAO supply-chain reporting). Each calibrates **Pass** on its declared winner / win-rate / duration observations. All three reach a calibratable victor + duration via a kill chain driving the `CoercionPressure` accumulator past a `NonKineticThreshold` victory condition (a clean kinetic conquest verdict is not reliably reachable at realistic force ratios in a short horizon).
+
+```bash
+cargo run -p faultline-cli -- scenarios/analogue_short_coercive_war.toml -n 200    # Aug 2008 Russo-Georgian War
+cargo run -p faultline-cli -- scenarios/analogue_grid_cyberattack_2015.toml -n 200 # Dec 2015 regional grid cyberattack
+cargo run -p faultline-cli -- scenarios/analogue_supplychain_wiper_2017.toml -n 200 # Jun 2017 supply-chain wiper
+```
+
+### Tech Library Rebalance (Epic F)
+
+Twelve new capability cards across previously under-represented categories — SIGINT, supply-chain weaponization, SCADA/ICS, GPS/PNT denial, and deepfakes/synthetic media — each a named bundle of statistical effects derived from public specs (novel categories use the `TechCategory::Custom` escape hatch, no engine changes). The bundled scenario exercises all twelve.
+
+```bash
+cargo run -p faultline-cli -- scenarios/tech_rebalance_demo.toml -n 100
+```
+
 ### Narrative Competition + Displacement Flows (Epic D round-three item 4)
 
 Two-region archetype with three factions: Red and Blue push competing `MediaEvent` narratives (Red reinforces twice, Blue once); a scripted `Displacement` event seeds 30% displaced fraction in `frontier_north` that propagates to `frontier_south` over the run; a population segment's `Flee` action adds organic displacement once its sympathy crosses the activation threshold. The report's `## Narrative Dynamics` section ranks per-faction information dominance and per-narrative trajectory (firing rate, peak strength, modal favored faction); the `## Displacement Flows` section captures peak / mean / inflow / outflow per region.
@@ -369,6 +387,14 @@ Two factions, four regions in a square. Alpha runs a `DeceptionOp::FalseForceStr
 
 ```bash
 cargo run -p faultline-cli -- scenarios/false_flag_demo.toml -n 16
+```
+
+### Believed Attribution / Misattribution (Epic M round-three)
+
+Closes Epic M. With `simulation.belief_model.believed_attribution = true`, a defender that detects a kill-chain phase no longer attributes it to the true attacker by default — it draws a *believed* attacker from an intelligence-weighted categorical distribution (true-attacker weight `∈ [0.5, 0.98]`, with a boost on any faction it holds a `BeliefSource::Deceived` belief about). The `alliance_fracture` accounting then credits attribution to whoever the defender *thinks* did it, so a low-intelligence or deceived defender can fracture its alliance against an innocent ally. The draw consumes exactly one `ChaCha8Rng` value per detection and is fully gated, so scenarios that don't opt in are bit-identical to legacy. The new `## Attribution Fidelity` report section reports the cross-run misattribution rate, deception-driven rate, fracture-misattribution count, and a `true → believed` confusion table. The bundled demo runs at ~40% misattribution.
+
+```bash
+cargo run -p faultline-cli -- scenarios/misattribution_demo.toml -n 100
 ```
 
 ### Coalition Fracture (Epic D round-two)
