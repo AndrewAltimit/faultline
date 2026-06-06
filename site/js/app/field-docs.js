@@ -1407,7 +1407,7 @@ export function canonicalizeSection(rawHeader) {
  * @param {string} tag
  * @returns {string}
  */
-function canonicalizeTag(tag) {
+export function canonicalizeTag(tag) {
   if (!tag || tag.startsWith('(')) return '';
   // A stored tag is already a family path with no instance ids, so we only
   // strip the brackets and normalize whitespace — running the
@@ -1438,7 +1438,7 @@ function canonicalizeTag(tag) {
  * @param {string} sectionCanon canonicalized cursor section (may be '')
  * @returns {number}
  */
-function scoreVariant(tagCanon, sectionCanon) {
+export function scoreVariant(tagCanon, sectionCanon) {
   if (tagCanon === '') return 0; // generic fallback
   if (sectionCanon === '') return -1; // specific variant, no section context
   const tagParts = tagCanon.split('.');

@@ -464,6 +464,12 @@ export class Editor {
     ta.value = before + insert + after;
     AppState.toml = ta.value;
     ta.selectionStart = ta.selectionEnd = newCaret;
+    // A programmatic `value` assignment does not fire `input`, so the editor's
+    // other input-driven consumers (field-doc dismissal, and any future
+    // debounced parse/validation wired on `input`) would otherwise read stale
+    // text until the next keystroke. Dispatch one so the accepted completion
+    // drives the same path a typed character would.
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
     ta.focus();
     this._hideAutocomplete();
   }

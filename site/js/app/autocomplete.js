@@ -26,7 +26,9 @@
 import {
   FIELD_DOCS,
   canonicalizeSection,
+  canonicalizeTag,
   enclosingSection,
+  scoreVariant,
 } from './field-docs.js';
 
 /**
@@ -51,29 +53,11 @@ import {
  */
 
 /**
- * Canonicalize a stored `section` tag (e.g. "[map.regions]") into a dotted
- * family path comparable to {@link canonicalizeSection} output. Tags like
- * "(any)" / "(effect)" / "(top-level)" have no concrete section → ''.
- * @param {string} tag
- * @returns {string}
- */
-function tagToCanon(tag) {
-  if (!tag || tag.startsWith('(')) return '';
-  return tag
-    .replace(/^\[+/, '')
-    .replace(/\]+$/, '')
-    .trim()
-    .split('.')
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-    .join('.');
-}
-
-/**
  * For a multi-variant catalog entry, pick the variant whose `section` tag best
- * matches the caret's canonical section. This intentionally re-implements the
- * lightweight scoring used in `field-docs.js` (which is not exported) so the
- * completion source resolves the same variant the hover tooltip would.
+ * matches the caret's canonical section. Delegates to the shared
+ * {@link scoreVariant} / {@link canonicalizeTag} helpers exported by
+ * `field-docs.js`, so the completion source resolves the same variant the hover
+ * tooltip would (see `lookupFieldDoc`) with no risk of the scoring drifting.
  *
  * @param {import('./field-docs.js').FieldDoc[]} variants
  * @param {string} sectionCanon
@@ -83,23 +67,7 @@ function pickVariant(variants, sectionCanon) {
   let best = null;
   let bestScore = -Infinity;
   for (const v of variants) {
-    const tagCanon = tagToCanon(v.section);
-    let score;
-    if (tagCanon === '') {
-      score = 0; // generic fallback
-    } else if (sectionCanon === '') {
-      score = -1; // specific variant, no section context
-    } else {
-      const tagParts = tagCanon.split('.');
-      const secParts = sectionCanon.split('.');
-      score = tagParts.length;
-      for (let i = 0; i < tagParts.length; i++) {
-        if (tagParts[i] !== secParts[i]) {
-          score = -1;
-          break;
-        }
-      }
-    }
+    const score = scoreVariant(canonicalizeTag(v.section), sectionCanon);
     if (score > bestScore) {
       bestScore = score;
       best = v;
@@ -112,23 +80,15 @@ function pickVariant(variants, sectionCanon) {
  * Does a catalog variant apply in the caret's section? A variant applies when
  * its canonical tag is a prefix of (or equal to) the caret section, or when it
  * is a generic (no-section) variant. This is the "is this key valid here?"
- * filter for key completions.
+ * filter for key completions — a variant applies exactly when its match score
+ * is non-negative.
  *
  * @param {import('./field-docs.js').FieldDoc} variant
  * @param {string} sectionCanon
  * @returns {boolean}
  */
 function variantAppliesInSection(variant, sectionCanon) {
-  const tagCanon = tagToCanon(variant.section);
-  if (tagCanon === '') return true; // generic — valid anywhere
-  if (sectionCanon === '') return false; // specific key, top-level caret
-  const tagParts = tagCanon.split('.');
-  const secParts = sectionCanon.split('.');
-  if (tagParts.length > secParts.length) return false;
-  for (let i = 0; i < tagParts.length; i++) {
-    if (tagParts[i] !== secParts[i]) return false;
-  }
-  return true;
+  return scoreVariant(canonicalizeTag(variant.section), sectionCanon) >= 0;
 }
 
 /**
