@@ -252,6 +252,34 @@ pub struct BeliefModelConfig {
     /// modelling "the lie is being corrected by reality".
     #[serde(default)]
     pub intelligence_weighting: bool,
+    /// Round-two: route kill-chain attribution through the defender's
+    /// *belief* rather than ground truth.
+    ///
+    /// When `false` (default — preserves the legacy attribution path
+    /// bit-identically), a phase that the defender detects is always
+    /// attributed to the chain's true `attacker`, and the
+    /// alliance-fracture accounting
+    /// (`FractureCondition::AttributionThreshold`) reads that
+    /// ground-truth attacker.
+    ///
+    /// When `true` (requires `enabled = true`), at the moment of
+    /// detection the defender (the chain's `target`) draws a *believed
+    /// attributed faction* from a weighted distribution: the true
+    /// attacker is favoured in proportion to the defender's
+    /// `intelligence`, every other candidate faction carries a small
+    /// residual confusion mass, and any faction the defender already
+    /// holds a [`BeliefSource::Deceived`] belief about (a planted
+    /// false-flag region-control or force belief implicating it) is
+    /// boosted. A low-intelligence or deceived defender can therefore
+    /// misattribute the attack and then *act on the misattribution* —
+    /// the fracture accounting credits the attribution confidence to
+    /// the *believed* faction, so the defender can fracture from an
+    /// innocent ally. The draw consumes one engine-RNG value per
+    /// detection; it is gated entirely behind this flag, so scenarios
+    /// that leave it `false` consume the RNG in the exact legacy order
+    /// and remain bit-identical.
+    #[serde(default)]
+    pub believed_attribution: bool,
 }
 
 impl Default for BeliefModelConfig {
@@ -264,6 +292,7 @@ impl Default for BeliefModelConfig {
             prune_threshold: default_prune_threshold(),
             snapshot_interval: 0,
             intelligence_weighting: false,
+            believed_attribution: false,
         }
     }
 }
@@ -290,6 +319,31 @@ pub fn observation_confidence(intelligence: f64) -> f64 {
         0.5
     };
     (0.3 + 0.65 * intel).clamp(0.3, 0.95)
+}
+
+/// Relative weight the defender's believed-attribution distribution
+/// places on the *true* attacker, given the defender's `intelligence`
+/// (round-two believed-attribution rolls).
+///
+/// Maps `intelligence ∈ [0, 1]` to a weight in `[0.5, 0.98]`. Even a
+/// maximally-capable defender retains a small chance of confusion
+/// (irreducible attribution fog), while a minimally-capable one still
+/// fingers the right attacker more often than not (a `0.5` floor)
+/// *before* any false-flag deception is layered on top — deception is
+/// what pushes a low-intelligence defender past the tipping point into
+/// majority-misattribution. The complement `1 - weight` is split as
+/// residual "confusion" mass across the other candidate factions.
+///
+/// Pure, total, deterministic; `NaN` / out-of-range `intelligence`
+/// clamps into range (validation already constrains the field, this is
+/// defensive). Mirrors the shape of [`observation_confidence`].
+pub fn attribution_true_weight(intelligence: f64) -> f64 {
+    let intel = if intelligence.is_finite() {
+        intelligence.clamp(0.0, 1.0)
+    } else {
+        0.5
+    };
+    (0.5 + 0.48 * intel).clamp(0.5, 0.98)
 }
 
 fn default_force_decay() -> f64 {
@@ -395,6 +449,19 @@ pub fn validate_belief_model(config: &BeliefModelConfig) -> Result<(), String> {
     check_unit(config.region_decay_per_tick, "region_decay_per_tick")?;
     check_unit(config.scalar_decay_per_tick, "scalar_decay_per_tick")?;
     check_unit(config.prune_threshold, "prune_threshold")?;
+    // Cross-field guards: round-two sub-flags are silent no-ops unless
+    // the master toggle is on, so reject the "authored but inert" shape
+    // at load rather than letting it pass and confusing the analyst.
+    if config.intelligence_weighting && !config.enabled {
+        return Err("belief_model.intelligence_weighting = true requires \
+             belief_model.enabled = true (it is a silent no-op otherwise)"
+            .to_string());
+    }
+    if config.believed_attribution && !config.enabled {
+        return Err("belief_model.believed_attribution = true requires \
+             belief_model.enabled = true (it is a silent no-op otherwise)"
+            .to_string());
+    }
     Ok(())
 }
 
@@ -426,6 +493,54 @@ mod tests {
         assert_eq!(observation_confidence(2.0), 0.95);
         assert_eq!(observation_confidence(-1.0), 0.3);
         assert!(observation_confidence(f64::NAN).is_finite());
+    }
+
+    #[test]
+    fn attribution_true_weight_monotone_and_bounded() {
+        let low = attribution_true_weight(0.0);
+        let mid = attribution_true_weight(0.5);
+        let high = attribution_true_weight(1.0);
+        assert!((low - 0.5).abs() < 1e-9, "floor at 0.5, got {low}");
+        assert!((high - 0.98).abs() < 1e-9, "ceiling at 0.98, got {high}");
+        assert!(low < mid && mid < high, "monotone increasing in intel");
+        // Out-of-range / non-finite clamps defensively.
+        assert_eq!(attribution_true_weight(2.0), 0.98);
+        assert_eq!(attribution_true_weight(-1.0), 0.5);
+        assert!(attribution_true_weight(f64::NAN).is_finite());
+    }
+
+    #[test]
+    fn validate_rejects_believed_attribution_without_enabled() {
+        let cfg = BeliefModelConfig {
+            enabled: false,
+            believed_attribution: true,
+            ..Default::default()
+        };
+        let err = validate_belief_model(&cfg).expect_err("must be rejected");
+        assert!(
+            err.contains("believed_attribution") && err.contains("enabled"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_intelligence_weighting_without_enabled() {
+        let cfg = BeliefModelConfig {
+            enabled: false,
+            intelligence_weighting: true,
+            ..Default::default()
+        };
+        assert!(validate_belief_model(&cfg).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_believed_attribution_with_enabled() {
+        let cfg = BeliefModelConfig {
+            enabled: true,
+            believed_attribution: true,
+            ..Default::default()
+        };
+        validate_belief_model(&cfg).expect("enabled + believed_attribution is valid");
     }
 
     #[test]

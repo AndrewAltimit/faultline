@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use faultline_types::belief::FactionBelief;
 use faultline_types::faction::{Diplomacy, ForceUnit, UnitType};
 use faultline_types::ids::{
-    DefenderRoleId, EdgeId, EventId, FactionId, ForceId, InfraId, InstitutionId, NetworkId, NodeId,
-    RegionId, TechCardId,
+    DefenderRoleId, EdgeId, EventId, FactionId, ForceId, InfraId, InstitutionId, KillChainId,
+    NetworkId, NodeId, RegionId, TechCardId,
 };
 use faultline_types::politics::PoliticalClimate;
 use faultline_types::stats::{BeliefSnapshot, NetworkSample, StateSnapshot};
@@ -180,6 +180,46 @@ pub struct SimulationState {
     /// snapshot at run end. Empty for default-config scenarios.
     #[serde(default)]
     pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
+    /// Log of every believed-attribution roll in this run, in tick
+    /// order (Epic M round-two — believed-attribution rolls). One
+    /// entry is pushed each time a defender detects a kill-chain phase
+    /// *and* `simulation.belief_model.believed_attribution = true`.
+    /// Records the true attacker, the faction the defender actually
+    /// attributed the attack to (the believed attacker), and whether
+    /// they diverged. Empty for scenarios that leave the sub-flag off
+    /// — the believed-attribution path short-circuits and the legacy
+    /// ground-truth attribution is used, bit-identically.
+    #[serde(default)]
+    pub attribution_events: Vec<AttributionEvent>,
+}
+
+/// One believed-attribution roll (Epic M round-two).
+///
+/// Recorded when a defender (`defender`, the kill chain's `target`)
+/// detects a phase of a chain whose true author is `true_attacker`,
+/// under `belief_model.believed_attribution = true`. The defender
+/// draws a `believed_attacker` from its belief-weighted attribution
+/// distribution; when that differs from the true attacker the
+/// detection is a *misattribution* and `misattributed` is `true`.
+///
+/// `deception_driven` flags that the believed attacker was implicated
+/// by a planted [`faultline_types::belief::BeliefSource::Deceived`]
+/// belief the defender held at roll time — i.e. a false-flag drove the
+/// (mis)attribution rather than plain low-intelligence confusion. It
+/// can be `true` even when the believed attacker happens to equal the
+/// true attacker (the deception pointed at the real culprit), so the
+/// report distinguishes "deception was present" from "deception
+/// changed the outcome".
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AttributionEvent {
+    pub tick: u32,
+    pub defender: FactionId,
+    pub chain: KillChainId,
+    pub true_attacker: FactionId,
+    pub believed_attacker: FactionId,
+    pub confidence: f64,
+    pub misattributed: bool,
+    pub deception_driven: bool,
 }
 
 /// Per-faction running counters for the belief-accuracy report (Epic

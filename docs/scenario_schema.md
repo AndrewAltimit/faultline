@@ -771,7 +771,7 @@ Tagged enum (`effect = "..."`):
 
 ---
 
-## `[simulation.belief_model]` (Epic M round-one; round-two adds `intelligence_weighting`)
+## `[simulation.belief_model]` (Epic M round-one; round-two adds `intelligence_weighting` and `believed_attribution`)
 
 Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When `enabled = false` (or the block is omitted entirely), the engine takes the legacy fast path: belief phase short-circuits in O(1), `RunResult.belief_accuracy` / `belief_snapshots` stay empty, and the AI consumes ground truth (or `simulation.fog_of_war`-filtered ground truth, if set). When `enabled = true`, the engine carries a per-faction `BeliefState` updated each tick from current observations, applies decay to unrefreshed entries, and consumes the belief-derived world view in the AI's decision phase. `EventEffect::DeceptionOp`, `IntelligenceShare`, and `AmbientIntel` are no-ops when belief mode is off.
 
@@ -783,7 +783,8 @@ Optional. Opts the scenario into the persistent belief-asymmetry mechanic. When 
 | `scalar_decay_per_tick` | `f64 ∈ [0, 1]` | Default `0.03`. Per-tick confidence decay for scalar beliefs (faction morale, faction resources). |
 | `prune_threshold` | `f64 ∈ [0, 1]` | Default `0.05`. Belief entries with confidence strictly below this are dropped from the persistent state. Set to `0.0` to never prune. |
 | `snapshot_interval` | `u32` | Default `0` (no snapshot stream). When `> 0`, the engine appends one belief-shape snapshot per faction every `N` ticks plus one terminal snapshot. |
-| `intelligence_weighting` | `bool` | Default `false` (round-one fidelity — perfect direct observation). When `true`, foreign observations are capped at an intelligence-derived confidence ceiling and Bayesian-blended with the prior (tagged `Inferred`); own-faction facts stay perfect. Also enables the AI's confidence-weighted threat reads. See [engine-model.md](engine-model.md). |
+| `intelligence_weighting` | `bool` | Default `false` (round-one fidelity — perfect direct observation). When `true`, foreign observations are capped at an intelligence-derived confidence ceiling and Bayesian-blended with the prior (tagged `Inferred`); own-faction facts stay perfect. Also enables the AI's confidence-weighted threat reads. Requires `enabled = true`. See [engine-model.md](engine-model.md). |
+| `believed_attribution` | `bool` | Default `false` (legacy ground-truth attribution). When `true`, a defender that detects a kill-chain phase draws a *believed attacker* from a distribution weighted by its `intelligence` and biased by any planted false-flag (`Deceived`) belief — so a low-intelligence or deceived defender misattributes the attack and the alliance-fracture accounting (`AttributionThreshold`) fires against the *believed* faction. Requires `enabled = true` and at least one kill chain (rejected at load otherwise). Surfaces the `## Attribution Fidelity` report section. See [engine-model.md](engine-model.md). |
 
 ```toml
 [simulation.belief_model]
@@ -794,6 +795,7 @@ scalar_decay_per_tick = 0.03
 prune_threshold = 0.05
 snapshot_interval = 0
 intelligence_weighting = false  # round-two: set true for fog-of-war fidelity
+believed_attribution = false    # round-two: set true to route attribution through belief
 ```
 
 Validation rejects: non-finite or out-of-`[0, 1]` decay rates / prune threshold, including when `enabled = false` (a typo in a disabled-but-authored block surfaces at load time).

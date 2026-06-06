@@ -164,6 +164,39 @@ pub struct RunResult {
     /// cadence plus one terminal snapshot.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
+    /// Log of every believed-attribution roll in this run (Epic M
+    /// round-two — believed-attribution rolls), in tick order. Only
+    /// populated when the scenario sets
+    /// `simulation.belief_model.believed_attribution = true`; legacy
+    /// scenarios (and belief scenarios that leave the sub-flag off)
+    /// elide entirely. The cross-run aggregator
+    /// `MonteCarloSummary.misattribution_summary` rolls these into a
+    /// single per-batch divergence rate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attribution_events: Vec<AttributionEventReport>,
+}
+
+/// One believed-attribution roll captured for cross-run analytics
+/// (Epic M round-two).
+///
+/// Mirrors the engine-side `AttributionEvent`. Recorded each time a
+/// defender detects a kill-chain phase under
+/// `belief_model.believed_attribution = true`. `misattributed` is the
+/// headline signal — the defender attributed the attack to a faction
+/// other than its true author. `deception_driven` flags that a planted
+/// `Deceived` belief implicated the chosen faction (a false flag was in
+/// play), so the analyst can separate intelligence-confusion
+/// misattributions from deception-driven ones.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AttributionEventReport {
+    pub tick: u32,
+    pub defender: FactionId,
+    pub chain: KillChainId,
+    pub true_attacker: FactionId,
+    pub believed_attacker: FactionId,
+    pub confidence: f64,
+    pub misattributed: bool,
+    pub deception_driven: bool,
 }
 
 /// Per-faction belief-accuracy report for one run (Epic M round-one
@@ -826,6 +859,49 @@ pub struct MonteCarloSummary {
     /// rendering. Producer: `faultline_stats::belief::compute_belief_summaries`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub belief_summaries: BTreeMap<FactionId, BeliefAsymmetrySummary>,
+    /// Cross-run believed-attribution analytics (Epic M round-two).
+    /// `None` when no run produced any believed-attribution roll —
+    /// either the scenario leaves
+    /// `simulation.belief_model.believed_attribution = false` or no
+    /// defender ever detected a phase. The `## Attribution Fidelity`
+    /// report section elides on this signal. Producer:
+    /// `faultline_stats::misattribution::compute_misattribution_summary`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub misattribution_summary: Option<MisattributionSummary>,
+}
+
+/// Cross-run believed-attribution analytics (Epic M round-two).
+///
+/// Aggregates every [`AttributionEventReport`] across the run set into
+/// batch-level rates. The headline signal is `misattribution_rate` —
+/// the fraction of detection-time attribution rolls where the defender
+/// fingered the wrong faction. `deception_driven_rate` decomposes that
+/// into "how much of the divergence a planted false flag drove."
+/// `fracture_misattributions` counts the subset of misattributions
+/// that coincided with an alliance fracture firing against the
+/// (innocent) believed faction in the same run — the behavioral payoff:
+/// misattribution didn't just happen, it changed who the defender
+/// turned against.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MisattributionSummary {
+    /// Total believed-attribution rolls across all runs.
+    pub total_rolls: u64,
+    /// Rolls where the believed attacker differed from the true one.
+    pub misattributed_rolls: u64,
+    /// Rolls implicated by a planted `Deceived` belief.
+    pub deception_driven_rolls: u64,
+    /// `misattributed_rolls / total_rolls` (0.0 when no rolls).
+    pub misattribution_rate: f64,
+    /// `deception_driven_rolls / total_rolls` (0.0 when no rolls).
+    pub deception_driven_rate: f64,
+    /// Number of (run, fracture-firing) pairs where a faction fractured
+    /// against a counterparty it had misattributed an attack to in the
+    /// same run — misattribution that drove a behavioral break.
+    pub fracture_misattributions: u64,
+    /// Per-(true_attacker → believed_attacker) divergence counts across
+    /// the batch, in `BTreeMap` order. Only off-diagonal (misattributed)
+    /// pairs are recorded. The key is rendered as `"true→believed"`.
+    pub confusion_pairs: BTreeMap<String, u64>,
 }
 
 /// Per-faction belief-asymmetry analytics across runs (Epic M
@@ -1684,4 +1760,8 @@ pub struct DeltaEncodedRun {
     /// when `belief_model.snapshot_interval = 0`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub belief_snapshots: BTreeMap<FactionId, Vec<BeliefSnapshot>>,
+    /// Believed-attribution roll log (Epic M round-two) — preserved
+    /// verbatim. Empty when `belief_model.believed_attribution = false`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attribution_events: Vec<AttributionEventReport>,
 }

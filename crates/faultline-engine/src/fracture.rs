@@ -178,10 +178,23 @@ fn condition_satisfied(
     }
 }
 
-/// Mean per-chain attribution confidence over chains owned by
+/// Mean per-chain attribution confidence over chains attributed to
 /// `attacker`. Returns 0.0 when no such chain is in flight (no
 /// signal yet, can't fire the rule). Iteration is `BTreeMap`-ordered
 /// for determinism even though the result is order-independent.
+///
+/// **Believed attribution (Epic M round-two).** Each chain is credited
+/// to its *effective attributed faction*: the defender's believed
+/// attacker (`CampaignState::attributed_faction`) when a believed-
+/// attribution roll has set it, otherwise the chain's true `attacker`.
+/// When the believed-attribution sub-flag is off, `attributed_faction`
+/// is always `None`, so the effective attribution equals the true
+/// attacker and this function is bit-identical to the legacy
+/// "chains owned by `attacker`" semantics. When the sub-flag is on, a
+/// chain a low-intelligence or deceived defender misattributed counts
+/// against the *believed* faction instead — so the alliance-fracture
+/// rule fires against whoever the defender *thinks* did it, which may
+/// be an innocent ally.
 ///
 /// `pub(crate)` so the utility evaluator's `AttributionAgainstSelf`
 /// trigger can reuse the same definition — both phases agree on what
@@ -194,13 +207,20 @@ pub(crate) fn mean_attribution(
     let mut sum = 0.0f64;
     let mut count = 0u32;
     for (cid, chain) in &scenario.kill_chains {
-        if chain.attacker != *attacker {
+        let Some(cstate) = campaigns.get(cid) else {
+            continue;
+        };
+        // Effective attributed faction: believed attacker if a
+        // believed-attribution roll set it, else the true attacker.
+        let effective = cstate
+            .attributed_faction
+            .as_ref()
+            .unwrap_or(&chain.attacker);
+        if effective != attacker {
             continue;
         }
-        if let Some(cstate) = campaigns.get(cid) {
-            sum += cstate.attribution_confidence;
-            count += 1;
-        }
+        sum += cstate.attribution_confidence;
+        count += 1;
     }
     if count == 0 {
         0.0

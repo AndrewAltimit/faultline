@@ -167,6 +167,7 @@ fn make_ai_test_state() -> SimulationState {
         belief_states: BTreeMap::new(),
         belief_counters: BTreeMap::new(),
         belief_snapshots: BTreeMap::new(),
+        attribution_events: Vec::new(),
     }
 }
 
